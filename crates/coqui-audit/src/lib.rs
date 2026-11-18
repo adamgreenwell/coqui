@@ -279,17 +279,40 @@ mod tests {
                 discovered_at: now_ms(),
             })
             .unwrap();
+        let from = store.ensure_url_id(id, "https://example.com/").unwrap();
+        let to = store
+            .ensure_url_id(id, "https://example.com/missing")
+            .unwrap();
         store
-            .insert_link(
-                id,
-                &LinkRecord {
-                    from_url: "https://example.com/".into(),
-                    to_url: "https://example.com/missing".into(),
-                    anchor: Some("Missing".into()),
-                    rel: None,
-                    internal: true,
-                },
-            )
+            .insert_link(id, from, to, Some("Missing"), None, true)
+            .unwrap();
+        let forbidden = store
+            .ensure_url_id(id, "https://example.com/forbidden")
+            .unwrap();
+        store
+            .insert_url(&NewUrl {
+                crawl_id: id.into(),
+                url: "https://example.com/forbidden".into(),
+                status: Some(403),
+                content_type: Some("text/html".into()),
+                title: Some("Just a moment...".into()),
+                meta_description: None,
+                h1: None,
+                h1_count: 0,
+                canonical: None,
+                meta_robots: None,
+                redirect_target: None,
+                redirect_chain: Vec::new(),
+                word_count: Some(1),
+                depth: 1,
+                response_time_ms: Some(5),
+                size_bytes: Some(10),
+                error: None,
+                discovered_at: now_ms(),
+            })
+            .unwrap();
+        store
+            .insert_link(id, from, forbidden, Some("Forbidden"), None, true)
             .unwrap();
 
         let counts = analyze_crawl(&store, id).unwrap();

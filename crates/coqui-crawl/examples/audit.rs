@@ -63,7 +63,7 @@ async fn main() {
         (latest.id, config, checkpoint)
     } else {
         let crawl_id = format!("audit-{}", now_ms());
-        let mut config = CrawlConfig {
+        let config = CrawlConfig {
             max_depth: 3,
             max_urls,
             concurrency,

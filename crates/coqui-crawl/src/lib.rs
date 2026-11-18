@@ -11,7 +11,7 @@ pub mod seeds;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use coqui_core::{
-    CrawlCheckpoint, CrawlConfig, CrawlProgress, LinkRecord, NewUrl, UrlError, now_ms, resolve_url,
+    CrawlCheckpoint, CrawlConfig, CrawlProgress, NewUrl, UrlError, now_ms, resolve_url,
 };
 use coqui_store::{Store, StoreError};
 use futures::{StreamExt, stream};
@@ -322,18 +322,18 @@ pub async fn run_crawl(
                     stats.failed += 1;
                 }
                 store.insert_url(&record)?;
+                let page_id = store.url_id(&crawl_id, &url)?.unwrap_or_default();
 
                 if let Some(page) = extracted {
                     for link in &page.links {
+                        let to_id = store.ensure_url_id(&crawl_id, &link.url)?;
                         store.insert_link(
                             &crawl_id,
-                            &LinkRecord {
-                                from_url: url.clone(),
-                                to_url: link.url.clone(),
-                                anchor: link.anchor.clone(),
-                                rel: link.rel.clone(),
-                                internal: in_primary_hosts(&link.url),
-                            },
+                            page_id,
+                            to_id,
+                            link.anchor.as_deref(),
+                            link.rel.as_deref(),
+                            in_primary_hosts(&link.url),
                         )?;
                     }
                     for link in page.links {

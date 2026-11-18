@@ -11,7 +11,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const SCHEMA_VERSION: i32 = 3;
+pub const SCHEMA_VERSION: i32 = 4;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -54,19 +54,24 @@ CREATE TABLE IF NOT EXISTS urls (
 CREATE INDEX IF NOT EXISTS idx_urls_crawl_id ON urls (crawl_id, id);
 CREATE INDEX IF NOT EXISTS idx_urls_status ON urls (crawl_id, status);
 
+CREATE TABLE IF NOT EXISTS url_map (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    crawl_id TEXT NOT NULL,
+    url      TEXT NOT NULL,
+    UNIQUE (crawl_id, url)
+);
+
 CREATE TABLE IF NOT EXISTS links (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     crawl_id   TEXT NOT NULL,
-    from_url   TEXT NOT NULL,
-    to_url     TEXT NOT NULL,
+    from_id    INTEGER NOT NULL,
+    to_id      INTEGER NOT NULL,
     anchor     TEXT NOT NULL DEFAULT '',
     rel        TEXT,
-    internal   INTEGER NOT NULL,
-    UNIQUE (crawl_id, from_url, to_url, anchor)
+    internal   INTEGER NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_links_crawl_from ON links (crawl_id, from_url);
-CREATE INDEX IF NOT EXISTS idx_links_crawl_to ON links (crawl_id, to_url);
+
 
 CREATE TABLE IF NOT EXISTS issues (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -108,6 +113,7 @@ pub type Result<T> = std::result::Result<T, StoreError>;
 /// A crawl store. Cheap to clone through `Arc`; writes are serialised by SQLite anyway.
 pub struct Store {
     conn: Mutex<Connection>,
+    ids: Mutex<std::collections::HashMap<(String, String), i64>>,
 }
 
 impl Store {
@@ -128,6 +134,7 @@ impl Store {
         migrate(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
+            ids: Mutex::new(std::collections::HashMap::new()),
         })
     }
 
@@ -264,20 +271,71 @@ impl Store {
         Ok(changed > 0)
     }
 
-    pub fn insert_link(&self, crawl_id: &str, link: &LinkRecord) -> Result<bool> {
-        let changed = self.lock()?.execute(
-            "INSERT OR IGNORE INTO links (crawl_id, from_url, to_url, anchor, rel, internal)
+    pub fn url_id(&self, crawl_id: &str, url: &str) -> Result<Option<i64>> {
+        let id = self
+            .lock()?
+            .query_row(
+                "SELECT id FROM urls WHERE crawl_id = ?1 AND url = ?2",
+                params![crawl_id, url],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(id)
+    }
+
+    /// Resolve a URL to its id in the crawl's URL map, inserting it if needed.
+    pub fn ensure_url_id(&self, crawl_id: &str, url: &str) -> Result<i64> {
+        let key = (crawl_id.to_string(), url.to_string());
+        if let Some(id) = self
+            .ids
+            .lock()
+            .map_err(|_| StoreError::Poisoned)?
+            .get(&key)
+            .copied()
+        {
+            return Ok(id);
+        }
+        let id: i64 = {
+            let conn = self.lock()?;
+            conn.execute(
+                "INSERT OR IGNORE INTO url_map (crawl_id, url) VALUES (?1, ?2)",
+                params![crawl_id, url],
+            )?;
+            conn.query_row(
+                "SELECT id FROM url_map WHERE crawl_id = ?1 AND url = ?2",
+                params![crawl_id, url],
+                |row| row.get(0),
+            )?
+        };
+        self.ids
+            .lock()
+            .map_err(|_| StoreError::Poisoned)?
+            .insert(key, id);
+        Ok(id)
+    }
+
+    pub fn insert_link(
+        &self,
+        crawl_id: &str,
+        from_id: i64,
+        to_id: i64,
+        anchor: Option<&str>,
+        rel: Option<&str>,
+        internal: bool,
+    ) -> Result<()> {
+        self.lock()?.execute(
+            "INSERT INTO links (crawl_id, from_id, to_id, anchor, rel, internal)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 crawl_id,
-                link.from_url,
-                link.to_url,
-                link.anchor.clone().unwrap_or_default(),
-                link.rel,
-                i64::from(link.internal),
+                from_id,
+                to_id,
+                anchor.unwrap_or(""),
+                rel,
+                i64::from(internal)
             ],
         )?;
-        Ok(changed > 0)
+        Ok(())
     }
 
     pub fn insert_issue(&self, issue: &Issue) -> Result<bool> {
@@ -391,14 +449,25 @@ impl Store {
     pub fn all_links(&self, crawl_id: &str) -> Result<Vec<LinkRecord>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
-            "SELECT from_url, to_url, anchor, rel, internal FROM links WHERE crawl_id = ?1",
+            "SELECT f.url, t.url, l.anchor, l.rel, l.internal
+             FROM links l
+             JOIN url_map f ON f.id = l.from_id
+             JOIN url_map t ON t.id = l.to_id
+             WHERE l.crawl_id = ?1",
         )?;
         let rows = stmt
             .query_map(params![crawl_id], |row| {
                 Ok(LinkRecord {
                     from_url: row.get(0)?,
                     to_url: row.get(1)?,
-                    anchor: row.get(2)?,
+                    anchor: {
+                        let anchor: String = row.get(2)?;
+                        if anchor.is_empty() {
+                            None
+                        } else {
+                            Some(anchor)
+                        }
+                    },
                     rel: row.get(3)?,
                     internal: row.get::<_, i64>(4)? != 0,
                 })
@@ -497,6 +566,7 @@ impl Store {
         conn.execute("DELETE FROM issues WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM checkpoints WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM links WHERE crawl_id = ?1", params![id])?;
+        conn.execute("DELETE FROM url_map WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM urls WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM crawls WHERE id = ?1", params![id])?;
         Ok(())
@@ -541,6 +611,37 @@ fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool> {
 
 fn migrate(conn: &Connection) -> Result<()> {
     let version: i32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    if version < 4 && has_column(conn, "links", "from_url")? {
+        conn.execute_batch(
+            "ALTER TABLE links RENAME TO links_v3;
+             DROP INDEX IF EXISTS idx_links_crawl_from;
+             DROP INDEX IF EXISTS idx_links_crawl_to;
+             CREATE TABLE links (
+                 id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                 crawl_id TEXT NOT NULL,
+                 from_id  INTEGER NOT NULL,
+                 to_id    INTEGER NOT NULL,
+                 anchor   TEXT NOT NULL DEFAULT '',
+                 rel      TEXT,
+                 internal INTEGER NOT NULL
+             );
+             INSERT OR IGNORE INTO url_map (crawl_id, url) SELECT crawl_id, url FROM urls;
+             INSERT OR IGNORE INTO url_map (crawl_id, url) SELECT crawl_id, from_url FROM links_v3;
+             INSERT OR IGNORE INTO url_map (crawl_id, url) SELECT crawl_id, to_url FROM links_v3;
+             INSERT INTO links (crawl_id, from_id, to_id, anchor, rel, internal)
+                 SELECT l.crawl_id, f.id, t.id, COALESCE(l.anchor, ''), l.rel, l.internal
+                 FROM links_v3 l
+                 JOIN url_map f ON f.crawl_id = l.crawl_id AND f.url = l.from_url
+                 JOIN url_map t ON t.crawl_id = l.crawl_id AND t.url = l.to_url;
+             DROP TABLE links_v3;
+             CREATE INDEX IF NOT EXISTS idx_links_crawl_from ON links (crawl_id, from_id);
+             CREATE INDEX IF NOT EXISTS idx_links_crawl_to ON links (crawl_id, to_id);",
+        )?;
+    }
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_links_crawl_from ON links (crawl_id, from_id);
+         CREATE INDEX IF NOT EXISTS idx_links_crawl_to ON links (crawl_id, to_id);",
+    )?;
     if version < 3 && !has_column(conn, "crawls", "seed_kind")? {
         conn.execute(
             "ALTER TABLE crawls ADD COLUMN seed_kind TEXT NOT NULL DEFAULT 'url'",
@@ -571,7 +672,7 @@ fn migrate(conn: &Connection) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use coqui_core::{Issue, IssueSeverity, LinkRecord, now_ms};
+    use coqui_core::{Issue, IssueSeverity, now_ms};
 
     fn sample_record(crawl_id: &str, url: &str) -> NewUrl {
         NewUrl {
@@ -684,17 +785,12 @@ mod tests {
         store
             .insert_url(&sample_record(id, "https://example.com/missing"))
             .unwrap();
+        let from = store.ensure_url_id(id, "https://example.com/").unwrap();
+        let to = store
+            .ensure_url_id(id, "https://example.com/missing")
+            .unwrap();
         store
-            .insert_link(
-                id,
-                &LinkRecord {
-                    from_url: "https://example.com/".into(),
-                    to_url: "https://example.com/missing".into(),
-                    anchor: Some("Missing".into()),
-                    rel: None,
-                    internal: true,
-                },
-            )
+            .insert_link(id, from, to, Some("Missing"), None, true)
             .unwrap();
         assert_eq!(store.all_links(id).unwrap().len(), 1);
 
@@ -804,6 +900,76 @@ mod tests {
             .unwrap();
         let row = &store.list_urls("v1", 1, 10, None).unwrap().rows[0];
         assert_eq!(row.h1_count, 1);
+        std::fs::remove_file(path).ok();
+    }
+}
+
+#[cfg(test)]
+mod migration_tests {
+    use super::*;
+
+    #[test]
+    fn migrates_v3_string_links_to_ids() {
+        let path = std::env::temp_dir().join(format!("coqui-v3-{}.db", uuid::Uuid::new_v4()));
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE crawls (id TEXT PRIMARY KEY, seed TEXT NOT NULL,
+                    seed_kind TEXT NOT NULL DEFAULT 'url', status TEXT NOT NULL,
+                    config_json TEXT NOT NULL, created_at INTEGER NOT NULL,
+                    started_at INTEGER, finished_at INTEGER);
+                 CREATE TABLE urls (id INTEGER PRIMARY KEY AUTOINCREMENT, crawl_id TEXT NOT NULL,
+                    url TEXT NOT NULL, status INTEGER, content_type TEXT, title TEXT,
+                    meta_description TEXT, h1 TEXT, h1_count INTEGER NOT NULL DEFAULT 0,
+                    canonical TEXT, meta_robots TEXT, redirect_target TEXT, redirect_chain TEXT,
+                    word_count INTEGER, depth INTEGER NOT NULL, response_time_ms INTEGER,
+                    size_bytes INTEGER, error TEXT, discovered_at INTEGER NOT NULL,
+                    UNIQUE (crawl_id, url));
+                 CREATE TABLE links (id INTEGER PRIMARY KEY AUTOINCREMENT, crawl_id TEXT NOT NULL,
+                    from_url TEXT NOT NULL, to_url TEXT NOT NULL, anchor TEXT NOT NULL DEFAULT '',
+                    rel TEXT, internal INTEGER NOT NULL,
+                    UNIQUE (crawl_id, from_url, to_url, anchor));
+                 PRAGMA user_version = 3;",
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO crawls (id, seed, seed_kind, status, config_json, created_at)
+                 VALUES ('c1', 'https://example.com/', 'url', 'completed', '{}', 1)",
+                [],
+            )
+            .unwrap();
+            for url in ["https://example.com/", "https://example.com/missing"] {
+                conn.execute(
+                    "INSERT INTO urls (crawl_id, url, status, depth, discovered_at)
+                     VALUES ('c1', ?1, 200, 0, 1)",
+                    params![url],
+                )
+                .unwrap();
+            }
+            conn.execute(
+                "INSERT INTO links (crawl_id, from_url, to_url, anchor, internal)
+                 VALUES ('c1', 'https://example.com/', 'https://example.com/missing', 'Missing', 1)",
+                [],
+            )
+            .unwrap();
+        }
+
+        let store = Store::open(&path).unwrap();
+        let links = store.all_links("c1").unwrap();
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].from_url, "https://example.com/");
+        assert_eq!(links[0].to_url, "https://example.com/missing");
+        assert_eq!(links[0].anchor.as_deref(), Some("Missing"));
+
+        // The migrated database must accept the new integer link API.
+        let from = store.ensure_url_id("c1", "https://example.com/").unwrap();
+        let to = store
+            .ensure_url_id("c1", "https://example.com/missing")
+            .unwrap();
+        store
+            .insert_link("c1", from, to, Some("Again"), None, true)
+            .unwrap();
+        assert_eq!(store.all_links("c1").unwrap().len(), 2);
         std::fs::remove_file(path).ok();
     }
 }
