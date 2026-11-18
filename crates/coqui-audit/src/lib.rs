@@ -164,7 +164,7 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
         let Some(target) = status_by_url.get(to_url.as_str()) else {
             continue;
         };
-        if target.blocked || target.status == Some(403) {
+        if target.blocked || matches!(target.status, Some(403 | 429)) {
             continue;
         }
         let is_broken =

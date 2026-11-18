@@ -378,7 +378,8 @@ pub async fn run_crawl(
             }
 
             let pause_requested = pause.load(Ordering::Relaxed);
-            let blocked_abort = stats.blocked >= 20 && stats.blocked * 2 > stats.crawled;
+            let blocked_abort = (stats.blocked >= 20 && stats.blocked * 2 > stats.crawled)
+                || (stats.blocked >= 100 && stats.blocked * 10 > stats.crawled);
             let should_checkpoint = pause_requested
                 || blocked_abort
                 || frontier.is_empty()
@@ -509,6 +510,7 @@ async fn fetch(client: &Client, requested: &str) -> FetchOutcome {
     let mut chain: Vec<String> = Vec::new();
     let mut first_status: Option<u16> = None;
     let mut hops = 0usize;
+    let mut rate_limit_retries = 0u8;
 
     loop {
         let response = match client.get(&current).send().await {
@@ -529,6 +531,21 @@ async fn fetch(client: &Client, requested: &str) -> FetchOutcome {
         };
 
         let status = response.status().as_u16();
+        if status == 429 && rate_limit_retries < 3 {
+            let wait = response
+                .headers()
+                .get("retry-after")
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.parse::<u64>().ok())
+                .unwrap_or(1)
+                .min(5);
+            rate_limit_retries += 1;
+            if debug {
+                eprintln!("fetch: 429 for {current}, retry {rate_limit_retries} in {wait}s");
+            }
+            tokio::time::sleep(Duration::from_secs(wait)).await;
+            continue;
+        }
         if debug {
             eprintln!("fetch: {status} for {current}");
         }
