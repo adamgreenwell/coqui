@@ -16,6 +16,16 @@ Named after the *coquí*, the tiny frog native to Puerto Rico whose call is ever
 - [Parity matrix](docs/reference/parity-matrix.csv) — every feature, phase, size, priority
 - [Backlog](https://github.com/adamgreenwell/coqui/issues) and [project board](https://github.com/users/adamgreenwell/projects/16/views/1?layout_template=board)
 
+### Backlog at a glance
+
+| | |
+| --- | --- |
+| Issues | 85 (12 epics + 73 features) |
+| Milestones | Phase 0 Foundations · Phase 1 Core parity · Phase 2 Advanced audit & UX · Phase 3 Integrations & AI · Phase 4 Hardening & 1.0 |
+| Project fields | Epic · Phase · Priority · Size · Area · Status |
+| Phase split | 16 / 20 / 22 / 11 / 4 features |
+| Dependencies | Tracked per issue and listed in the [parity matrix](docs/reference/parity-matrix.csv) |
+
 ## What Coqui will be
 
 A browser-based SEO crawler and audit workspace that matches the reference tool feature for feature:
@@ -72,3 +82,4 @@ The backlog is the roadmap. Pick an issue from the board, comment to claim it, a
 ## License
 
 To be decided by the project owner before the first code release (MIT or Apache-2.0 are the candidates). Until then, no license is granted for reuse.
+
