@@ -48,6 +48,7 @@ interface CrawlConfig {
   browserPath: string | null;
   renderWaitMs: number;
   renderWorkers: number;
+  screenshots: boolean;
 }
 
 interface CrawlSummary {
@@ -69,6 +70,7 @@ interface UrlRow {
   url: string;
   status: number | null;
   blocked: boolean;
+  consoleErrors: string[];
   contentType: string | null;
   title: string | null;
   metaDescription: string | null;
@@ -217,6 +219,8 @@ export default function Home() {
   const [browserPath, setBrowserPath] = useState('');
   const [renderWaitMs, setRenderWaitMs] = useState(500);
   const [renderWorkers, setRenderWorkers] = useState(2);
+  const [screenshots, setScreenshots] = useState(false);
+  const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
 
   const [crawl, setCrawl] = useState<CrawlSummary | null>(null);
   const [phase, setPhase] = useState<CrawlStatus | 'idle'>('idle');
@@ -332,6 +336,7 @@ export default function Home() {
         browserPath: browserPath.trim() || null,
         renderWaitMs,
         renderWorkers,
+        screenshots,
       };
       const summary = await invoke<CrawlSummary>('create_crawl', {
         seedKind,
@@ -426,12 +431,38 @@ export default function Home() {
     switch (key) {
       case 'status':
         return (
-          <span
-            className={`status-chip ${statusCodeClass(row)}`}
-            title={row.blocked ? 'Blocked by the site edge (WAF challenge)' : undefined}
-          >
-            {row.blocked ? 'WAF' : row.error ? 'ERR' : (row.status ?? '—')}
-          </span>
+          <div className="status-cell">
+            <span
+              className={`status-chip ${statusCodeClass(row)}`}
+              title={row.blocked ? 'Blocked by the site edge (WAF challenge)' : undefined}
+            >
+              {row.blocked ? 'WAF' : row.error ? 'ERR' : (row.status ?? '—')}
+            </span>
+            {row.consoleErrors.length > 0 && (
+              <span
+                className="js-errors"
+                title={row.consoleErrors.join('\n')}
+              >
+                JS {row.consoleErrors.length}
+              </span>
+            )}
+            {crawl?.config.screenshots && (
+              <button
+                className="link"
+                type="button"
+                onClick={async () => {
+                  const { invoke } = await import('@tauri-apps/api/core');
+                  const data = await invoke<string | null>('get_screenshot', {
+                    crawlId: row.crawlId,
+                    urlId: row.id,
+                  });
+                  setScreenshotUrl(data);
+                }}
+              >
+                Shot
+              </button>
+            )}
+          </div>
         );
       case 'url':
         return (
@@ -685,6 +716,17 @@ export default function Home() {
                   </div>
                 </div>
               )}
+              {render && (
+                <label className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={screenshots}
+                    onChange={(event) => setScreenshots(event.target.checked)}
+                    disabled={isRunning}
+                  />
+                  Capture a screenshot per rendered page
+                </label>
+              )}
             </details>
             <label className="checkbox">
               <input
@@ -754,6 +796,21 @@ export default function Home() {
           )}
 
           {error && <div className="error">{error}</div>}
+
+          {screenshotUrl && (
+            <div
+              className="modal-backdrop"
+              role="presentation"
+              onClick={() => setScreenshotUrl(null)}
+            >
+              <div className="modal" role="dialog" aria-label="Rendered screenshot">
+                <img src={screenshotUrl} alt="Rendered page screenshot" />
+                <button className="secondary" type="button" onClick={() => setScreenshotUrl(null)}>
+                  Close
+                </button>
+              </div>
+            </div>
+          )}
 
           {crawl && crawl.blockedUrls > 0 && (
             <div className="notice">

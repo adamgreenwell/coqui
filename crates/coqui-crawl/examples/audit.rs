@@ -90,6 +90,7 @@ async fn main() {
             request_timeout_ms: 20_000,
             respect_robots: true,
             render: std::env::var_os("COQUI_RENDER").is_some(),
+            screenshots: std::env::var_os("COQUI_SCREENSHOTS").is_some(),
             render_wait_ms: std::env::var("COQUI_RENDER_WAIT")
                 .ok()
                 .and_then(|value| value.parse().ok())
@@ -107,6 +108,7 @@ async fn main() {
     };
     let mut config = config;
     config.render = std::env::var_os("COQUI_RENDER").is_some();
+    config.screenshots = std::env::var_os("COQUI_SCREENSHOTS").is_some();
     config.render_workers = std::env::var("COQUI_RENDER_WORKERS")
         .ok()
         .and_then(|value| value.parse().ok())

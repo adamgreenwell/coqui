@@ -39,6 +39,14 @@ pub struct RenderOptions {
     pub user_agent: Option<String>,
     pub headers: Vec<(String, String)>,
     pub cookies: Vec<(String, String)>,
+    pub screenshot: bool,
+}
+
+/// Rendered HTML plus page evidence.
+pub struct RenderOutput {
+    pub html: String,
+    pub screenshot: Option<Vec<u8>>,
+    pub console: Vec<String>,
 }
 
 pub struct Renderer {
@@ -47,6 +55,7 @@ pub struct Renderer {
     child: StdMutex<Option<Child>>,
     wait_ms: u64,
     options: RenderOptions,
+    events: StdMutex<Vec<Value>>,
 }
 
 impl Renderer {
@@ -83,11 +92,17 @@ impl Renderer {
             child: StdMutex::new(child),
             wait_ms,
             options,
+            events: StdMutex::new(Vec::new()),
         }))
     }
 
     /// Render one URL and return its outer HTML.
     pub async fn render(&self, url: &str) -> Result<String, RenderError> {
+        Ok(self.render_page(url).await?.html)
+    }
+
+    /// Render one URL and return HTML, screenshot and console errors.
+    pub async fn render_page(&self, url: &str) -> Result<RenderOutput, RenderError> {
         let target = self
             .call("Target.createTarget", json!({"url": "about:blank"}), None)
             .await?;
@@ -103,7 +118,7 @@ impl Renderer {
         result
     }
 
-    async fn render_target(&self, target_id: &str, url: &str) -> Result<String, RenderError> {
+    async fn render_target(&self, target_id: &str, url: &str) -> Result<RenderOutput, RenderError> {
         let attached = self
             .call(
                 "Target.attachToTarget",
@@ -149,6 +164,12 @@ impl Renderer {
             )
             .await?;
         }
+        if let Ok(mut events) = self.events.lock() {
+            events.clear();
+        }
+        self.call("Runtime.enable", json!({}), Some(&session))
+            .await?;
+        self.call("Log.enable", json!({}), Some(&session)).await?;
         self.call("Page.navigate", json!({"url": url}), Some(&session))
             .await?;
 
@@ -177,6 +198,76 @@ impl Renderer {
         if self.wait_ms > 0 {
             tokio::time::sleep(Duration::from_millis(self.wait_ms)).await;
         }
+        let events = self
+            .events
+            .lock()
+            .map_err(|_| RenderError::Other("event log poisoned".into()))?
+            .clone();
+        let mut console = Vec::new();
+        for event in events {
+            if event.get("sessionId").and_then(Value::as_str) != Some(session.as_str()) {
+                continue;
+            }
+            match event.get("method").and_then(Value::as_str).unwrap_or("") {
+                "Runtime.exceptionThrown" => {
+                    if let Some(details) = event.pointer("/params/exceptionDetails") {
+                        let text = details
+                            .pointer("/exception/description")
+                            .and_then(Value::as_str)
+                            .or_else(|| details.get("text").and_then(Value::as_str))
+                            .unwrap_or("Uncaught exception");
+                        console.push(text.lines().next().unwrap_or(text).to_string());
+                    }
+                }
+                "Runtime.consoleAPICalled"
+                    if event.pointer("/params/type").and_then(Value::as_str) == Some("error") =>
+                {
+                    let mut parts = Vec::new();
+                    if let Some(args) = event.pointer("/params/args").and_then(Value::as_array) {
+                        for arg in args {
+                            if let Some(value) = arg.get("value").and_then(Value::as_str) {
+                                parts.push(value.to_string());
+                            } else if let Some(description) =
+                                arg.get("description").and_then(Value::as_str)
+                            {
+                                parts.push(description.to_string());
+                            }
+                        }
+                    }
+                    if !parts.is_empty() {
+                        console.push(parts.join(" "));
+                    }
+                }
+                "Log.entryAdded"
+                    if event.pointer("/params/entry/level").and_then(Value::as_str)
+                        == Some("error") =>
+                {
+                    if let Some(text) = event.pointer("/params/entry/text").and_then(Value::as_str)
+                    {
+                        console.push(text.to_string());
+                    }
+                }
+                _ => {}
+            }
+        }
+        console.truncate(20);
+
+        let screenshot = if self.options.screenshot {
+            let shot = self
+                .call(
+                    "Page.captureScreenshot",
+                    json!({"format": "jpeg", "quality": 60}),
+                    Some(&session),
+                )
+                .await?;
+            shot.get("data").and_then(Value::as_str).and_then(|data| {
+                use base64::Engine as _;
+                base64::engine::general_purpose::STANDARD.decode(data).ok()
+            })
+        } else {
+            None
+        };
+
         let html = self
             .call(
                 "Runtime.evaluate",
@@ -187,11 +278,17 @@ impl Renderer {
                 Some(&session),
             )
             .await?;
-        html.get("result")
+        let html = html
+            .get("result")
             .and_then(|value| value.get("value"))
             .and_then(Value::as_str)
             .map(str::to_string)
-            .ok_or_else(|| RenderError::Protocol("no rendered HTML".into()))
+            .ok_or_else(|| RenderError::Protocol("no rendered HTML".into()))?;
+        Ok(RenderOutput {
+            html,
+            screenshot,
+            console,
+        })
     }
 
     async fn call(
@@ -221,6 +318,13 @@ impl Renderer {
             let value: Value = serde_json::from_str(&text)
                 .map_err(|error| RenderError::Protocol(error.to_string()))?;
             if value.get("id").and_then(Value::as_u64) != Some(id) {
+                if value.get("method").is_some() {
+                    if let Ok(mut events) = self.events.lock() {
+                        if events.len() < 500 {
+                            events.push(value);
+                        }
+                    }
+                }
                 continue;
             }
             if let Some(error) = value.get("error") {
@@ -353,12 +457,16 @@ impl RenderPool {
     }
 
     pub async fn render(&self, url: &str) -> Result<String, RenderError> {
+        Ok(self.render_page(url).await?.html)
+    }
+
+    pub async fn render_page(&self, url: &str) -> Result<RenderOutput, RenderError> {
         let _permit = self
             .permits
             .acquire()
             .await
             .map_err(|_| RenderError::Other("render pool closed".into()))?;
         let index = (self.next.fetch_add(1, Ordering::Relaxed) as usize) % self.workers.len();
-        self.workers[index].render(url).await
+        self.workers[index].render_page(url).await
     }
 }

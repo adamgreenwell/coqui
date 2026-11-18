@@ -128,7 +128,7 @@ The local `/js` fixture serves an empty `<div>` and fills it with JavaScript. Wi
 - H1: `Rendered H1`
 - word count: 266
 
-A live render of `https://www.landscapemanagement.net/` returned ~274 KB of rendered HTML. The renderer now runs a 1–8 worker pool and applies session cookies, headers and the user agent to each browser context; a local browser test verifies both authenticated rendering and two pages rendering concurrently. A 20-second load timeout falls back to raw HTML.
+A live render of `https://www.landscapemanagement.net/` returned ~274 KB of rendered HTML. With screenshots enabled, the fixture crawl stored a 68 KB JPEG and captured the fixture `console.error` in `console_json`. The renderer runs a 1–8 worker pool, applies session cookies/headers/user agent, and captures console + uncaught exceptions from CDP events. A 20-second load timeout falls back to raw HTML.
 
 ## Scale test (synthetic, local)
 
@@ -144,6 +144,7 @@ A live render of `https://www.landscapemanagement.net/` returned ~274 KB of rend
 3. Extend audit rules (canonical mismatch, missing H1, hreflang, pagination).
 4. Classify assets (X-04) so images stop counting as HTML URL rows.
 5. Incremental frontier for 100k-scale crawls (C-01).
+
 
 
 

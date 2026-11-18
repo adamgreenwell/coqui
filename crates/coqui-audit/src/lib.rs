@@ -491,6 +491,7 @@ mod tests {
                 pagination_prev: None,
 
                 structured_data: Default::default(),
+                console_errors: Vec::new(),
                 content_type: Some("text/html".into()),
                 title: title.map(str::to_string),
                 meta_description: None,
@@ -547,6 +548,7 @@ mod tests {
                 pagination_prev: None,
 
                 structured_data: Default::default(),
+                console_errors: Vec::new(),
                 content_type: Some("text/html".into()),
                 title: Some("Not found".into()),
                 meta_description: Some("missing".into()),
@@ -588,6 +590,7 @@ mod tests {
                 pagination_prev: None,
 
                 structured_data: Default::default(),
+                console_errors: Vec::new(),
                 content_type: Some("text/html".into()),
                 title: Some("Just a moment...".into()),
                 meta_description: None,
@@ -653,6 +656,7 @@ mod wordpress_rules {
                 pagination_prev: None,
 
                 structured_data: Default::default(),
+                console_errors: Vec::new(),
                 content_type: Some("text/html".into()),
                 title: Some(title.into()),
                 meta_description: Some(meta.into()),
@@ -691,6 +695,7 @@ mod wordpress_rules {
                 pagination_prev: None,
 
                 structured_data: Default::default(),
+                console_errors: Vec::new(),
                 content_type: Some("text/html".into()),
                 title: Some("A reasonably unique title".into()),
                 meta_description: Some("A reasonably unique description".into()),
@@ -727,6 +732,7 @@ mod wordpress_rules {
                 hreflang: Vec::new(),
                 pagination_next: None,
                 pagination_prev: None,
+                console_errors: Vec::new(),
                 structured_data: coqui_core::StructuredData {
                     types: types.into_iter().map(str::to_string).collect(),
                     errors: errors.into_iter().map(str::to_string).collect(),

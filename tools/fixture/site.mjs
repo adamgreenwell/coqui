@@ -62,7 +62,7 @@ const server = http.createServer((request, response) => {
         `<!doctype html><html><head><title>Static title</title></head><body>
           <div id="app"></div>
           <script>
-            document.title = 'Rendered title';
+            document.title = 'Rendered title';\n            console.error('fixture console error');
             document.getElementById('app').innerHTML =
               '<h1>Rendered H1</h1><p>' + 'word '.repeat(250) + '</p><a href="/about">About</a>';
           </script>
@@ -111,3 +111,4 @@ const server = http.createServer((request, response) => {
 server.listen(port, '127.0.0.1', () => {
   console.log(`fixture site on http://127.0.0.1:${port}/`);
 });
+

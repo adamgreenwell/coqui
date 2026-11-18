@@ -525,6 +525,7 @@ dependencies = [
 name = "coqui-render"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "futures",
  "reqwest",
  "serde_json",

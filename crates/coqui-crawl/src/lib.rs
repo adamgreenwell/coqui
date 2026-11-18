@@ -68,6 +68,8 @@ struct FetchOutcome {
     elapsed_ms: u64,
     error: Option<String>,
     blocked: bool,
+    console: Vec<String>,
+    screenshot: Option<Vec<u8>>,
 }
 
 /// Run a crawl to completion (or cancellation).
@@ -250,6 +252,7 @@ pub async fn run_crawl(
             user_agent: Some(config.user_agent.clone()),
             headers,
             cookies,
+            screenshot: config.screenshots,
         };
         Some(
             RenderPool::connect(
@@ -304,6 +307,7 @@ pub async fn run_crawl(
                         url: url.clone(),
                         status: outcome.status,
                         blocked: outcome.blocked,
+                        console_errors: outcome.console.clone(),
                         hreflang: Vec::new(),
                         pagination_next: None,
                         pagination_prev: None,
@@ -354,6 +358,7 @@ pub async fn run_crawl(
                     url: url.clone(),
                     status: outcome.status,
                     blocked: outcome.blocked,
+                    console_errors: outcome.console.clone(),
                     hreflang: extracted
                         .as_ref()
                         .map(|page| page.hreflang.clone())
@@ -396,6 +401,11 @@ pub async fn run_crawl(
                 }
                 store.insert_url(&record)?;
                 let page_id = store.url_id(&crawl_id, &url)?.unwrap_or_default();
+                if page_id > 0 {
+                    if let Some(data) = &outcome.screenshot {
+                        store.save_screenshot(&crawl_id, page_id, data)?;
+                    }
+                }
 
                 if let Some(page) = extracted {
                     for link in &page.links {
@@ -591,6 +601,8 @@ async fn fetch(
                     elapsed_ms: started.elapsed().as_millis() as u64,
                     error: Some(truncate(&error.to_string(), 500)),
                     blocked: false,
+                    console: Vec::new(),
+                    screenshot: None,
                 };
             }
         };
@@ -664,19 +676,25 @@ async fn fetch(
                         elapsed_ms: started.elapsed().as_millis() as u64,
                         error: Some(truncate(&error.to_string(), 500)),
                         blocked: looks_blocked(status, &response_headers, body.as_deref()),
+                        console: Vec::new(),
+                        screenshot: None,
                     };
                 }
             }
         }
         let mut body = body;
+        let mut console = Vec::new();
+        let mut screenshot = None;
         let blocked = looks_blocked(status, &response_headers, body.as_deref());
         if !blocked {
             if let Some(renderer) = renderer {
                 if html && (200..300).contains(&status) {
-                    match renderer.render(&current).await {
+                    match renderer.render_page(&current).await {
                         Ok(rendered) => {
-                            size_bytes = rendered.len() as u64;
-                            body = Some(rendered);
+                            size_bytes = rendered.html.len() as u64;
+                            body = Some(rendered.html);
+                            console = rendered.console;
+                            screenshot = rendered.screenshot;
                         }
                         Err(error) => {
                             if std::env::var_os("COQUI_DEBUG_CRAWL").is_some() {
@@ -697,6 +715,8 @@ async fn fetch(
             elapsed_ms: started.elapsed().as_millis() as u64,
             error: None,
             blocked,
+            console,
+            screenshot,
         };
     }
 
@@ -710,6 +730,8 @@ async fn fetch(
         elapsed_ms: started.elapsed().as_millis() as u64,
         error: Some("too many redirects or unresolvable redirect target".to_string()),
         blocked: false,
+        console: Vec::new(),
+        screenshot: None,
     }
 }
 

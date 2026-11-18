@@ -5,13 +5,13 @@
 
 use coqui_core::{
     CrawlCheckpoint, CrawlConfig, CrawlStatus, CrawlSummary, Issue, IssueCount, IssueSeverity,
-    LinkRecord, NewUrl, UrlPage, UrlRecord,
+    LinkRecord, NewUrl, UrlPage, UrlRecord, now_ms,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const SCHEMA_VERSION: i32 = 7;
+pub const SCHEMA_VERSION: i32 = 8;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS urls (
     pagination_next   TEXT,
     pagination_prev   TEXT,
     structured_data_json TEXT,
+    console_json      TEXT,
     discovered_at     INTEGER NOT NULL,
     UNIQUE (crawl_id, url)
 );
@@ -89,6 +90,14 @@ CREATE TABLE IF NOT EXISTS issues (
 );
 
 CREATE INDEX IF NOT EXISTS idx_issues_crawl_rule ON issues (crawl_id, rule);
+
+CREATE TABLE IF NOT EXISTS screenshots (
+    crawl_id   TEXT NOT NULL,
+    url_id     INTEGER NOT NULL,
+    data       BLOB NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (crawl_id, url_id)
+);
 
 CREATE TABLE IF NOT EXISTS checkpoints (
     crawl_id   TEXT PRIMARY KEY,
@@ -253,9 +262,9 @@ impl Store {
                 (crawl_id, url, status, content_type, title, meta_description, h1, h1_count,
                  canonical, meta_robots, redirect_target, redirect_chain, word_count, depth,
                  response_time_ms, size_bytes, error, blocked, hreflang_json, pagination_next,
-                 pagination_prev, structured_data_json, discovered_at)
+                 pagination_prev, structured_data_json, console_json, discovered_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
-                     ?18, ?19, ?20, ?21, ?22, ?23)",
+                     ?18, ?19, ?20, ?21, ?22, ?23, ?24)",
             params![
                 record.crawl_id,
                 record.url,
@@ -280,6 +289,7 @@ impl Store {
                 record.pagination_prev,
                 serde_json::to_string(&record.structured_data)
                     .unwrap_or_else(|_| "{\"types\":[],\"errors\":[]}".into()),
+                serde_json::to_string(&record.console_errors).unwrap_or_else(|_| "[]".into()),
                 record.discovered_at,
             ],
         )?;
@@ -426,7 +436,7 @@ impl Store {
             "SELECT id, crawl_id, url, status, content_type, title, meta_description, h1, h1_count,
                     canonical, meta_robots, redirect_target, redirect_chain, word_count, depth,
                     response_time_ms, size_bytes, error, discovered_at, blocked, hreflang_json,
-                    pagination_next, pagination_prev, structured_data_json
+                    pagination_next, pagination_prev, structured_data_json, console_json
              FROM urls WHERE crawl_id = ?1
                AND (?3 IS NULL OR EXISTS (
                     SELECT 1 FROM issues
@@ -454,13 +464,34 @@ impl Store {
             "SELECT id, crawl_id, url, status, content_type, title, meta_description, h1, h1_count,
                     canonical, meta_robots, redirect_target, redirect_chain, word_count, depth,
                     response_time_ms, size_bytes, error, discovered_at, blocked, hreflang_json,
-                    pagination_next, pagination_prev, structured_data_json
+                    pagination_next, pagination_prev, structured_data_json, console_json
              FROM urls WHERE crawl_id = ?1 ORDER BY id",
         )?;
         let rows = stmt
             .query_map(params![crawl_id], map_url_row)?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
+    }
+
+    pub fn save_screenshot(&self, crawl_id: &str, url_id: i64, data: &[u8]) -> Result<()> {
+        self.lock()?.execute(
+            "INSERT OR REPLACE INTO screenshots (crawl_id, url_id, data, created_at)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![crawl_id, url_id, data, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_screenshot(&self, crawl_id: &str, url_id: i64) -> Result<Option<Vec<u8>>> {
+        let data = self
+            .lock()?
+            .query_row(
+                "SELECT data FROM screenshots WHERE crawl_id = ?1 AND url_id = ?2",
+                params![crawl_id, url_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(data)
     }
 
     pub fn all_links(&self, crawl_id: &str) -> Result<Vec<LinkRecord>> {
@@ -582,6 +613,7 @@ impl Store {
         let conn = self.lock()?;
         conn.execute("DELETE FROM issues WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM checkpoints WHERE crawl_id = ?1", params![id])?;
+        conn.execute("DELETE FROM screenshots WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM links WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM url_map WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM urls WHERE crawl_id = ?1", params![id])?;
@@ -622,6 +654,10 @@ fn map_url_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<UrlRecord> {
         pagination_prev: row.get(22)?,
         structured_data: row
             .get::<_, Option<String>>(23)?
+            .and_then(|value| serde_json::from_str(&value).ok())
+            .unwrap_or_default(),
+        console_errors: row
+            .get::<_, Option<String>>(24)?
             .and_then(|value| serde_json::from_str(&value).ok())
             .unwrap_or_default(),
         discovered_at: row.get(18)?,
@@ -670,6 +706,20 @@ fn migrate(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_links_crawl_from ON links (crawl_id, from_id);
          CREATE INDEX IF NOT EXISTS idx_links_crawl_to ON links (crawl_id, to_id);",
     )?;
+    if version < 8 {
+        if !has_column(conn, "urls", "console_json")? {
+            conn.execute("ALTER TABLE urls ADD COLUMN console_json TEXT", [])?;
+        }
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS screenshots (
+                crawl_id   TEXT NOT NULL,
+                url_id     INTEGER NOT NULL,
+                data       BLOB NOT NULL,
+                created_at INTEGER NOT NULL,
+                PRIMARY KEY (crawl_id, url_id)
+            );",
+        )?;
+    }
     if version < 7 && !has_column(conn, "urls", "structured_data_json")? {
         conn.execute("ALTER TABLE urls ADD COLUMN structured_data_json TEXT", [])?;
     }
@@ -740,6 +790,7 @@ mod tests {
             pagination_prev: None,
 
             structured_data: Default::default(),
+            console_errors: Vec::new(),
             content_type: Some("text/html".into()),
             title: Some("Example".into()),
             meta_description: None,

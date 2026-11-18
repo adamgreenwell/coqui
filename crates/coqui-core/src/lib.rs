@@ -55,6 +55,9 @@ pub struct CrawlConfig {
     /// Number of concurrent renderer browsers.
     #[serde(default = "default_render_workers")]
     pub render_workers: u32,
+    /// Capture a JPEG screenshot for each rendered page.
+    #[serde(default)]
+    pub screenshots: bool,
     /// Only crawl discovered URLs matching at least one pattern (empty = all).
     #[serde(default)]
     pub include_patterns: Vec<String>,
@@ -101,6 +104,7 @@ impl Default for CrawlConfig {
             browser_path: None,
             render_wait_ms: 500,
             render_workers: 2,
+            screenshots: false,
             include_patterns: Vec::new(),
             exclude_patterns: Vec::new(),
             auth_user: None,
@@ -189,6 +193,7 @@ pub struct UrlRecord {
     pub pagination_next: Option<String>,
     pub pagination_prev: Option<String>,
     pub structured_data: StructuredData,
+    pub console_errors: Vec<String>,
     pub redirect_target: Option<String>,
     pub redirect_chain: Vec<String>,
     pub word_count: Option<u32>,
@@ -237,6 +242,7 @@ pub struct NewUrl {
     pub pagination_next: Option<String>,
     pub pagination_prev: Option<String>,
     pub structured_data: StructuredData,
+    pub console_errors: Vec<String>,
     pub redirect_target: Option<String>,
     pub redirect_chain: Vec<String>,
     pub word_count: Option<u32>,

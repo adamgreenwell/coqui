@@ -35,6 +35,7 @@ async fn renders_javascript_generated_dom() {
             <div id="app"></div>
             <script>
               document.title = 'Rendered title';
+              console.error('fixture console error');
               document.getElementById('app').innerHTML = '<h1>Rendered H1</h1>';
             </script>
         </body></html>"#,
@@ -73,6 +74,7 @@ async fn applies_session_headers_and_cookies() {
         user_agent: Some("Coqui-Test".into()),
         headers: vec![("X-Test".into(), "yes".to_string())],
         cookies: vec![("session".into(), "ok".to_string())],
+        screenshot: false,
     };
     let renderer = Renderer::connect(None, 200, options)
         .await
