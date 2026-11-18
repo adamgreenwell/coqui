@@ -1,0 +1,11 @@
+[package]
+name = "coqui-audit"
+description = "Issue rules over a completed crawl"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+coqui-core.workspace = true
+coqui-store.workspace = true
+thiserror.workspace = true

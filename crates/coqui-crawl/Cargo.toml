@@ -10,6 +10,7 @@ coqui-core.workspace = true
 coqui-store.workspace = true
 reqwest.workspace = true
 scraper.workspace = true
+url.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 futures.workspace = true
@@ -18,3 +19,4 @@ tracing.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+

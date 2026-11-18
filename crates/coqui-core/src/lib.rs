@@ -40,6 +40,13 @@ pub struct CrawlConfig {
     pub user_agent: String,
     /// When true, only URLs on the seed host are enqueued.
     pub same_host_only: bool,
+    /// Respect robots.txt rules for the configured user agent.
+    #[serde(default = "default_true")]
+    pub respect_robots: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for CrawlConfig {
@@ -54,6 +61,7 @@ impl Default for CrawlConfig {
                 env!("CARGO_PKG_VERSION")
             ),
             same_host_only: true,
+            respect_robots: true,
         }
     }
 }
@@ -125,6 +133,11 @@ pub struct UrlRecord {
     pub title: Option<String>,
     pub meta_description: Option<String>,
     pub h1: Option<String>,
+    pub h1_count: u32,
+    pub canonical: Option<String>,
+    pub meta_robots: Option<String>,
+    pub redirect_target: Option<String>,
+    pub redirect_chain: Vec<String>,
     pub word_count: Option<u32>,
     pub depth: u32,
     pub response_time_ms: Option<u64>,
@@ -163,12 +176,75 @@ pub struct NewUrl {
     pub title: Option<String>,
     pub meta_description: Option<String>,
     pub h1: Option<String>,
+    pub h1_count: u32,
+    pub canonical: Option<String>,
+    pub meta_robots: Option<String>,
+    pub redirect_target: Option<String>,
+    pub redirect_chain: Vec<String>,
     pub word_count: Option<u32>,
     pub depth: u32,
     pub response_time_ms: Option<u64>,
     pub size_bytes: Option<u64>,
     pub error: Option<String>,
     pub discovered_at: i64,
+}
+
+/// Severity of an audit issue.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum IssueSeverity {
+    Error,
+    Warning,
+    Opportunity,
+}
+
+impl IssueSeverity {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Error => "error",
+            Self::Warning => "warning",
+            Self::Opportunity => "opportunity",
+        }
+    }
+
+    pub fn parse(value: &str) -> Self {
+        match value {
+            "error" => Self::Error,
+            "opportunity" => Self::Opportunity,
+            _ => Self::Warning,
+        }
+    }
+}
+
+/// Aggregated issue count for a rule.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IssueCount {
+    pub rule: String,
+    pub severity: IssueSeverity,
+    pub count: i64,
+}
+
+/// A link edge discovered on a page.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinkRecord {
+    pub from_url: String,
+    pub to_url: String,
+    pub anchor: Option<String>,
+    pub rel: Option<String>,
+    pub internal: bool,
+}
+
+/// A single issue occurrence, stored per URL and rule.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Issue {
+    pub crawl_id: CrawlId,
+    pub url: String,
+    pub rule: String,
+    pub severity: IssueSeverity,
+    pub detail: Option<String>,
 }
 
 #[cfg(test)]

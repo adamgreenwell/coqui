@@ -50,7 +50,7 @@ impl Drop for TestSite {
 }
 
 fn handle_connection(mut stream: TcpStream) {
-    let mut buffer = [0u8; 2048];
+    let mut buffer = [0u8; 4096];
     let read = stream.read(&mut buffer).unwrap_or(0);
     let request = String::from_utf8_lossy(&buffer[..read]);
     let path = request
@@ -59,34 +59,69 @@ fn handle_connection(mut stream: TcpStream) {
         .and_then(|line| line.split_whitespace().nth(1))
         .unwrap_or("/");
 
-    let (status, body) = match path {
+    let (status, content_type, body) = match path {
+        "/robots.txt" => (
+            "200 OK",
+            "text/plain",
+            "User-agent: *\nDisallow: /blocked\n",
+        ),
         "/" => (
             "200 OK",
+            "text/html; charset=utf-8",
             r#"<!doctype html><html><head><title>Home</title>
                  <meta name="description" content="Test home">
-               </head><body><h1>Home</h1>
+                 <link rel="canonical" href="/">
+               </head><body><h1>Home</h1><h1>Second</h1>
                  <a href="/a">A</a>
                  <a href="/b">B</a>
+                 <a href="/redirect">Redirect</a>
+                 <a href="/blocked">Blocked</a>
                  <a href="https://external.invalid/x">External</a>
                </body></html>"#,
         ),
         "/a" => (
             "200 OK",
+            "text/html; charset=utf-8",
             r#"<!doctype html><html><head><title>A</title></head>
                <body><h1>A</h1><a href="/">Home</a></body></html>"#,
         ),
         "/b" => (
             "200 OK",
+            "text/html; charset=utf-8",
             "<!doctype html><html><head><title>B</title></head><body><h1>B</h1></body></html>",
         ),
-        _ => ("404 Not Found", "<html><body>not found</body></html>"),
+        "/redirect" => ("302 Found", "text/html", ""),
+        "/blocked" => (
+            "200 OK",
+            "text/html; charset=utf-8",
+            "<!doctype html><html><head><title>Blocked</title></head><body><h1>Blocked</h1></body></html>",
+        ),
+        _ => (
+            "404 Not Found",
+            "text/html",
+            "<html><body>not found</body></html>",
+        ),
     };
 
-    let response = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+    let mut head = format!(
+        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n",
         body.len()
     );
-    let _ = stream.write_all(response.as_bytes());
+    if path == "/redirect" {
+        head.push_str("Location: /a\r\n");
+    }
+    head.push_str("\r\n");
+    let _ = stream.write_all(head.as_bytes());
+    let _ = stream.write_all(body.as_bytes());
+}
+
+fn config() -> CrawlConfig {
+    CrawlConfig {
+        max_depth: 2,
+        max_urls: 20,
+        concurrency: 4,
+        ..CrawlConfig::default()
+    }
 }
 
 #[tokio::test]
@@ -95,43 +130,90 @@ async fn crawls_a_small_site() {
     let store = Arc::new(Store::open_in_memory().unwrap());
     let crawl_id = "fixture-crawl";
     let seed = format!("{}/", site.base);
-    let config = CrawlConfig {
-        max_depth: 2,
-        max_urls: 10,
-        concurrency: 4,
-        ..CrawlConfig::default()
-    };
+    let config = config();
     store
         .create_crawl(crawl_id, &seed, &config, now_ms())
         .unwrap();
 
-    let progress = Arc::new(|_: CrawlProgress| {});
+    let stats = run_crawl(
+        store.clone(),
+        crawl_id.to_string(),
+        seed.clone(),
+        config,
+        CancellationToken::new(),
+        Arc::new(|_: CrawlProgress| {}),
+    )
+    .await
+    .expect("crawl succeeds");
+
+    // home + a + b + redirect row; /blocked is disallowed by robots.txt.
+    assert_eq!(stats.crawled, 4);
+    assert_eq!(stats.redirected, 1);
+    assert_eq!(stats.failed, 0);
+    assert!(stats.blocked_by_robots >= 1);
+
+    let page = store.list_urls(crawl_id, 1, 20, None).unwrap();
+    assert_eq!(page.total, 4);
+    let home = page
+        .rows
+        .iter()
+        .find(|row| row.url == seed)
+        .expect("home row");
+    assert_eq!(home.title.as_deref(), Some("Home"));
+    assert_eq!(home.h1_count, 2);
+    assert_eq!(home.canonical.as_deref(), Some(seed.as_str()));
+
+    let redirect = page
+        .rows
+        .iter()
+        .find(|row| row.url.ends_with("/redirect"))
+        .expect("redirect row");
+    assert_eq!(redirect.status, Some(302));
+    let redirect_target = format!("{}/a", site.base);
+    assert_eq!(
+        redirect.redirect_target.as_deref(),
+        Some(redirect_target.as_str())
+    );
+    assert!(redirect.redirect_chain.len() >= 1);
+
+    assert!(
+        page.rows.iter().all(|row| !row.url.ends_with("/blocked")),
+        "robots-disallowed URLs must not be crawled"
+    );
+    assert_eq!(store.all_links(crawl_id).unwrap().len(), 6);
+}
+
+#[tokio::test]
+async fn can_ignore_robots() {
+    let site = TestSite::start();
+    let store = Arc::new(Store::open_in_memory().unwrap());
+    let crawl_id = "no-robots";
+    let seed = format!("{}/", site.base);
+    let config = CrawlConfig {
+        respect_robots: false,
+        ..config()
+    };
+    store
+        .create_crawl(crawl_id, &seed, &config, now_ms())
+        .unwrap();
     let stats = run_crawl(
         store.clone(),
         crawl_id.to_string(),
         seed,
         config,
         CancellationToken::new(),
-        progress,
+        Arc::new(|_: CrawlProgress| {}),
     )
     .await
-    .expect("crawl succeeds");
-
-    assert_eq!(stats.crawled, 3, "home + a + b");
-    assert_eq!(stats.failed, 0);
-
-    let page = store.list_urls(crawl_id, 1, 10).unwrap();
-    assert_eq!(page.total, 3);
+    .unwrap();
+    assert_eq!(stats.crawled, 5);
     assert!(
-        page.rows
+        store
+            .list_urls(crawl_id, 1, 20, None)
+            .unwrap()
+            .rows
             .iter()
-            .any(|row| row.title.as_deref() == Some("Home"))
-    );
-    assert!(
-        page.rows
-            .iter()
-            .all(|row| !row.url.contains("external.invalid")),
-        "same-host crawl must not follow external links"
+            .any(|row| row.url.ends_with("/blocked"))
     );
 }
 

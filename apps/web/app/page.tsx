@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 
 const PAGE_SIZE = 50;
@@ -22,6 +22,7 @@ interface CrawlConfig {
   requestTimeoutMs: number;
   userAgent: string;
   sameHostOnly: boolean;
+  respectRobots: boolean;
 }
 
 interface CrawlSummary {
@@ -44,6 +45,11 @@ interface UrlRow {
   title: string | null;
   metaDescription: string | null;
   h1: string | null;
+  h1Count: number;
+  canonical: string | null;
+  metaRobots: string | null;
+  redirectTarget: string | null;
+  redirectChain: string[];
   wordCount: number | null;
   depth: number;
   responseTimeMs: number | null;
@@ -72,14 +78,58 @@ interface CrawlFinished {
   error: string | null;
 }
 
+type Severity = 'error' | 'warning' | 'opportunity';
+
+interface IssueCount {
+  rule: string;
+  severity: Severity;
+  count: number;
+}
+
+const ISSUE_LABELS: Record<string, string> = {
+  missing_title: 'Missing title',
+  title_too_long: 'Title too long',
+  missing_meta_description: 'Missing meta description',
+  multiple_h1: 'Multiple H1 headings',
+  thin_content: 'Thin content',
+  broken_internal_link: 'Broken internal link',
+};
+
 const STATUS_LABEL: Record<string, string> = {
   idle: 'Ready',
   pending: 'Starting',
   running: 'Crawling',
-  paused: 'Paused',
   completed: 'Completed',
   failed: 'Failed',
   cancelled: 'Cancelled',
+};
+
+const COLUMNS = [
+  { key: 'status', label: 'Status' },
+  { key: 'url', label: 'URL' },
+  { key: 'title', label: 'Title' },
+  { key: 'h1', label: 'H1' },
+  { key: 'words', label: 'Words' },
+  { key: 'canonical', label: 'Canonical' },
+  { key: 'robots', label: 'Robots' },
+  { key: 'redirect', label: 'Redirect' },
+  { key: 'depth', label: 'Depth' },
+  { key: 'time', label: 'Time' },
+] as const;
+
+type ColumnKey = (typeof COLUMNS)[number]['key'];
+
+const DEFAULT_COLUMNS: Record<ColumnKey, boolean> = {
+  status: true,
+  url: true,
+  title: true,
+  h1: true,
+  words: true,
+  canonical: true,
+  robots: false,
+  redirect: false,
+  depth: false,
+  time: false,
 };
 
 function statusCodeClass(row: UrlRow): string {
@@ -114,6 +164,7 @@ export default function Home() {
   const [maxUrls, setMaxUrls] = useState(250);
   const [concurrency, setConcurrency] = useState(8);
   const [sameHostOnly, setSameHostOnly] = useState(true);
+  const [respectRobots, setRespectRobots] = useState(true);
 
   const [crawl, setCrawl] = useState<CrawlSummary | null>(null);
   const [phase, setPhase] = useState<CrawlStatus | 'idle'>('idle');
@@ -121,23 +172,37 @@ export default function Home() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [progress, setProgress] = useState<CrawlProgress | null>(null);
+  const [issues, setIssues] = useState<IssueCount[]>([]);
+  const [activeIssue, setActiveIssue] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [exportPath, setExportPath] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [columns, setColumns] = useState<Record<ColumnKey, boolean>>(DEFAULT_COLUMNS);
+  const [columnsOpen, setColumnsOpen] = useState(false);
 
   useEffect(() => {
     setIsTauri(typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window);
   }, []);
 
-  const refresh = useCallback(async (crawlId: string, pageNumber: number) => {
+  const loadPage = useCallback(
+    async (crawlId: string, pageNumber: number, issue: string | null) => {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const data = await invoke<UrlPage>('list_urls', {
+        crawlId,
+        page: pageNumber,
+        pageSize: PAGE_SIZE,
+        issue,
+      });
+      setRows(data.rows);
+      setTotal(data.total);
+    },
+    [],
+  );
+
+  const loadIssues = useCallback(async (crawlId: string) => {
     const { invoke } = await import('@tauri-apps/api/core');
-    const data = await invoke<UrlPage>('list_urls', {
-      crawlId,
-      page: pageNumber,
-      pageSize: PAGE_SIZE,
-    });
-    setRows(data.rows);
-    setTotal(data.total);
+    const counts = await invoke<IssueCount[]>('get_issue_counts', { crawlId });
+    setIssues(counts);
   }, []);
 
   useEffect(() => {
@@ -152,7 +217,11 @@ export default function Home() {
       const offFinished = await listen<CrawlFinished>('crawl-finished', async (event) => {
         setPhase(event.payload.status);
         if (event.payload.error) setError(event.payload.error);
-        await refresh(event.payload.crawlId, 1);
+        setActiveIssue(null);
+        await Promise.all([
+          loadPage(event.payload.crawlId, 1, null),
+          loadIssues(event.payload.crawlId),
+        ]);
         setPage(1);
       });
       if (!active) {
@@ -166,15 +235,15 @@ export default function Home() {
       active = false;
       cleanups.forEach((fn) => fn());
     };
-  }, [isTauri, refresh]);
+  }, [isTauri, loadPage, loadIssues]);
 
   useEffect(() => {
     if (!isTauri || phase !== 'running' || !crawl) return;
     const timer = setInterval(() => {
-      refresh(crawl.id, page).catch(() => undefined);
+      loadPage(crawl.id, page, activeIssue).catch(() => undefined);
     }, 1200);
     return () => clearInterval(timer);
-  }, [isTauri, phase, crawl, page, refresh]);
+  }, [isTauri, phase, crawl, page, activeIssue, loadPage]);
 
   async function startCrawl(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -183,6 +252,8 @@ export default function Home() {
     setExportPath(null);
     setRows([]);
     setTotal(0);
+    setIssues([]);
+    setActiveIssue(null);
     setPage(1);
     setProgress(null);
     try {
@@ -194,6 +265,7 @@ export default function Home() {
         requestTimeoutMs: 15000,
         userAgent: USER_AGENT,
         sameHostOnly,
+        respectRobots,
       };
       const summary = await invoke<CrawlSummary>('create_crawl', { seed, config });
       setCrawl(summary);
@@ -228,7 +300,18 @@ export default function Home() {
     if (!crawl) return;
     setPage(next);
     try {
-      await refresh(crawl.id, next);
+      await loadPage(crawl.id, next, activeIssue);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }
+
+  async function filterByIssue(rule: string | null) {
+    if (!crawl) return;
+    setActiveIssue(rule);
+    setPage(1);
+    try {
+      await loadPage(crawl.id, 1, rule);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
@@ -237,7 +320,66 @@ export default function Home() {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const isRunning = phase === 'running' || phase === 'pending';
   const cap = crawl?.config.maxUrls ?? maxUrls;
-  const percent = progress ? Math.min(100, Math.round((progress.crawled / Math.max(1, cap)) * 100)) : 0;
+  const target = Math.max(1, Math.min(cap, progress?.discovered || cap));
+  const percent = progress
+    ? Math.min(100, Math.round((progress.crawled / target) * 100))
+    : 0;
+  const displayUrl = phase === 'running' ? progress?.currentUrl : crawl?.seed;
+  const issueTotal = useMemo(
+    () => issues.reduce((sum, issue) => sum + issue.count, 0),
+    [issues],
+  );
+
+  function cell(row: UrlRow, key: ColumnKey) {
+    switch (key) {
+      case 'status':
+        return (
+          <span className={`status-chip ${statusCodeClass(row)}`}>
+            {row.error ? 'ERR' : (row.status ?? '—')}
+          </span>
+        );
+      case 'url':
+        return (
+          <div className="url-cell" title={row.url}>
+            {row.url}
+          </div>
+        );
+      case 'title':
+        return (
+          <div className="title-cell" title={row.title ?? ''}>
+            {row.title ?? '—'}
+          </div>
+        );
+      case 'h1':
+        return (
+          <div className="title-cell" title={row.h1 ?? ''}>
+            {row.h1 ?? '—'}
+          </div>
+        );
+      case 'words':
+        return row.wordCount ?? '—';
+      case 'canonical':
+        return (
+          <div className="title-cell mono" title={row.canonical ?? ''}>
+            {row.canonical ?? '—'}
+          </div>
+        );
+      case 'robots':
+        return row.metaRobots ?? '—';
+      case 'redirect':
+        return (
+          <div className="title-cell mono" title={row.redirectTarget ?? ''}>
+            {row.redirectTarget ?? '—'}
+          </div>
+        );
+      case 'depth':
+        return row.depth;
+      case 'time':
+        return row.responseTimeMs != null ? `${row.responseTimeMs} ms` : '—';
+      default:
+        return null;
+    }
+  }
 
   return (
     <div className="app">
@@ -249,7 +391,7 @@ export default function Home() {
           <span className="brand-name">
             coqu<em>í</em>
           </span>
-          <span className="badge">M0 walking skeleton</span>
+          <span className="badge">M1 crawl audit</span>
         </div>
         <div className="topbar-right">
           <span className="badge">{isTauri ? 'Desktop' : 'Browser preview'}</span>
@@ -260,8 +402,8 @@ export default function Home() {
         <aside className="panel sidebar">
           <h2>New crawl</h2>
           <p className="hint">
-            Point Coqui at a site. It follows same-host links, extracts the core SEO fields and
-            stores every row in a portable SQLite crawl file.
+            Same-host breadth-first crawl with robots.txt, redirect chains and the first audit
+            rules. Every row lands in a portable SQLite crawl file.
           </p>
           <form onSubmit={startCrawl}>
             <div className="field">
@@ -323,6 +465,15 @@ export default function Home() {
               />
               Stay on the seed host
             </label>
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={respectRobots}
+                onChange={(event) => setRespectRobots(event.target.checked)}
+                disabled={isRunning}
+              />
+              Respect robots.txt
+            </label>
             <button className="primary" type="submit" disabled={!isTauri || busy || isRunning}>
               {isRunning ? 'Crawling…' : 'Start crawl'}
             </button>
@@ -339,8 +490,7 @@ export default function Home() {
           </form>
 
           <p className="footer-note" style={{ marginTop: 18, marginBottom: 0 }}>
-            Next up in this slice: robots.txt, redirect chains, issue checks and the full column
-            registry.
+            Next up: persisted frontier and resume, sitemap seeds, then the full column registry.
           </p>
         </aside>
 
@@ -362,10 +512,10 @@ export default function Home() {
                 {crawl && <span className="badge">{new URL(crawl.seed).host}</span>}
               </div>
               <div className="status-sub">
-                {progress?.currentUrl ??
+                {displayUrl ??
                   (crawl
-                    ? `Crawling ${crawl.seed}`
-                    : 'Start a crawl to see live results. This slice stores title, meta description, H1, word count, status and timing.')}
+                    ? 'Crawl finished. Review the audit below.'
+                    : 'Start a crawl to see live results and audit issues.')}
               </div>
             </div>
             <div className="metrics">
@@ -378,6 +528,10 @@ export default function Home() {
                 <strong>{progress?.discovered ?? total}</strong>
               </div>
               <div>
+                Issues
+                <strong>{issueTotal}</strong>
+              </div>
+              <div>
                 Limit
                 <strong>{cap}</strong>
               </div>
@@ -387,13 +541,82 @@ export default function Home() {
             </div>
           </section>
 
+          {issues.length > 0 && (
+            <section className="panel issues-panel">
+              <div className="issues-head">
+                <h2>Audit</h2>
+                <button
+                  className={`chip ${activeIssue === null ? 'active' : ''}`}
+                  type="button"
+                  onClick={() => filterByIssue(null)}
+                >
+                  All URLs
+                </button>
+              </div>
+              <div className="issue-grid">
+                {issues.map((issue) => (
+                  <button
+                    key={`${issue.rule}-${issue.severity}`}
+                    type="button"
+                    className={`issue-card ${issue.severity} ${
+                      activeIssue === issue.rule ? 'active' : ''
+                    }`}
+                    onClick={() => filterByIssue(issue.rule)}
+                  >
+                    <span className="issue-count">{issue.count}</span>
+                    <span className="issue-label">
+                      {ISSUE_LABELS[issue.rule] ?? issue.rule}
+                    </span>
+                    <span className="issue-sev">{issue.severity}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
           <section className="panel results">
             <div className="results-head">
               <h2>
                 URLs <span className="count">{total.toLocaleString()}</span>
+                {activeIssue && (
+                  <span className="filter-chip">
+                    {ISSUE_LABELS[activeIssue] ?? activeIssue}
+                    <button type="button" onClick={() => filterByIssue(null)} aria-label="Clear filter">
+                      ×
+                    </button>
+                  </span>
+                )}
               </h2>
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <div className="results-actions">
                 {exportPath && <span className="export-path">{exportPath}</span>}
+                <div className="columns-wrap">
+                  <button
+                    className="secondary"
+                    type="button"
+                    onClick={() => setColumnsOpen((open) => !open)}
+                  >
+                    Columns
+                  </button>
+                  {columnsOpen && (
+                    <div className="columns-menu">
+                      {COLUMNS.map((column) => (
+                        <label key={column.key}>
+                          <input
+                            type="checkbox"
+                            checked={columns[column.key]}
+                            onChange={(event) =>
+                              setColumns((current) => ({
+                                ...current,
+                                [column.key]: event.target.checked,
+                              }))
+                            }
+                          />
+                          {column.label}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <button
                   className="secondary"
                   type="button"
@@ -407,59 +630,43 @@ export default function Home() {
 
             {rows.length === 0 ? (
               <div className="empty">
-                <strong>No URLs yet</strong>
+                <strong>{activeIssue ? 'No URLs match this issue' : 'No URLs yet'}</strong>
                 {crawl && isRunning
                   ? 'Waiting for the first response…'
-                  : 'Start a crawl and rows will stream in here.'}
+                  : activeIssue
+                    ? 'Clear the filter to see the whole crawl.'
+                    : 'Start a crawl and rows will stream in here.'}
               </div>
             ) : (
               <div className="table-wrap">
                 <table>
                   <thead>
                     <tr>
-                      <th style={{ width: 70 }}>Status</th>
-                      <th>URL</th>
-                      <th>Title</th>
-                      <th>H1</th>
-                      <th style={{ width: 70 }} className="num">
-                        Words
-                      </th>
-                      <th style={{ width: 60 }} className="num">
-                        Depth
-                      </th>
-                      <th style={{ width: 80 }} className="num">
-                        Time
-                      </th>
+                      {COLUMNS.filter((column) => columns[column.key]).map((column) => (
+                        <th
+                          key={column.key}
+                          className={
+                            ['words', 'depth', 'time'].includes(column.key) ? 'num' : undefined
+                          }
+                        >
+                          {column.label}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
                     {rows.map((row) => (
                       <tr key={row.id}>
-                        <td>
-                          <span className={`status-chip ${statusCodeClass(row)}`}>
-                            {row.error ? 'ERR' : (row.status ?? '—')}
-                          </span>
-                        </td>
-                        <td>
-                          <div className="url-cell" title={row.url}>
-                            {row.url}
-                          </div>
-                        </td>
-                        <td>
-                          <div className="title-cell" title={row.title ?? ''}>
-                            {row.title ?? '—'}
-                          </div>
-                        </td>
-                        <td>
-                          <div className="title-cell" title={row.h1 ?? ''}>
-                            {row.h1 ?? '—'}
-                          </div>
-                        </td>
-                        <td className="num">{row.wordCount ?? '—'}</td>
-                        <td className="num">{row.depth}</td>
-                        <td className="num">
-                          {row.responseTimeMs != null ? `${row.responseTimeMs} ms` : '—'}
-                        </td>
+                        {COLUMNS.filter((column) => columns[column.key]).map((column) => (
+                          <td
+                            key={column.key}
+                            className={
+                              ['words', 'depth', 'time'].includes(column.key) ? 'num' : undefined
+                            }
+                          >
+                            {cell(row, column.key)}
+                          </td>
+                        ))}
                       </tr>
                     ))}
                   </tbody>
@@ -493,12 +700,13 @@ export default function Home() {
           </section>
 
           <p className="footer-note">
-            M0 scope: one seed, same-host BFS, concurrent HTTP, SQLite persistence, live progress
-            and CSV export. Rendering, robots.txt, issue rules and the full 220-column model follow
-            in phases 1–2.
+            M1 scope: robots.txt, manual redirect chains, canonical/meta-robots extraction, link
+            edges, six audit rules and issue filtering. Rendering, sitemap seeds and resume follow.
           </p>
         </main>
       </div>
     </div>
   );
 }
+
+

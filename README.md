@@ -4,13 +4,13 @@
 
 Named after the *coquí*, the tiny frog native to Puerto Rico whose call is everywhere on the island and nowhere else.
 
-![Coqui M0 desktop shell: crawl form, live status and results grid](docs/images/coqui-results.png)
+![Coqui M1: audit issues, robots-aware crawl results and the results grid](docs/images/coqui-m1.png)
 
 > Coqui is an independent clean-room project. It is not affiliated with, endorsed by, or derived from Screaming Frog code or assets. "Screaming Frog" is a trademark of its owner.
 
 ## Status
 
-**M0 walking skeleton.** The parity target has been reverse-engineered and inventoried; the Tauri 2 shell, Rust crawl engine, SQLite store and a live Next.js results view are in place.
+**M1 crawl audit.** The parity target has been reverse-engineered and inventoried; the Tauri 2 shell, Rust crawl engine, robots.txt and redirect handling, six audit rules and the live Next.js results view are in place.
 
 - [Feature inventory](docs/feature-inventory.md) — what the reference product does, measured
 - [Development plan](docs/development-plan.md) — architecture, phases, estimates, risks
@@ -86,6 +86,7 @@ The backlog is the roadmap. Pick an issue from the board, comment to claim it, a
 ## License
 
 To be decided by the project owner before the first code release (MIT or Apache-2.0 are the candidates). Until then, no license is granted for reuse.
+
 
 
 

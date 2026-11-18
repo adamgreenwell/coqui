@@ -17,7 +17,7 @@ jobs:
       - name: Formatting
         run: cargo fmt --all --check
       - name: Tests (core, store, crawl)
-        run: cargo test -p coqui-core -p coqui-store -p coqui-crawl
+        run: cargo test -p coqui-core -p coqui-store -p coqui-crawl -p coqui-audit
 
   web:
     name: Next.js static export
@@ -32,3 +32,4 @@ jobs:
         run: npm ci
       - name: Build
         run: npm run build:web
+

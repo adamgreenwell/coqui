@@ -463,6 +463,7 @@ dependencies = [
 name = "coqui-app"
 version = "0.1.0"
 dependencies = [
+ "coqui-audit",
  "coqui-core",
  "coqui-crawl",
  "coqui-store",
@@ -475,6 +476,15 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "coqui-audit"
+version = "0.1.0"
+dependencies = [
+ "coqui-core",
+ "coqui-store",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -500,6 +510,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "url",
 ]
 
 [[package]]

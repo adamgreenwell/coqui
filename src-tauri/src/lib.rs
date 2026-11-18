@@ -4,7 +4,8 @@
 //! the same engine can back the CLI and an HTTP API later.
 
 use coqui_core::{
-    CrawlConfig, CrawlProgress, CrawlStatus, CrawlSummary, UrlPage, normalize_url, now_ms,
+    CrawlConfig, CrawlProgress, CrawlStatus, CrawlSummary, IssueCount, UrlPage, normalize_url,
+    now_ms,
 };
 use coqui_store::Store;
 use std::collections::HashMap;
@@ -55,10 +56,22 @@ fn list_urls(
     crawl_id: String,
     page: u32,
     page_size: u32,
+    issue: Option<String>,
 ) -> Result<UrlPage, String> {
     state
         .store
-        .list_urls(&crawl_id, page, page_size)
+        .list_urls(&crawl_id, page, page_size, issue.as_deref())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn get_issue_counts(
+    state: State<'_, AppState>,
+    crawl_id: String,
+) -> Result<Vec<IssueCount>, String> {
+    state
+        .store
+        .issue_counts(&crawl_id)
         .map_err(|error| error.to_string())
 }
 
@@ -100,6 +113,11 @@ fn start_crawl(app: AppHandle, state: State<'_, AppState>, crawl_id: String) -> 
             Err(coqui_crawl::CrawlError::Cancelled) => (CrawlStatus::Cancelled, None),
             Err(error) => (CrawlStatus::Failed, Some(error.to_string())),
         };
+        if status == CrawlStatus::Completed {
+            if let Err(error) = coqui_audit::analyze_crawl(&store, &id) {
+                tracing::warn!(%error, crawl_id = %id, "audit rules failed");
+            }
+        }
         let _ = store.mark_finished(&id, status, now_ms());
         if let Ok(mut registry) = app_handle.state::<AppState>().cancels.lock() {
             registry.remove(&id);
@@ -168,6 +186,7 @@ pub fn run() {
             create_crawl,
             get_crawl,
             list_urls,
+            get_issue_counts,
             start_crawl,
             cancel_crawl,
             export_csv

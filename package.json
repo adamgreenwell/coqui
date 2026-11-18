@@ -10,6 +10,7 @@
     "dev:web": "npm --prefix apps/web run dev",
     "build": "tauri build",
     "build:web": "npm --prefix apps/web run build",
+    "fixture": "node tools/fixture/site.mjs 4173",
     "check": "cargo check --workspace",
     "test": "cargo test --workspace"
   },
@@ -17,3 +18,4 @@
     "@tauri-apps/cli": "^2.12.5"
   }
 }
+
