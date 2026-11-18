@@ -29,7 +29,7 @@ Cloudflare challenges plain HTTP clients, including a browser user-agent. A real
 | Metric | Value |
 | --- | --- |
 | Sitemap | `/sitemap_index.xml`, 24 sub-sitemaps, 16,704 URLs (15,904 unique seeds) |
-| Runs | three 3,000-URL validation runs plus one 18,000-URL full crawl |
+| Runs | three 3,000-URL runs, one 18,000-URL cookie crawl, one 28,809-URL allowlisted crawl |
 | Status (clean run) | 2,999 × 200, 1 × 404, 0 blocked |
 | Issues (clean run) | 2,472 titles > 60 chars, 2 missing meta, 2 multiple H1 |
 | Throughput | ~8–19 URLs/s at concurrency 20–40; concurrency 60 triggered 429 rate limiting, 24 was stable |
@@ -72,6 +72,23 @@ Validation: with a refreshed session the full 3,000-URL run completed with **0 b
 
 The session cookie survived ~16,000 URLs, then 2,000 tail requests became challenges. Because blocked responses were only 11% of the crawl, the original half-of-crawl abort rule did not fire; the threshold now also aborts at 100 blocked responses when they exceed 10% of the crawl.
 
+### Allowlisted full crawl (no cookies)
+
+After adding the crawler egress IP to Cloudflare's allowlist, the site no longer challenged plain HTTP clients. No cookie was supplied.
+
+| Metric | Value |
+| --- | --- |
+| URLs crawled | 28,809 (frontier exhausted) |
+| Discovered | 29,002 |
+| Status | 25,767 × 200, 1,901 × 301, 17 × 302, 1,114 × 404, 7 × 410, 3 errors, 0 blocked |
+| Time | 31.9 min (15.1 URLs/s) |
+| Links | 2,600,990 |
+| URL map | 101,993 URLs |
+| DB | 383.2 MB (links 143 MB, indexes 172 MB, URL map 37 MB, URLs 13 MB) |
+| Issues | 11,919 long titles, 5,098 duplicate titles, 4,776 long descriptions, 3,820 missing meta, 3,169 missing canonical, 1,530 duplicate descriptions, 546 short titles, 272 broken links, 39 multiple H1, 18 missing H1, 13 canonical mismatches |
+
+The remaining depth budget stopped 193 discovered links from being crawled. Duplicate titles, missing canonicals and missing descriptions cluster on archive/pagination templates; 301/404 rows are legacy URLs still linked from live pages. Dropping `idx_links_crawl_to` would save ~84 MB.
+
 ### Expanded audit pass
 
 Re-analysing the 3,000-page crawl with the new rules produced:
@@ -102,6 +119,7 @@ The 714 over-long descriptions are a genuine WordPress excerpt problem; the 43 d
 3. Extend audit rules (canonical mismatch, missing H1, hreflang, pagination).
 4. Classify assets (X-04) so images stop counting as HTML URL rows.
 5. Incremental frontier for 100k-scale crawls (C-01).
+
 
 
 
