@@ -6,8 +6,9 @@ Coqui can render pages in an external headless Chrome/Edge before extraction. Th
 
 - `coqui-render` speaks the Chrome DevTools Protocol over a local WebSocket.
 - It launches a headless browser on a random debugging port with a throwaway profile, or connects to `COQUI_CDP_ENDPOINT` if set.
+- A `RenderPool` runs several browser workers in parallel (1–8, default 2); each worker renders one page at a time.
 - For each page it creates a tab, navigates, polls `document.readyState` until `complete`, waits `render_wait_ms`, reads `document.documentElement.outerHTML`, and closes the tab.
-- Rendering is serialised per crawl: one page at a time per renderer. Raw fetches still run concurrently around it.
+- Each worker is serialised; the pool renders `render_workers` pages concurrently. Raw fetches still run concurrently around it.
 - `coqui-crawl` fetches the page normally for status/headers/blocking, then replaces the HTML body with the rendered DOM when `render` is enabled.
 
 ## Configuration
@@ -17,15 +18,24 @@ Coqui can render pages in an external headless Chrome/Edge before extraction. Th
 | `render` | Render pages before extraction |
 | `browserPath` | Optional explicit Chrome/Edge executable |
 | `renderWaitMs` | Extra delay after load (default 500 ms) |
+| `renderWorkers` | Number of browser workers (1–8, default 2) |
 
-Environment overrides for the CLI/harness: `COQUI_BROWSER_PATH`, `COQUI_CDP_ENDPOINT`, `COQUI_RENDER=1`, `COQUI_RENDER_WAIT`.
+Environment overrides for the CLI/harness: `COQUI_BROWSER_PATH`, `COQUI_CDP_ENDPOINT`, `COQUI_RENDER=1`, `COQUI_RENDER_WAIT`, `COQUI_RENDER_WORKERS`.
 
 Auto-detection order: `COQUI_BROWSER_PATH`, configured path, then Edge/Chrome in their standard install locations.
 
+## Authenticated rendering
+
+Custom headers, cookies and the configured user agent are pushed into each browser session before navigation:
+
+- `Cookie` headers are split into `Network.setCookie` calls for the page URL.
+- Other headers go through `Network.setExtraHTTPHeaders`; basic auth becomes an `Authorization` header.
+- User agent is applied with `Emulation.setUserAgentOverride`.
+
 ## Limits
 
-- Rendering is serialised; large rendered crawls will be slow. A browser pool is the next step.
-- No request interception, cookie injection into the browser context, or authenticated rendering yet.
+- A worker renders one page at a time; the pool size is the concurrency limit.
+- No request interception or response body capture yet.
 - No screenshots, console/network capture, Lighthouse or axe.
 - Pages that never reach `readyState=complete` fail after 20 seconds and fall back to the raw HTML.
 
@@ -34,3 +44,4 @@ Auto-detection order: `COQUI_BROWSER_PATH`, configured path, then Edge/Chrome in
 - `cargo test -p coqui-render -- --ignored` runs the live browser test (requires Chrome/Edge).
 - `node tools/fixture/site.mjs 4174`, then `COQUI_RENDER=1 cargo run -p coqui-crawl --example audit -- url http://127.0.0.1:4174/js out 1 1` should record the JS-generated title and H1.
 - Live check: `cargo run -p coqui-render --example render -- https://www.landscapemanagement.net/` returned ~274 KB of rendered HTML.
+

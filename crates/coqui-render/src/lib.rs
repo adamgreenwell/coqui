@@ -33,11 +33,20 @@ pub enum RenderError {
 
 type Ws = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
+/// Session material applied to every rendered page.
+#[derive(Debug, Clone, Default)]
+pub struct RenderOptions {
+    pub user_agent: Option<String>,
+    pub headers: Vec<(String, String)>,
+    pub cookies: Vec<(String, String)>,
+}
+
 pub struct Renderer {
     ws: Mutex<Ws>,
     next_id: AtomicU64,
     child: StdMutex<Option<Child>>,
     wait_ms: u64,
+    options: RenderOptions,
 }
 
 impl Renderer {
@@ -45,6 +54,7 @@ impl Renderer {
     pub async fn connect(
         browser_path: Option<&str>,
         wait_ms: u64,
+        options: RenderOptions,
     ) -> Result<Arc<Self>, RenderError> {
         let (endpoint, child) = match std::env::var("COQUI_CDP_ENDPOINT") {
             Ok(endpoint) if !endpoint.is_empty() => {
@@ -72,6 +82,7 @@ impl Renderer {
             next_id: AtomicU64::new(1),
             child: StdMutex::new(child),
             wait_ms,
+            options,
         }))
     }
 
@@ -106,6 +117,38 @@ impl Renderer {
             .ok_or_else(|| RenderError::Protocol("no session id".into()))?
             .to_string();
         self.call("Page.enable", json!({}), Some(&session)).await?;
+        self.call("Network.enable", json!({}), Some(&session))
+            .await?;
+        if let Some(user_agent) = &self.options.user_agent {
+            self.call(
+                "Emulation.setUserAgentOverride",
+                json!({"userAgent": user_agent}),
+                Some(&session),
+            )
+            .await?;
+        }
+        if !self.options.headers.is_empty() {
+            let headers: serde_json::Map<String, Value> = self
+                .options
+                .headers
+                .iter()
+                .map(|(name, value)| (name.clone(), Value::String(value.clone())))
+                .collect();
+            self.call(
+                "Network.setExtraHTTPHeaders",
+                json!({"headers": headers}),
+                Some(&session),
+            )
+            .await?;
+        }
+        for (name, value) in &self.options.cookies {
+            self.call(
+                "Network.setCookie",
+                json!({"name": name, "value": value, "url": url}),
+                Some(&session),
+            )
+            .await?;
+        }
         self.call("Page.navigate", json!({"url": url}), Some(&session))
             .await?;
 
@@ -281,4 +324,41 @@ fn find_browser(configured: Option<&str>) -> Option<PathBuf> {
         .iter()
         .map(PathBuf::from)
         .find(|path| path.exists())
+}
+
+/// A fixed-size pool of renderer browsers with session material applied to each.
+pub struct RenderPool {
+    workers: Vec<Arc<Renderer>>,
+    next: AtomicU64,
+    permits: tokio::sync::Semaphore,
+}
+
+impl RenderPool {
+    pub async fn connect(
+        workers: usize,
+        browser_path: Option<&str>,
+        wait_ms: u64,
+        options: RenderOptions,
+    ) -> Result<Arc<Self>, RenderError> {
+        let workers = workers.clamp(1, 8);
+        let mut pool = Vec::with_capacity(workers);
+        for _ in 0..workers {
+            pool.push(Renderer::connect(browser_path, wait_ms, options.clone()).await?);
+        }
+        Ok(Arc::new(Self {
+            workers: pool,
+            next: AtomicU64::new(0),
+            permits: tokio::sync::Semaphore::new(workers),
+        }))
+    }
+
+    pub async fn render(&self, url: &str) -> Result<String, RenderError> {
+        let _permit = self
+            .permits
+            .acquire()
+            .await
+            .map_err(|_| RenderError::Other("render pool closed".into()))?;
+        let index = (self.next.fetch_add(1, Ordering::Relaxed) as usize) % self.workers.len();
+        self.workers[index].render(url).await
+    }
 }

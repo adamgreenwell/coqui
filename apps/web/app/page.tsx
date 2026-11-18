@@ -47,6 +47,7 @@ interface CrawlConfig {
   render: boolean;
   browserPath: string | null;
   renderWaitMs: number;
+  renderWorkers: number;
 }
 
 interface CrawlSummary {
@@ -215,6 +216,7 @@ export default function Home() {
   const [render, setRender] = useState(false);
   const [browserPath, setBrowserPath] = useState('');
   const [renderWaitMs, setRenderWaitMs] = useState(500);
+  const [renderWorkers, setRenderWorkers] = useState(2);
 
   const [crawl, setCrawl] = useState<CrawlSummary | null>(null);
   const [phase, setPhase] = useState<CrawlStatus | 'idle'>('idle');
@@ -329,6 +331,7 @@ export default function Home() {
         render,
         browserPath: browserPath.trim() || null,
         renderWaitMs,
+        renderWorkers,
       };
       const summary = await invoke<CrawlSummary>('create_crawl', {
         seedKind,
@@ -665,6 +668,18 @@ export default function Home() {
                       step={100}
                       value={renderWaitMs}
                       onChange={(event) => setRenderWaitMs(Number(event.target.value))}
+                      disabled={isRunning}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="renderWorkers">Render workers</label>
+                    <input
+                      id="renderWorkers"
+                      type="number"
+                      min={1}
+                      max={8}
+                      value={renderWorkers}
+                      onChange={(event) => setRenderWorkers(Number(event.target.value))}
                       disabled={isRunning}
                     />
                   </div>

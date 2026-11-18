@@ -13,7 +13,7 @@ use base64::engine::general_purpose::STANDARD;
 use coqui_core::{
     CrawlCheckpoint, CrawlConfig, CrawlProgress, NewUrl, UrlError, now_ms, resolve_url,
 };
-use coqui_render::Renderer;
+use coqui_render::{RenderOptions, RenderPool};
 use coqui_store::{Store, StoreError};
 use futures::{StreamExt, stream};
 use regex::Regex;
@@ -224,10 +224,42 @@ pub async fn run_crawl(
     }
 
     let renderer = if config.render {
+        let mut headers = Vec::new();
+        let mut cookies = Vec::new();
+        for line in &config.custom_headers {
+            let Some((name, value)) = line.split_once(':') else {
+                continue;
+            };
+            let name = name.trim().to_string();
+            let value = value.trim().to_string();
+            if name.eq_ignore_ascii_case("cookie") {
+                for pair in value.split(';') {
+                    if let Some((cookie, cookie_value)) = pair.trim().split_once('=') {
+                        cookies.push((cookie.trim().to_string(), cookie_value.trim().to_string()));
+                    }
+                }
+            } else {
+                headers.push((name, value));
+            }
+        }
+        if let (Some(user), password) = (&config.auth_user, &config.auth_password) {
+            let token = STANDARD.encode(format!("{user}:{}", password.clone().unwrap_or_default()));
+            headers.push(("Authorization".into(), format!("Basic {token}")));
+        }
+        let options = RenderOptions {
+            user_agent: Some(config.user_agent.clone()),
+            headers,
+            cookies,
+        };
         Some(
-            Renderer::connect(config.browser_path.as_deref(), config.render_wait_ms)
-                .await
-                .map_err(|error| CrawlError::Config(format!("renderer unavailable: {error}")))?,
+            RenderPool::connect(
+                config.render_workers as usize,
+                config.browser_path.as_deref(),
+                config.render_wait_ms,
+                options,
+            )
+            .await
+            .map_err(|error| CrawlError::Config(format!("renderer unavailable: {error}")))?,
         )
     } else {
         None
@@ -529,7 +561,11 @@ fn path_of(url: &str) -> String {
         .unwrap_or_else(|_| "/".to_string())
 }
 
-async fn fetch(client: &Client, requested: &str, renderer: Option<Arc<Renderer>>) -> FetchOutcome {
+async fn fetch(
+    client: &Client,
+    requested: &str,
+    renderer: Option<Arc<RenderPool>>,
+) -> FetchOutcome {
     let debug = std::env::var_os("COQUI_DEBUG_CRAWL").is_some();
     if debug {
         eprintln!("fetch: GET {requested}");

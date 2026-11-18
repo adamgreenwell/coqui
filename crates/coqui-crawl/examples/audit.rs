@@ -94,6 +94,10 @@ async fn main() {
                 .ok()
                 .and_then(|value| value.parse().ok())
                 .unwrap_or(500),
+            render_workers: std::env::var("COQUI_RENDER_WORKERS")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(2),
             ..CrawlConfig::default()
         };
         store
@@ -103,6 +107,10 @@ async fn main() {
     };
     let mut config = config;
     config.render = std::env::var_os("COQUI_RENDER").is_some();
+    config.render_workers = std::env::var("COQUI_RENDER_WORKERS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(2);
     if let Some(user_agent) = &user_agent {
         config.user_agent = user_agent.clone();
     }

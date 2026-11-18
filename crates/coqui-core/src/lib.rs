@@ -52,6 +52,9 @@ pub struct CrawlConfig {
     /// Extra delay after load before reading the DOM.
     #[serde(default = "default_render_wait_ms")]
     pub render_wait_ms: u64,
+    /// Number of concurrent renderer browsers.
+    #[serde(default = "default_render_workers")]
+    pub render_workers: u32,
     /// Only crawl discovered URLs matching at least one pattern (empty = all).
     #[serde(default)]
     pub include_patterns: Vec<String>,
@@ -77,6 +80,10 @@ fn default_render_wait_ms() -> u64 {
     500
 }
 
+fn default_render_workers() -> u32 {
+    2
+}
+
 impl Default for CrawlConfig {
     fn default() -> Self {
         Self {
@@ -93,6 +100,7 @@ impl Default for CrawlConfig {
             render: false,
             browser_path: None,
             render_wait_ms: 500,
+            render_workers: 2,
             include_patterns: Vec::new(),
             exclude_patterns: Vec::new(),
             auth_user: None,

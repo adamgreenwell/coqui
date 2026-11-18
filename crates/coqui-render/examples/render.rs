@@ -9,7 +9,7 @@ async fn main() {
         .nth(2)
         .and_then(|value| value.parse().ok())
         .unwrap_or(500);
-    match Renderer::connect(None, wait_ms).await {
+    match Renderer::connect(None, wait_ms, coqui_render::RenderOptions::default()).await {
         Ok(renderer) => match renderer.render(&url).await {
             Ok(html) => {
                 println!("rendered {} bytes", html.len());
