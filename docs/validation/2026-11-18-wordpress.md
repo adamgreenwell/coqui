@@ -58,6 +58,22 @@ R-08 now:
 
 Validation: with a refreshed session the full 3,000-URL run completed with **0 blocked** and a clean issue set. With the stale session, the crawl aborted after 63 challenge responses instead of storing 1,426 bogus rows.
 
+### Expanded audit pass
+
+Re-analysing the 3,000-page crawl with the new rules produced:
+
+| Rule | Count |
+| --- | --- |
+| title_too_long | 2,472 |
+| meta_description_too_long | 714 |
+| duplicate_title | 43 |
+| duplicate_meta_description | 40 |
+| missing_meta_description | 2 |
+| multiple_h1 | 2 |
+| missing_h1 / canonical_mismatch / missing_canonical / title_too_short | 0 |
+
+The 714 over-long descriptions are a genuine WordPress excerpt problem; the 43 duplicate titles and 40 duplicate descriptions point at archive/template pages worth reviewing.
+
 ## Scale test (synthetic, local)
 
 | URLs | Crawl time | Rate | DB |
@@ -72,4 +88,5 @@ Validation: with a refreshed session the full 3,000-URL run completed with **0 b
 3. Extend audit rules (canonical mismatch, missing H1, hreflang, pagination).
 4. Classify assets (X-04) so images stop counting as HTML URL rows.
 5. Incremental frontier for 100k-scale crawls (C-01).
+
 

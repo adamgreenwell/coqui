@@ -38,6 +38,26 @@ async fn main() {
 
     std::fs::create_dir_all(&out_dir).expect("create output dir");
     let store = Arc::new(Store::open(format!("{out_dir}/coqui.db")).expect("open store"));
+    if std::env::var_os("COQUI_ANALYZE_ONLY").is_some() {
+        let latest = store
+            .latest_crawl()
+            .expect("read crawls")
+            .expect("no crawl to analyse");
+        let counts = analyze_crawl(&store, &latest.id).expect("analyse");
+        println!("analysed crawl {} ({} urls)", latest.id, latest.total_urls);
+        for issue in &counts {
+            println!(
+                "{:>6}  {:<11} {}",
+                issue.count,
+                format!("{:?}", issue.severity).to_lowercase(),
+                issue.rule
+            );
+        }
+        let csv = format!("{out_dir}/urls.csv");
+        store.export_csv(&latest.id, &csv).expect("export csv");
+        return;
+    }
+
     let resume = std::env::var_os("COQUI_RESUME").is_some();
 
     let (crawl_id, config, checkpoint) = if resume {

@@ -46,6 +46,41 @@ pub const RULES: &[RuleDef] = &[
         label: "Broken internal link",
         severity: IssueSeverity::Error,
     },
+    RuleDef {
+        id: "missing_h1",
+        label: "Missing H1",
+        severity: IssueSeverity::Warning,
+    },
+    RuleDef {
+        id: "canonical_mismatch",
+        label: "Canonical mismatch",
+        severity: IssueSeverity::Warning,
+    },
+    RuleDef {
+        id: "missing_canonical",
+        label: "Missing canonical",
+        severity: IssueSeverity::Opportunity,
+    },
+    RuleDef {
+        id: "duplicate_title",
+        label: "Duplicate title",
+        severity: IssueSeverity::Warning,
+    },
+    RuleDef {
+        id: "duplicate_meta_description",
+        label: "Duplicate meta description",
+        severity: IssueSeverity::Warning,
+    },
+    RuleDef {
+        id: "title_too_short",
+        label: "Title too short",
+        severity: IssueSeverity::Opportunity,
+    },
+    RuleDef {
+        id: "meta_description_too_long",
+        label: "Meta description too long",
+        severity: IssueSeverity::Warning,
+    },
 ];
 
 pub fn rule_label(rule: &str) -> &str {
@@ -75,6 +110,46 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
         status_by_url.insert(url.url.as_str(), url);
     }
 
+    let mut duplicate_titles: HashMap<String, Vec<String>> = HashMap::new();
+    let mut duplicate_meta: HashMap<String, Vec<String>> = HashMap::new();
+    for url in &urls {
+        let is_ok_html = url
+            .content_type
+            .as_deref()
+            .map(|value| value.to_ascii_lowercase().contains("text/html"))
+            .unwrap_or(false)
+            && url
+                .status
+                .map(|status| (200..300).contains(&status))
+                .unwrap_or(false)
+            && !url.blocked;
+        if !is_ok_html {
+            continue;
+        }
+        if let Some(title) = url
+            .title
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            duplicate_titles
+                .entry(title.to_ascii_lowercase())
+                .or_default()
+                .push(url.url.clone());
+        }
+        if let Some(meta) = url
+            .meta_description
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            duplicate_meta
+                .entry(meta.to_ascii_lowercase())
+                .or_default()
+                .push(url.url.clone());
+        }
+    }
+
     let mut broken: HashMap<String, Vec<String>> = HashMap::new();
     for LinkRecord {
         from_url,
@@ -89,6 +164,9 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
         let Some(target) = status_by_url.get(to_url.as_str()) else {
             continue;
         };
+        if target.blocked || target.status == Some(403) {
+            continue;
+        }
         let is_broken =
             target.status.map(|status| status >= 400).unwrap_or(true) || target.error.is_some();
         if is_broken {
@@ -108,7 +186,8 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
             && url
                 .status
                 .map(|status| (200..300).contains(&status))
-                .unwrap_or(false);
+                .unwrap_or(false)
+            && !url.blocked;
 
         if !is_ok_html {
             continue;
@@ -125,16 +204,77 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
                 "title_too_long",
                 Some(format!("{} characters", title.chars().count())),
             )?;
+        } else if title.chars().count() < 30 {
+            issue(
+                store,
+                crawl_id,
+                &url.url,
+                "title_too_short",
+                Some(format!("{} characters", title.chars().count())),
+            )?;
         }
 
-        if url
-            .meta_description
-            .as_deref()
-            .unwrap_or("")
-            .trim()
-            .is_empty()
-        {
+        if !title.is_empty() {
+            if let Some(group) = duplicate_titles.get(&title.to_ascii_lowercase()) {
+                if group.len() > 1 {
+                    issue(
+                        store,
+                        crawl_id,
+                        &url.url,
+                        "duplicate_title",
+                        Some(format!("{} pages share this title", group.len())),
+                    )?;
+                }
+            }
+        }
+
+        let meta = url.meta_description.as_deref().unwrap_or("").trim();
+        if meta.is_empty() {
             issue(store, crawl_id, &url.url, "missing_meta_description", None)?;
+        } else {
+            if meta.chars().count() > 155 {
+                issue(
+                    store,
+                    crawl_id,
+                    &url.url,
+                    "meta_description_too_long",
+                    Some(format!("{} characters", meta.chars().count())),
+                )?;
+            }
+            if let Some(group) = duplicate_meta.get(&meta.to_ascii_lowercase()) {
+                if group.len() > 1 {
+                    issue(
+                        store,
+                        crawl_id,
+                        &url.url,
+                        "duplicate_meta_description",
+                        Some(format!("{} pages share this description", group.len())),
+                    )?;
+                }
+            }
+        }
+
+        if url.h1_count == 0 {
+            issue(store, crawl_id, &url.url, "missing_h1", None)?;
+        }
+
+        match url.canonical.as_deref() {
+            Some(canonical) if !canonical.trim().is_empty() => {
+                let normalised =
+                    coqui_core::normalize_url(canonical).unwrap_or_else(|_| canonical.to_string());
+                if normalised != url.url {
+                    issue(
+                        store,
+                        crawl_id,
+                        &url.url,
+                        "canonical_mismatch",
+                        Some(format!("canonical points to {normalised}")),
+                    )?;
+                }
+            }
+            _ => {
+                issue(store, crawl_id, &url.url, "missing_canonical", None)?;
+            }
         }
 
         if url.h1_count > 1 {
@@ -331,5 +471,95 @@ mod tests {
         // Re-running replaces rather than duplicates.
         let again = analyze_crawl(&store, id).unwrap();
         assert_eq!(again.len(), counts.len());
+    }
+}
+
+#[cfg(test)]
+mod wordpress_rules {
+    use super::*;
+    use coqui_core::{CrawlConfig, NewUrl, now_ms};
+
+    fn add(
+        store: &Store,
+        id: &str,
+        url: &str,
+        title: &str,
+        meta: &str,
+        canonical: Option<&str>,
+        h1: u32,
+    ) {
+        store
+            .insert_url(&NewUrl {
+                crawl_id: id.into(),
+                url: url.into(),
+                status: Some(200),
+                blocked: false,
+                content_type: Some("text/html".into()),
+                title: Some(title.into()),
+                meta_description: Some(meta.into()),
+                h1: if h1 > 0 { Some("Heading".into()) } else { None },
+                h1_count: h1,
+                canonical: canonical.map(str::to_string),
+                meta_robots: None,
+                redirect_target: None,
+                redirect_chain: Vec::new(),
+                word_count: Some(500),
+                depth: 0,
+                response_time_ms: Some(10),
+                size_bytes: Some(100),
+                error: None,
+                discovered_at: now_ms(),
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn finds_canonical_duplicate_and_h1_issues() {
+        let store = Store::open_in_memory().unwrap();
+        let id = "wp";
+        store
+            .create_crawl(
+                id,
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        add(
+            &store,
+            id,
+            "https://example.com/a",
+            "Same title here",
+            "Same description here",
+            Some("https://example.com/b"),
+            0,
+        );
+        add(
+            &store,
+            id,
+            "https://example.com/b",
+            "Same title here",
+            "Same description here",
+            Some("https://example.com/b"),
+            1,
+        );
+        add(
+            &store,
+            id,
+            "https://example.com/c",
+            "A different title for c",
+            "Another description",
+            Some("https://example.com/c"),
+            1,
+        );
+
+        let counts = analyze_crawl(&store, id).unwrap();
+        let by_rule: HashMap<_, _> = counts.iter().map(|c| (c.rule.as_str(), c.count)).collect();
+        assert_eq!(by_rule.get("canonical_mismatch"), Some(&1));
+        assert_eq!(by_rule.get("missing_h1"), Some(&1));
+        assert_eq!(by_rule.get("duplicate_title"), Some(&2));
+        assert_eq!(by_rule.get("duplicate_meta_description"), Some(&2));
+        assert!(!by_rule.contains_key("missing_canonical"));
     }
 }

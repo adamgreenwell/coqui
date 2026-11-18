@@ -117,6 +117,13 @@ const ISSUE_LABELS: Record<string, string> = {
   multiple_h1: 'Multiple H1 headings',
   thin_content: 'Thin content',
   broken_internal_link: 'Broken internal link',
+  missing_h1: 'Missing H1',
+  canonical_mismatch: 'Canonical mismatch',
+  missing_canonical: 'Missing canonical',
+  duplicate_title: 'Duplicate title',
+  duplicate_meta_description: 'Duplicate meta description',
+  title_too_short: 'Title too short',
+  meta_description_too_long: 'Meta description too long',
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -900,6 +907,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 
