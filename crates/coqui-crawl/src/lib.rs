@@ -68,7 +68,9 @@ pub async fn run_crawl(
     let mut frontier: Vec<String> = vec![seed.clone()];
     let mut stats = CrawlStats::default();
     let mut depth = 0u32;
-    let max_discovered = (config.max_urls as usize).saturating_mul(MAX_DISCOVERED_MULTIPLIER).max(1);
+    let max_discovered = (config.max_urls as usize)
+        .saturating_mul(MAX_DISCOVERED_MULTIPLIER)
+        .max(1);
 
     if config.max_urls == 0 {
         return Ok(stats);
@@ -235,5 +237,3 @@ fn truncate(value: &str, max: usize) -> String {
 pub fn normalize_seed(raw: &str) -> Result<String, UrlError> {
     coqui_core::normalize_url(raw)
 }
-
-

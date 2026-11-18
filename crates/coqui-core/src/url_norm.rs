@@ -68,7 +68,9 @@ pub fn resolve_url(base: &str, href: &str) -> Result<String, UrlError> {
 /// True when both URLs share a host (case-insensitive).
 pub fn same_host(a: &str, b: &str) -> bool {
     match (Url::parse(a), Url::parse(b)) {
-        (Ok(a), Ok(b)) => a.host_str().map(str::to_ascii_lowercase) == b.host_str().map(str::to_ascii_lowercase),
+        (Ok(a), Ok(b)) => {
+            a.host_str().map(str::to_ascii_lowercase) == b.host_str().map(str::to_ascii_lowercase)
+        }
         _ => false,
     }
 }
@@ -116,6 +118,9 @@ mod tests {
     #[test]
     fn compares_hosts() {
         assert!(same_host("https://example.com/a", "http://EXAMPLE.com/b"));
-        assert!(!same_host("https://example.com/a", "https://www.example.com/b"));
+        assert!(!same_host(
+            "https://example.com/a",
+            "https://www.example.com/b"
+        ));
     }
 }

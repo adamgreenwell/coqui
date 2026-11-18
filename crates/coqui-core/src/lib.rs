@@ -49,7 +49,10 @@ impl Default for CrawlConfig {
             max_urls: 500,
             concurrency: 8,
             request_timeout_ms: 15_000,
-            user_agent: format!("Coqui/{} (+https://github.com/adamgreenwell/coqui)", env!("CARGO_PKG_VERSION")),
+            user_agent: format!(
+                "Coqui/{} (+https://github.com/adamgreenwell/coqui)",
+                env!("CARGO_PKG_VERSION")
+            ),
             same_host_only: true,
         }
     }

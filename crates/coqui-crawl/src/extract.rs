@@ -122,4 +122,3 @@ mod tests {
         assert_eq!(page.h1.as_deref(), Some("Only a heading"));
     }
 }
-

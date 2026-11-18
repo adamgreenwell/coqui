@@ -264,7 +264,12 @@ impl Store {
                     row.get::<_, Option<String>>(i)
                         .ok()
                         .flatten()
-                        .or_else(|| row.get::<_, Option<i64>>(i).ok().flatten().map(|v| v.to_string()))
+                        .or_else(|| {
+                            row.get::<_, Option<i64>>(i)
+                                .ok()
+                                .flatten()
+                                .map(|v| v.to_string())
+                        })
                         .or_else(|| {
                             row.get::<_, Option<u32>>(i)
                                 .ok()
@@ -317,12 +322,29 @@ mod tests {
         let store = Store::open_in_memory().unwrap();
         let id = "crawl-1";
         store
-            .create_crawl(id, "https://example.com/", &CrawlConfig::default(), now_ms())
+            .create_crawl(
+                id,
+                "https://example.com/",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
             .unwrap();
-        assert!(store.insert_url(&sample_record(id, "https://example.com/")).unwrap());
-        assert!(store.insert_url(&sample_record(id, "https://example.com/about")).unwrap());
+        assert!(
+            store
+                .insert_url(&sample_record(id, "https://example.com/"))
+                .unwrap()
+        );
+        assert!(
+            store
+                .insert_url(&sample_record(id, "https://example.com/about"))
+                .unwrap()
+        );
         // Duplicate URL is ignored.
-        assert!(!store.insert_url(&sample_record(id, "https://example.com/about")).unwrap());
+        assert!(
+            !store
+                .insert_url(&sample_record(id, "https://example.com/about"))
+                .unwrap()
+        );
 
         let page = store.list_urls(id, 1, 1).unwrap();
         assert_eq!(page.total, 2);
@@ -342,7 +364,12 @@ mod tests {
         let store = Store::open_in_memory().unwrap();
         let id = "crawl-2";
         store
-            .create_crawl(id, "https://example.com/", &CrawlConfig::default(), now_ms())
+            .create_crawl(
+                id,
+                "https://example.com/",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
             .unwrap();
         store.mark_running(id, now_ms()).unwrap();
         assert_eq!(store.get_crawl(id).unwrap().status, CrawlStatus::Running);
@@ -359,9 +386,16 @@ mod tests {
         let store = Store::open_in_memory().unwrap();
         let id = "crawl-3";
         store
-            .create_crawl(id, "https://example.com/", &CrawlConfig::default(), now_ms())
+            .create_crawl(
+                id,
+                "https://example.com/",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
             .unwrap();
-        store.insert_url(&sample_record(id, "https://example.com/")).unwrap();
+        store
+            .insert_url(&sample_record(id, "https://example.com/"))
+            .unwrap();
         let path = std::env::temp_dir().join(format!("coqui-export-{}.csv", uuid::Uuid::new_v4()));
         let written = store.export_csv(id, &path).unwrap();
         assert_eq!(written, 1);
@@ -371,5 +405,3 @@ mod tests {
         std::fs::remove_file(path).ok();
     }
 }
-
-

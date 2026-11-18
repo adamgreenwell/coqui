@@ -122,7 +122,11 @@ async fn crawls_a_small_site() {
 
     let page = store.list_urls(crawl_id, 1, 10).unwrap();
     assert_eq!(page.total, 3);
-    assert!(page.rows.iter().any(|row| row.title.as_deref() == Some("Home")));
+    assert!(
+        page.rows
+            .iter()
+            .any(|row| row.title.as_deref() == Some("Home"))
+    );
     assert!(
         page.rows
             .iter()

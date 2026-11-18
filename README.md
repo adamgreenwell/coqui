@@ -4,6 +4,8 @@
 
 Named after the *coquí*, the tiny frog native to Puerto Rico whose call is everywhere on the island and nowhere else.
 
+![Coqui M0 desktop shell: crawl form, live status and results grid](docs/images/coqui-results.png)
+
 > Coqui is an independent clean-room project. It is not affiliated with, endorsed by, or derived from Screaming Frog code or assets. "Screaming Frog" is a trademark of its owner.
 
 ## Status
@@ -84,5 +86,6 @@ The backlog is the roadmap. Pick an issue from the board, comment to claim it, a
 ## License
 
 To be decided by the project owner before the first code release (MIT or Apache-2.0 are the candidates). Until then, no license is granted for reuse.
+
 
 

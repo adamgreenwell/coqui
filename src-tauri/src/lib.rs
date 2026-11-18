@@ -63,11 +63,7 @@ fn list_urls(
 }
 
 #[tauri::command]
-fn start_crawl(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    crawl_id: String,
-) -> Result<(), String> {
+fn start_crawl(app: AppHandle, state: State<'_, AppState>, crawl_id: String) -> Result<(), String> {
     let summary = state
         .store
         .get_crawl(&crawl_id)
@@ -96,15 +92,8 @@ fn start_crawl(
         });
 
         let _ = store.mark_running(&id, now_ms());
-        let result = coqui_crawl::run_crawl(
-            store.clone(),
-            id.clone(),
-            seed,
-            config,
-            token,
-            progress,
-        )
-        .await;
+        let result =
+            coqui_crawl::run_crawl(store.clone(), id.clone(), seed, config, token, progress).await;
 
         let (status, error) = match result {
             Ok(_) => (CrawlStatus::Completed, None),
