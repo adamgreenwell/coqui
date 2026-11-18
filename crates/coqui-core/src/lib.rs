@@ -225,6 +225,20 @@ pub struct IssueCount {
     pub count: i64,
 }
 
+/// Persisted crawl state so a crawl can pause and resume without refetching.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CrawlCheckpoint {
+    pub frontier: Vec<String>,
+    pub seen: Vec<String>,
+    pub depth: u32,
+    pub crawled: u64,
+    pub discovered: u64,
+    pub failed: u64,
+    pub redirected: u64,
+    pub blocked_by_robots: u64,
+}
+
 /// A link edge discovered on a page.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

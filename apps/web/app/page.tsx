@@ -279,6 +279,28 @@ export default function Home() {
     }
   }
 
+  async function pauseCrawl() {
+    if (!crawl) return;
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('pause_crawl', { crawlId: crawl.id });
+  }
+
+  async function resumeCrawl() {
+    if (!crawl) return;
+    setBusy(true);
+    setError(null);
+    setPhase('running');
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('start_crawl', { crawlId: crawl.id });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      setPhase('paused');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function cancelCrawl() {
     if (!crawl) return;
     const { invoke } = await import('@tauri-apps/api/core');
@@ -391,7 +413,7 @@ export default function Home() {
           <span className="brand-name">
             coqu<em>í</em>
           </span>
-          <span className="badge">M1 crawl audit</span>
+          <span className="badge">M2 · pause &amp; resume</span>
         </div>
         <div className="topbar-right">
           <span className="badge">{isTauri ? 'Desktop' : 'Browser preview'}</span>
@@ -474,23 +496,44 @@ export default function Home() {
               />
               Respect robots.txt
             </label>
-            <button className="primary" type="submit" disabled={!isTauri || busy || isRunning}>
-              {isRunning ? 'Crawling…' : 'Start crawl'}
-            </button>
-            {isRunning && (
+            {phase === 'paused' ? (
               <button
-                className="secondary"
+                className="primary"
                 type="button"
-                onClick={cancelCrawl}
-                style={{ width: '100%', marginTop: 8 }}
+                onClick={resumeCrawl}
+                disabled={!isTauri || busy}
               >
-                Stop crawl
+                Resume crawl
               </button>
+            ) : (
+              <button className="primary" type="submit" disabled={!isTauri || busy || isRunning}>
+                {isRunning ? 'Crawling…' : 'Start crawl'}
+              </button>
+            )}
+            {isRunning && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <button
+                  className="secondary"
+                  type="button"
+                  onClick={pauseCrawl}
+                  style={{ flex: 1 }}
+                >
+                  Pause
+                </button>
+                <button
+                  className="secondary"
+                  type="button"
+                  onClick={cancelCrawl}
+                  style={{ flex: 1 }}
+                >
+                  Stop
+                </button>
+              </div>
             )}
           </form>
 
           <p className="footer-note" style={{ marginTop: 18, marginBottom: 0 }}>
-            Next up: persisted frontier and resume, sitemap seeds, then the full column registry.
+            Next up: sitemap seeds, authentication and the full column registry.
           </p>
         </aside>
 
@@ -708,5 +751,8 @@ export default function Home() {
     </div>
   );
 }
+
+
+
 
 

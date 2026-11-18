@@ -4,8 +4,8 @@
 //! `PRAGMA user_version`; migrations are additive and run on open.
 
 use coqui_core::{
-    CrawlConfig, CrawlStatus, CrawlSummary, Issue, IssueCount, IssueSeverity, LinkRecord, NewUrl,
-    UrlPage, UrlRecord,
+    CrawlCheckpoint, CrawlConfig, CrawlStatus, CrawlSummary, Issue, IssueCount, IssueSeverity,
+    LinkRecord, NewUrl, UrlPage, UrlRecord,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
@@ -78,6 +78,12 @@ CREATE TABLE IF NOT EXISTS issues (
 );
 
 CREATE INDEX IF NOT EXISTS idx_issues_crawl_rule ON issues (crawl_id, rule);
+
+CREATE TABLE IF NOT EXISTS checkpoints (
+    crawl_id   TEXT PRIMARY KEY,
+    state_json TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+);
 "#;
 
 #[derive(Debug, thiserror::Error)]
@@ -174,6 +180,15 @@ impl Store {
             params![id, CrawlStatus::Running.as_str(), started_at],
         )?;
         Ok(())
+    }
+
+    /// Mark crawls that were running when the process died as paused, so they can resume.
+    pub fn pause_interrupted_crawls(&self) -> Result<usize> {
+        let changed = self.lock()?.execute(
+            "UPDATE crawls SET status = ?1 WHERE status = ?2",
+            params![CrawlStatus::Paused.as_str(), CrawlStatus::Running.as_str()],
+        )?;
+        Ok(changed)
     }
 
     pub fn mark_finished(&self, id: &str, status: CrawlStatus, finished_at: i64) -> Result<()> {
@@ -417,10 +432,44 @@ impl Store {
         Ok(urls.len() as u64)
     }
 
+    pub fn save_checkpoint(&self, crawl_id: &str, checkpoint: &CrawlCheckpoint) -> Result<()> {
+        let json = serde_json::to_string(checkpoint)?;
+        self.lock()?.execute(
+            "INSERT INTO checkpoints (crawl_id, state_json, updated_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(crawl_id) DO UPDATE SET state_json = excluded.state_json, updated_at = excluded.updated_at",
+            params![crawl_id, json, coqui_core::now_ms()],
+        )?;
+        Ok(())
+    }
+
+    pub fn load_checkpoint(&self, crawl_id: &str) -> Result<Option<CrawlCheckpoint>> {
+        let json: Option<String> = self
+            .lock()?
+            .query_row(
+                "SELECT state_json FROM checkpoints WHERE crawl_id = ?1",
+                params![crawl_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        match json {
+            Some(json) => Ok(Some(serde_json::from_str(&json)?)),
+            None => Ok(None),
+        }
+    }
+
+    pub fn delete_checkpoint(&self, crawl_id: &str) -> Result<()> {
+        self.lock()?.execute(
+            "DELETE FROM checkpoints WHERE crawl_id = ?1",
+            params![crawl_id],
+        )?;
+        Ok(())
+    }
+
     /// Delete a crawl and all of its rows.
     pub fn delete_crawl(&self, id: &str) -> Result<()> {
         let conn = self.lock()?;
         conn.execute("DELETE FROM issues WHERE crawl_id = ?1", params![id])?;
+        conn.execute("DELETE FROM checkpoints WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM links WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM urls WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM crawls WHERE id = ?1", params![id])?;
@@ -657,6 +706,28 @@ mod tests {
         assert!(text.lines().next().unwrap().starts_with("url,status"));
         assert!(text.contains("redirect_target"));
         std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn checkpoint_round_trip() {
+        let store = Store::open_in_memory().unwrap();
+        assert!(store.load_checkpoint("c").unwrap().is_none());
+        let checkpoint = CrawlCheckpoint {
+            frontier: vec!["https://example.com/a".into()],
+            seen: vec!["https://example.com/".into()],
+            depth: 1,
+            crawled: 3,
+            discovered: 4,
+            failed: 0,
+            redirected: 1,
+            blocked_by_robots: 2,
+        };
+        store.save_checkpoint("c", &checkpoint).unwrap();
+        let loaded = store.load_checkpoint("c").unwrap().unwrap();
+        assert_eq!(loaded.frontier, checkpoint.frontier);
+        assert_eq!(loaded.blocked_by_robots, 2);
+        store.delete_checkpoint("c").unwrap();
+        assert!(store.load_checkpoint("c").unwrap().is_none());
     }
 
     #[test]

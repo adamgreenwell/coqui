@@ -135,22 +135,24 @@ async fn crawls_a_small_site() {
         .create_crawl(crawl_id, &seed, &config, now_ms())
         .unwrap();
 
-    let stats = run_crawl(
+    let result = run_crawl(
         store.clone(),
         crawl_id.to_string(),
         seed.clone(),
         config,
         CancellationToken::new(),
+        Arc::new(AtomicBool::new(false)),
+        None,
         Arc::new(|_: CrawlProgress| {}),
     )
     .await
     .expect("crawl succeeds");
 
     // home + a + b + redirect row; /blocked is disallowed by robots.txt.
-    assert_eq!(stats.crawled, 4);
-    assert_eq!(stats.redirected, 1);
-    assert_eq!(stats.failed, 0);
-    assert!(stats.blocked_by_robots >= 1);
+    assert_eq!(result.stats.crawled, 4);
+    assert_eq!(result.stats.redirected, 1);
+    assert_eq!(result.stats.failed, 0);
+    assert!(result.stats.blocked_by_robots >= 1);
 
     let page = store.list_urls(crawl_id, 1, 20, None).unwrap();
     assert_eq!(page.total, 4);
@@ -196,17 +198,19 @@ async fn can_ignore_robots() {
     store
         .create_crawl(crawl_id, &seed, &config, now_ms())
         .unwrap();
-    let stats = run_crawl(
+    let result = run_crawl(
         store.clone(),
         crawl_id.to_string(),
         seed,
         config,
         CancellationToken::new(),
+        Arc::new(AtomicBool::new(false)),
+        None,
         Arc::new(|_: CrawlProgress| {}),
     )
     .await
     .unwrap();
-    assert_eq!(stats.crawled, 5);
+    assert_eq!(result.stats.crawled, 5);
     assert!(
         store
             .list_urls(crawl_id, 1, 20, None)
@@ -233,17 +237,19 @@ async fn respects_max_urls() {
         .create_crawl(crawl_id, &seed, &config, now_ms())
         .unwrap();
 
-    let stats = run_crawl(
+    let result = run_crawl(
         store.clone(),
         crawl_id.to_string(),
         seed,
         config,
         CancellationToken::new(),
+        Arc::new(AtomicBool::new(false)),
+        None,
         Arc::new(|_: CrawlProgress| {}),
     )
     .await
     .unwrap();
-    assert_eq!(stats.crawled, 1);
+    assert_eq!(result.stats.crawled, 1);
     assert_eq!(store.total_urls(crawl_id).unwrap(), 1);
 }
 
@@ -270,8 +276,69 @@ async fn cancellation_stops_the_crawl() {
         seed,
         config,
         token,
+        Arc::new(AtomicBool::new(false)),
+        None,
         Arc::new(|_: CrawlProgress| {}),
     )
     .await;
     assert!(matches!(result, Err(coqui_crawl::CrawlError::Cancelled)));
+}
+
+#[tokio::test]
+async fn pauses_and_resumes() {
+    let site = TestSite::start();
+    let store = Arc::new(Store::open_in_memory().unwrap());
+    let crawl_id = "pause-resume";
+    let seed = format!("{}/", site.base);
+    let config = CrawlConfig {
+        max_depth: 3,
+        max_urls: 20,
+        concurrency: 2,
+        ..CrawlConfig::default()
+    };
+    store
+        .create_crawl(crawl_id, &seed, &config, now_ms())
+        .unwrap();
+
+    let pause = Arc::new(AtomicBool::new(false));
+    let trigger = pause.clone();
+    let progress = Arc::new(move |event: CrawlProgress| {
+        if event.crawled >= 1 {
+            trigger.store(true, Ordering::Relaxed);
+        }
+    });
+    let first = run_crawl(
+        store.clone(),
+        crawl_id.to_string(),
+        seed.clone(),
+        config.clone(),
+        CancellationToken::new(),
+        pause,
+        None,
+        progress,
+    )
+    .await
+    .unwrap();
+    assert!(first.paused);
+    assert!(store.load_checkpoint(crawl_id).unwrap().is_some());
+    let rows_after_pause = store.total_urls(crawl_id).unwrap();
+    assert!(rows_after_pause >= 1);
+
+    let checkpoint = store.load_checkpoint(crawl_id).unwrap();
+    let second = run_crawl(
+        store.clone(),
+        crawl_id.to_string(),
+        seed,
+        config,
+        CancellationToken::new(),
+        Arc::new(AtomicBool::new(false)),
+        checkpoint,
+        Arc::new(|_: CrawlProgress| {}),
+    )
+    .await
+    .unwrap();
+    assert!(!second.paused);
+    // home + /a + /b + the /redirect row; /blocked stays disallowed by robots.txt.
+    assert_eq!(store.total_urls(crawl_id).unwrap(), 4);
+    assert!(store.load_checkpoint(crawl_id).unwrap().is_some());
 }

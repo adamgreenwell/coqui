@@ -667,3 +667,6 @@ tbody tr:hover {
   accent-color: var(--accent-strong);
 }
 
+.dot.paused {
+  background: var(--warn);
+}

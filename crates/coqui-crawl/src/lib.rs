@@ -8,7 +8,8 @@ pub mod extract;
 pub mod robots;
 
 use coqui_core::{
-    CrawlConfig, CrawlProgress, LinkRecord, NewUrl, UrlError, now_ms, resolve_url, same_host,
+    CrawlCheckpoint, CrawlConfig, CrawlProgress, LinkRecord, NewUrl, UrlError, now_ms, resolve_url,
+    same_host,
 };
 use coqui_store::{Store, StoreError};
 use futures::{StreamExt, stream};
@@ -17,6 +18,7 @@ use reqwest::header::{CONTENT_TYPE, LOCATION};
 use robots::RobotsRules;
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
 use url::Url;
@@ -60,14 +62,28 @@ struct FetchOutcome {
 ///
 /// The caller owns crawl lifecycle status transitions around this function; it does not mark the
 /// crawl as running or completed, so the same engine can serve the Tauri shell, CLI and tests.
+pub struct CrawlResult {
+    pub stats: CrawlStats,
+    pub paused: bool,
+}
+
+/// Run a crawl to completion, pause or cancellation.
+///
+/// The caller owns crawl lifecycle status transitions around this function; it does not mark the
+/// crawl as running or completed, so the same engine can serve the Tauri shell, CLI and tests.
+///
+/// A checkpoint is written after every frontier batch so a crash or explicit pause can resume
+/// without refetching completed URLs.
 pub async fn run_crawl(
     store: Arc<Store>,
     crawl_id: String,
     seed: String,
     config: CrawlConfig,
     cancel: CancellationToken,
+    pause: Arc<AtomicBool>,
+    checkpoint: Option<CrawlCheckpoint>,
     on_progress: Arc<dyn Fn(CrawlProgress) + Send + Sync>,
-) -> Result<CrawlStats, CrawlError> {
+) -> Result<CrawlResult, CrawlError> {
     let client = Client::builder()
         .user_agent(config.user_agent.clone())
         .timeout(Duration::from_millis(config.request_timeout_ms))
@@ -80,17 +96,38 @@ pub async fn run_crawl(
         RobotsRules::allow_all()
     };
 
-    let mut seen: HashSet<String> = HashSet::new();
+    let (mut frontier, mut seen, mut depth, mut stats) = match checkpoint {
+        Some(checkpoint) => {
+            let seen: HashSet<String> = checkpoint.seen.into_iter().collect();
+            (
+                checkpoint.frontier,
+                seen,
+                checkpoint.depth,
+                CrawlStats {
+                    crawled: checkpoint.crawled,
+                    discovered: checkpoint.discovered,
+                    failed: checkpoint.failed,
+                    redirected: checkpoint.redirected,
+                    blocked_by_robots: checkpoint.blocked_by_robots,
+                },
+            )
+        }
+        None => {
+            let mut seen = HashSet::new();
+            seen.insert(seed.clone());
+            (vec![seed.clone()], seen, 0u32, CrawlStats::default())
+        }
+    };
     seen.insert(seed.clone());
-    let mut frontier: Vec<String> = vec![seed.clone()];
-    let mut stats = CrawlStats::default();
-    let mut depth = 0u32;
     let max_discovered = (config.max_urls as usize)
         .saturating_mul(MAX_DISCOVERED_MULTIPLIER)
         .max(1);
 
     if config.max_urls == 0 {
-        return Ok(stats);
+        return Ok(CrawlResult {
+            stats,
+            paused: false,
+        });
     }
 
     while !frontier.is_empty() && depth <= config.max_depth {
@@ -232,12 +269,33 @@ pub async fn run_crawl(
 
         frontier = next;
         depth += 1;
+
+        let checkpoint_state = CrawlCheckpoint {
+            frontier: frontier.clone(),
+            seen: seen.iter().cloned().collect(),
+            depth,
+            crawled: stats.crawled,
+            discovered: stats.discovered,
+            failed: stats.failed,
+            redirected: stats.redirected,
+            blocked_by_robots: stats.blocked_by_robots,
+        };
+        store.save_checkpoint(&crawl_id, &checkpoint_state)?;
+        if pause.load(Ordering::Relaxed) {
+            return Ok(CrawlResult {
+                stats,
+                paused: true,
+            });
+        }
     }
 
     if cancel.is_cancelled() {
         return Err(CrawlError::Cancelled);
     }
-    Ok(stats)
+    Ok(CrawlResult {
+        stats,
+        paused: false,
+    })
 }
 
 fn is_html(content_type: Option<&str>) -> bool {

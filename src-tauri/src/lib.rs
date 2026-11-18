@@ -10,6 +10,7 @@ use coqui_core::{
 use coqui_store::Store;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio_util::sync::CancellationToken;
@@ -17,6 +18,7 @@ use tokio_util::sync::CancellationToken;
 pub struct AppState {
     pub store: Arc<Store>,
     pub cancels: Mutex<HashMap<String, CancellationToken>>,
+    pub pauses: Mutex<HashMap<String, Arc<AtomicBool>>>,
     pub data_dir: PathBuf,
 }
 
@@ -81,16 +83,33 @@ fn start_crawl(app: AppHandle, state: State<'_, AppState>, crawl_id: String) -> 
         .store
         .get_crawl(&crawl_id)
         .map_err(|error| error.to_string())?;
-    if summary.status.is_terminal() {
+    if summary.status == CrawlStatus::Completed {
         return Err("This crawl has already finished. Start a new crawl.".into());
+    }
+    if summary.status == CrawlStatus::Running {
+        return Err("This crawl is already running.".into());
     }
 
     let token = CancellationToken::new();
-    state
-        .cancels
-        .lock()
-        .map_err(|_| "crawl registry poisoned".to_string())?
-        .insert(crawl_id.clone(), token.clone());
+    let pause = Arc::new(AtomicBool::new(false));
+    {
+        let mut cancels = state
+            .cancels
+            .lock()
+            .map_err(|_| "crawl registry poisoned".to_string())?;
+        cancels.insert(crawl_id.clone(), token.clone());
+    }
+    {
+        let mut pauses = state
+            .pauses
+            .lock()
+            .map_err(|_| "crawl registry poisoned".to_string())?;
+        pauses.insert(crawl_id.clone(), pause.clone());
+    }
+    let checkpoint = state
+        .store
+        .load_checkpoint(&crawl_id)
+        .map_err(|error| error.to_string())?;
 
     let store = state.store.clone();
     let app_handle = app.clone();
@@ -105,22 +124,42 @@ fn start_crawl(app: AppHandle, state: State<'_, AppState>, crawl_id: String) -> 
         });
 
         let _ = store.mark_running(&id, now_ms());
-        let result =
-            coqui_crawl::run_crawl(store.clone(), id.clone(), seed, config, token, progress).await;
+        let result = coqui_crawl::run_crawl(
+            store.clone(),
+            id.clone(),
+            seed,
+            config,
+            token,
+            pause,
+            checkpoint,
+            progress,
+        )
+        .await;
 
         let (status, error) = match result {
+            Ok(result) if result.paused => (CrawlStatus::Paused, None),
             Ok(_) => (CrawlStatus::Completed, None),
             Err(coqui_crawl::CrawlError::Cancelled) => (CrawlStatus::Cancelled, None),
             Err(error) => (CrawlStatus::Failed, Some(error.to_string())),
         };
-        if status == CrawlStatus::Completed {
-            if let Err(error) = coqui_audit::analyze_crawl(&store, &id) {
-                tracing::warn!(%error, crawl_id = %id, "audit rules failed");
+        match status {
+            CrawlStatus::Completed => {
+                if let Err(error) = coqui_audit::analyze_crawl(&store, &id) {
+                    tracing::warn!(%error, crawl_id = %id, "audit rules failed");
+                }
+                let _ = store.delete_checkpoint(&id);
             }
+            CrawlStatus::Cancelled => {
+                let _ = store.delete_checkpoint(&id);
+            }
+            _ => {}
         }
         let _ = store.mark_finished(&id, status, now_ms());
         if let Ok(mut registry) = app_handle.state::<AppState>().cancels.lock() {
             registry.remove(&id);
+        }
+        if let Ok(mut pauses) = app_handle.state::<AppState>().pauses.lock() {
+            pauses.remove(&id);
         }
         let _ = app_handle.emit(
             "crawl-finished",
@@ -143,6 +182,20 @@ fn cancel_crawl(state: State<'_, AppState>, crawl_id: String) -> Result<bool, St
         .map_err(|_| "crawl registry poisoned".to_string())?;
     if let Some(token) = registry.get(&crawl_id) {
         token.cancel();
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+#[tauri::command]
+fn pause_crawl(state: State<'_, AppState>, crawl_id: String) -> Result<bool, String> {
+    let pauses = state
+        .pauses
+        .lock()
+        .map_err(|_| "crawl registry poisoned".to_string())?;
+    if let Some(flag) = pauses.get(&crawl_id) {
+        flag.store(true, Ordering::Relaxed);
         Ok(true)
     } else {
         Ok(false)
@@ -175,9 +228,15 @@ pub fn run() {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
             let store = Store::open(data_dir.join("coqui.db"))?;
+            if let Ok(count) = store.pause_interrupted_crawls() {
+                if count > 0 {
+                    tracing::info!(count, "marked interrupted crawls as paused");
+                }
+            }
             app.manage(AppState {
                 store: Arc::new(store),
                 cancels: Mutex::new(HashMap::new()),
+                pauses: Mutex::new(HashMap::new()),
                 data_dir,
             });
             Ok(())
@@ -189,6 +248,7 @@ pub fn run() {
             get_issue_counts,
             start_crawl,
             cancel_crawl,
+            pause_crawl,
             export_csv
         ])
         .run(tauri::generate_context!())
