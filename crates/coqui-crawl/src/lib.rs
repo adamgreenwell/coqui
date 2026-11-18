@@ -130,6 +130,11 @@ pub async fn run_crawl(
         Vec::new()
     };
 
+    let debug = std::env::var_os("COQUI_DEBUG_CRAWL").is_some();
+    if debug {
+        eprintln!("crawl: resolved {} seeds", resolved_seeds.len());
+    }
+
     let robots_base = resolved_seeds
         .first()
         .cloned()
@@ -190,6 +195,16 @@ pub async fn run_crawl(
             .unwrap_or(false)
     };
 
+    if debug {
+        eprintln!(
+            "crawl: start frontier={} seen={} depth={} stats={:?}",
+            frontier.len(),
+            seen.len(),
+            depth,
+            stats
+        );
+    }
+
     let max_discovered = (config.max_urls as usize)
         .saturating_mul(MAX_DISCOVERED_MULTIPLIER)
         .max(1);
@@ -201,59 +216,146 @@ pub async fn run_crawl(
         });
     }
 
+    let concurrency = usize::from(config.concurrency.max(1));
+    let chunk_size = (concurrency * 4).clamp(8, 400);
+    let mut last_checkpoint = Instant::now();
+
     while !frontier.is_empty() && depth <= config.max_depth {
         if cancel.is_cancelled() {
             return Err(CrawlError::Cancelled);
         }
-        let remaining = config.max_urls.saturating_sub(stats.crawled as u32) as usize;
-        if remaining == 0 {
-            break;
-        }
-        let batch: Vec<String> = frontier.drain(..).take(remaining).collect();
-        let concurrency = usize::from(config.concurrency.max(1));
-        let results: Vec<(String, FetchOutcome)> = stream::iter(batch.into_iter().map(|url| {
-            let client = client.clone();
-            async move {
-                let outcome = fetch(&client, &url).await;
-                (url, outcome)
-            }
-        }))
-        .buffer_unordered(concurrency)
-        .collect()
-        .await;
-
         let mut next: Vec<String> = Vec::new();
-        for (url, outcome) in results {
-            if !outcome.chain.is_empty() {
-                stats.redirected += 1;
+
+        while !frontier.is_empty() && (stats.crawled as u32) < config.max_urls {
+            let remaining = config.max_urls.saturating_sub(stats.crawled as u32) as usize;
+            if remaining == 0 {
+                break;
+            }
+            let take = remaining.min(chunk_size).min(frontier.len());
+            let batch: Vec<String> = frontier.drain(..take).collect();
+            let results: Vec<(String, FetchOutcome)> = stream::iter(batch.into_iter().map(|url| {
+                let client = client.clone();
+                async move {
+                    let outcome = fetch(&client, &url).await;
+                    (url, outcome)
+                }
+            }))
+            .buffer_unordered(concurrency)
+            .collect()
+            .await;
+
+            if debug {
+                eprintln!("crawl: batch {} at depth {}", results.len(), depth);
+            }
+            for (url, outcome) in results {
+                if !outcome.chain.is_empty() {
+                    stats.redirected += 1;
+                    let record = NewUrl {
+                        crawl_id: crawl_id.clone(),
+                        url: url.clone(),
+                        status: outcome.status,
+                        content_type: outcome.content_type.clone(),
+                        title: None,
+                        meta_description: None,
+                        h1: None,
+                        h1_count: 0,
+                        canonical: None,
+                        meta_robots: None,
+                        redirect_target: Some(outcome.final_url.clone()),
+                        redirect_chain: outcome.chain.clone(),
+                        word_count: None,
+                        depth,
+                        response_time_ms: Some(outcome.elapsed_ms),
+                        size_bytes: Some(outcome.size_bytes),
+                        error: outcome.error.clone(),
+                        discovered_at: now_ms(),
+                    };
+                    stats.crawled += 1;
+                    store.insert_url(&record)?;
+                    if outcome.final_url != url
+                        && (!config.same_host_only || in_primary_hosts(&outcome.final_url))
+                        && seen.insert(outcome.final_url.clone())
+                    {
+                        next.push(outcome.final_url.clone());
+                    }
+                    stats.discovered = seen.len() as u64;
+                    on_progress(CrawlProgress {
+                        crawl_id: crawl_id.clone(),
+                        crawled: stats.crawled,
+                        discovered: stats.discovered,
+                        current_url: url,
+                    });
+                    continue;
+                }
+
+                let extracted = outcome
+                    .body
+                    .as_deref()
+                    .filter(|_| is_html(outcome.content_type.as_deref()))
+                    .map(|body| extract::extract_page(body, &url));
+
                 let record = NewUrl {
                     crawl_id: crawl_id.clone(),
                     url: url.clone(),
                     status: outcome.status,
                     content_type: outcome.content_type.clone(),
-                    title: None,
-                    meta_description: None,
-                    h1: None,
-                    h1_count: 0,
-                    canonical: None,
-                    meta_robots: None,
-                    redirect_target: Some(outcome.final_url.clone()),
-                    redirect_chain: outcome.chain.clone(),
-                    word_count: None,
+                    title: extracted.as_ref().and_then(|page| page.title.clone()),
+                    meta_description: extracted
+                        .as_ref()
+                        .and_then(|page| page.meta_description.clone()),
+                    h1: extracted.as_ref().and_then(|page| page.h1.clone()),
+                    h1_count: extracted.as_ref().map(|page| page.h1_count).unwrap_or(0),
+                    canonical: extracted.as_ref().and_then(|page| page.canonical.clone()),
+                    meta_robots: extracted.as_ref().and_then(|page| page.meta_robots.clone()),
+                    redirect_target: None,
+                    redirect_chain: Vec::new(),
+                    word_count: extracted.as_ref().map(|page| page.word_count),
                     depth,
                     response_time_ms: Some(outcome.elapsed_ms),
                     size_bytes: Some(outcome.size_bytes),
                     error: outcome.error.clone(),
                     discovered_at: now_ms(),
                 };
+
                 stats.crawled += 1;
-                store.insert_url(&record)?;
-                if outcome.final_url != url
-                    && (!config.same_host_only || in_primary_hosts(&outcome.final_url))
-                    && seen.insert(outcome.final_url.clone())
-                {
-                    next.push(outcome.final_url.clone());
+                if outcome.error.is_some() || outcome.status.is_none() {
+                    stats.failed += 1;
                 }
+                store.insert_url(&record)?;
+
+                if let Some(page) = extracted {
+                    for link in &page.links {
+                        store.insert_link(
+                            &crawl_id,
+                            &LinkRecord {
+                                from_url: url.clone(),
+                                to_url: link.url.clone(),
+                                anchor: link.anchor.clone(),
+                                rel: link.rel.clone(),
+                                internal: in_primary_hosts(&link.url),
+                            },
+                        )?;
+                    }
+                    for link in page.links {
+                        if next.len() + seen.len() > max_discovered {
+                            break;
+                        }
+                        if config.same_host_only && !in_primary_hosts(&link.url) {
+                            continue;
+                        }
+                        if !in_scope(&link.url) {
+                            continue;
+                        }
+                        if config.respect_robots && !robots.allows(&path_of(&link.url)) {
+                            stats.blocked_by_robots += 1;
+                            continue;
+                        }
+                        if seen.insert(link.url.clone()) {
+                            next.push(link.url);
+                        }
+                    }
+                }
+
                 stats.discovered = seen.len() as u64;
                 on_progress(CrawlProgress {
                     crawl_id: crawl_id.clone(),
@@ -261,107 +363,46 @@ pub async fn run_crawl(
                     discovered: stats.discovered,
                     current_url: url,
                 });
-                continue;
             }
 
-            let extracted = outcome
-                .body
-                .as_deref()
-                .filter(|_| is_html(outcome.content_type.as_deref()))
-                .map(|body| extract::extract_page(body, &url));
-
-            let record = NewUrl {
-                crawl_id: crawl_id.clone(),
-                url: url.clone(),
-                status: outcome.status,
-                content_type: outcome.content_type.clone(),
-                title: extracted.as_ref().and_then(|page| page.title.clone()),
-                meta_description: extracted
-                    .as_ref()
-                    .and_then(|page| page.meta_description.clone()),
-                h1: extracted.as_ref().and_then(|page| page.h1.clone()),
-                h1_count: extracted.as_ref().map(|page| page.h1_count).unwrap_or(0),
-                canonical: extracted.as_ref().and_then(|page| page.canonical.clone()),
-                meta_robots: extracted.as_ref().and_then(|page| page.meta_robots.clone()),
-                redirect_target: None,
-                redirect_chain: Vec::new(),
-                word_count: extracted.as_ref().map(|page| page.word_count),
-                depth,
-                response_time_ms: Some(outcome.elapsed_ms),
-                size_bytes: Some(outcome.size_bytes),
-                error: outcome.error.clone(),
-                discovered_at: now_ms(),
-            };
-
-            stats.crawled += 1;
-            if outcome.error.is_some() || outcome.status.is_none() {
-                stats.failed += 1;
-            }
-            store.insert_url(&record)?;
-
-            if let Some(page) = extracted {
-                for link in &page.links {
-                    store.insert_link(
-                        &crawl_id,
-                        &LinkRecord {
-                            from_url: url.clone(),
-                            to_url: link.url.clone(),
-                            anchor: link.anchor.clone(),
-                            rel: link.rel.clone(),
-                            internal: in_primary_hosts(&link.url),
-                        },
-                    )?;
-                }
-                for link in page.links {
-                    if next.len() + seen.len() > max_discovered {
-                        break;
-                    }
-                    if config.same_host_only && !in_primary_hosts(&link.url) {
-                        continue;
-                    }
-                    if !in_scope(&link.url) {
-                        continue;
-                    }
-                    if config.respect_robots && !robots.allows(&path_of(&link.url)) {
-                        stats.blocked_by_robots += 1;
-                        continue;
-                    }
-                    if seen.insert(link.url.clone()) {
-                        next.push(link.url);
-                    }
+            let pause_requested = pause.load(Ordering::Relaxed);
+            let should_checkpoint = pause_requested
+                || frontier.is_empty()
+                || last_checkpoint.elapsed() >= Duration::from_secs(10);
+            if should_checkpoint {
+                let mut resume_frontier = frontier.clone();
+                resume_frontier.extend(next.iter().cloned());
+                let saved_frontier = resume_frontier.len();
+                let checkpoint_state = CrawlCheckpoint {
+                    frontier: resume_frontier,
+                    seen: seen.iter().cloned().collect(),
+                    hosts: primary_hosts.iter().cloned().collect(),
+                    depth,
+                    crawled: stats.crawled,
+                    discovered: stats.discovered,
+                    failed: stats.failed,
+                    redirected: stats.redirected,
+                    blocked_by_robots: stats.blocked_by_robots,
+                };
+                store.save_checkpoint(&crawl_id, &checkpoint_state)?;
+                last_checkpoint = Instant::now();
+                if debug {
+                    eprintln!(
+                        "crawl: checkpoint crawled={} frontier_saved={}",
+                        stats.crawled, saved_frontier
+                    );
                 }
             }
-
-            stats.discovered = seen.len() as u64;
-            on_progress(CrawlProgress {
-                crawl_id: crawl_id.clone(),
-                crawled: stats.crawled,
-                discovered: stats.discovered,
-                current_url: url,
-            });
+            if pause_requested {
+                return Ok(CrawlResult {
+                    stats,
+                    paused: true,
+                });
+            }
         }
 
         frontier = next;
         depth += 1;
-
-        let checkpoint_state = CrawlCheckpoint {
-            frontier: frontier.clone(),
-            seen: seen.iter().cloned().collect(),
-            hosts: primary_hosts.iter().cloned().collect(),
-            depth,
-            crawled: stats.crawled,
-            discovered: stats.discovered,
-            failed: stats.failed,
-            redirected: stats.redirected,
-            blocked_by_robots: stats.blocked_by_robots,
-        };
-        store.save_checkpoint(&crawl_id, &checkpoint_state)?;
-        if pause.load(Ordering::Relaxed) {
-            return Ok(CrawlResult {
-                stats,
-                paused: true,
-            });
-        }
     }
 
     if cancel.is_cancelled() {
@@ -409,6 +450,10 @@ fn path_of(url: &str) -> String {
 }
 
 async fn fetch(client: &Client, requested: &str) -> FetchOutcome {
+    let debug = std::env::var_os("COQUI_DEBUG_CRAWL").is_some();
+    if debug {
+        eprintln!("fetch: GET {requested}");
+    }
     let started = Instant::now();
     let mut current = requested.to_string();
     let mut chain: Vec<String> = Vec::new();
@@ -433,6 +478,9 @@ async fn fetch(client: &Client, requested: &str) -> FetchOutcome {
         };
 
         let status = response.status().as_u16();
+        if debug {
+            eprintln!("fetch: {status} for {current}");
+        }
         if first_status.is_none() {
             first_status = Some(status);
         }

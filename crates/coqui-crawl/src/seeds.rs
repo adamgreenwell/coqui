@@ -8,8 +8,8 @@ use std::collections::HashSet;
 use std::io::Read;
 use url::Url;
 
-const MAX_SITEMAPS: usize = 20;
-const MAX_SEEDS: usize = 50_000;
+const MAX_SITEMAPS: usize = 200;
+const MAX_SEEDS: usize = 200_000;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SeedError {
@@ -90,6 +90,9 @@ async fn collect_sitemap(
         return Ok(());
     }
     *sitemaps += 1;
+    if std::env::var_os("COQUI_DEBUG_SEEDS").is_some() {
+        eprintln!("seed: fetching sitemap {url} (depth {depth})");
+    }
 
     let response = crate::get_following(client, url, 5).await?;
     if !response.status().is_success() {
@@ -113,10 +116,21 @@ async fn collect_sitemap(
     let document = Document::parse(&text).map_err(|error| SeedError::Xml(error.to_string()))?;
     let root = document.root_element();
     let tag = root.tag_name().name();
+    if std::env::var_os("COQUI_DEBUG_SEEDS").is_some() {
+        eprintln!("seed: parsed {tag} {url} ({} bytes)", text.len());
+    }
     match tag {
         "urlset" => {
-            for node in root.descendants().filter(|node| node.has_tag_name("loc")) {
-                let Some(value) = node.text() else { continue };
+            // Only the page <loc> directly inside each <url>; nested image/video <loc>
+            // elements are assets, not crawl seeds.
+            for url_node in root.descendants().filter(|node| node.has_tag_name("url")) {
+                let Some(location) = url_node.children().find(|child| child.has_tag_name("loc"))
+                else {
+                    continue;
+                };
+                let Some(value) = location.text() else {
+                    continue;
+                };
                 let Ok(url) = normalize_url(value.trim()) else {
                     continue;
                 };
@@ -131,8 +145,15 @@ async fn collect_sitemap(
         "sitemapindex" => {
             let locations: Vec<String> = root
                 .descendants()
-                .filter(|node| node.has_tag_name("loc"))
-                .filter_map(|node| node.text().map(str::trim).map(str::to_string))
+                .filter(|node| node.has_tag_name("sitemap"))
+                .filter_map(|sitemap| {
+                    sitemap
+                        .children()
+                        .find(|child| child.has_tag_name("loc"))
+                        .and_then(|location| location.text())
+                        .map(str::trim)
+                        .map(str::to_string)
+                })
                 .collect();
             for location in locations {
                 Box::pin(collect_sitemap(

@@ -184,6 +184,22 @@ impl Store {
         summary.ok_or_else(|| StoreError::NotFound(id.to_string()))
     }
 
+    pub fn latest_crawl(&self) -> Result<Option<CrawlSummary>> {
+        let id: Option<String> = {
+            let conn = self.lock()?;
+            conn.query_row(
+                "SELECT id FROM crawls ORDER BY rowid DESC LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?
+        };
+        match id {
+            Some(id) => Ok(Some(self.get_crawl(&id)?)),
+            None => Ok(None),
+        }
+    }
+
     pub fn mark_running(&self, id: &str, started_at: i64) -> Result<()> {
         self.lock()?.execute(
             "UPDATE crawls SET status = ?2, started_at = ?3 WHERE id = ?1",

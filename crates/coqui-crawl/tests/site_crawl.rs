@@ -82,6 +82,21 @@ fn handle_connection(mut stream: TcpStream) {
             "User-agent: *\nDisallow: /blocked\n".to_string(),
         ),
         "/sitemap-redirect" => ("301 Moved Permanently", "text/html", "Location: /sitemap.xml\r\n", String::new()),
+        "/sitemap-images.xml" => (
+            "200 OK",
+            "application/xml",
+            "",
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+                <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+                        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+                  <url><loc>{origin}/a</loc>
+                    <image:image><image:loc>{origin}/a.png</image:loc></image:image>
+                  </url>
+                  <url><loc>{origin}/b</loc></url>
+                </urlset>"#
+            ),
+        ),
         "/sitemap.xml" => (
             "200 OK",
             "application/xml",
@@ -653,4 +668,42 @@ async fn sitemap_seed_follows_redirect() {
     .await
     .unwrap();
     assert_eq!(result.stats.crawled, 3);
+}
+
+#[tokio::test]
+async fn sitemap_image_locations_are_not_seeds() {
+    let site = TestSite::start();
+    let store = Arc::new(Store::open_in_memory().unwrap());
+    let crawl_id = "sitemap-images";
+    let seed = format!("{}/sitemap-images.xml", site.base);
+    let config = CrawlConfig {
+        max_depth: 0,
+        max_urls: 10,
+        ..CrawlConfig::default()
+    };
+    store
+        .create_crawl(crawl_id, &seed, "sitemap", &config, now_ms())
+        .unwrap();
+    let result = run_crawl(
+        store.clone(),
+        crawl_id.to_string(),
+        "sitemap".into(),
+        seed,
+        config,
+        CancellationToken::new(),
+        Arc::new(AtomicBool::new(false)),
+        None,
+        Arc::new(|_: CrawlProgress| {}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.stats.crawled, 2);
+    let urls: Vec<String> = store
+        .list_urls(crawl_id, 1, 10, None)
+        .unwrap()
+        .rows
+        .into_iter()
+        .map(|row| row.url)
+        .collect();
+    assert!(!urls.iter().any(|url| url.ends_with(".png")));
 }
