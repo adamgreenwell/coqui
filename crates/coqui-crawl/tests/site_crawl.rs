@@ -81,6 +81,7 @@ fn handle_connection(mut stream: TcpStream) {
             "",
             "User-agent: *\nDisallow: /blocked\n".to_string(),
         ),
+        "/sitemap-redirect" => ("301 Moved Permanently", "text/html", "Location: /sitemap.xml\r\n", String::new()),
         "/sitemap.xml" => (
             "200 OK",
             "application/xml",
@@ -622,4 +623,34 @@ async fn basic_auth_sends_credentials() {
         store.list_urls("auth-no", 1, 1, None).unwrap().rows[0].status,
         Some(401)
     );
+}
+
+#[tokio::test]
+async fn sitemap_seed_follows_redirect() {
+    let site = TestSite::start();
+    let store = Arc::new(Store::open_in_memory().unwrap());
+    let crawl_id = "sitemap-redirect";
+    let seed = format!("{}/sitemap-redirect", site.base);
+    let config = CrawlConfig {
+        max_depth: 0,
+        max_urls: 10,
+        ..CrawlConfig::default()
+    };
+    store
+        .create_crawl(crawl_id, &seed, "sitemap", &config, now_ms())
+        .unwrap();
+    let result = run_crawl(
+        store.clone(),
+        crawl_id.to_string(),
+        "sitemap".into(),
+        seed,
+        config,
+        CancellationToken::new(),
+        Arc::new(AtomicBool::new(false)),
+        None,
+        Arc::new(|_: CrawlProgress| {}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.stats.crawled, 3);
 }

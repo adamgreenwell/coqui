@@ -49,6 +49,22 @@ npm run build        # static export + cargo build --release + bundle for the cu
 
 Artifacts land in `src-tauri/target/release/bundle/`.
 
+## Manual validation harness
+
+The audit example crawls one site and prints throughput, status mix, coverage and issues:
+
+```bash
+npm run audit -- sitemap https://example.com/sitemap.xml ./out 2000 4
+#               kind    seed                          dir   max  concurrency
+```
+
+For scale testing without external load:
+
+```bash
+npm run fixture:bulk   # 5,000-URL synthetic site on :4180
+npm run audit -- sitemap http://127.0.0.1:4180/sitemap.xml ./bulk 10000 16
+```
+
 ## Where data lives
 
 | Platform | Path |
@@ -84,6 +100,7 @@ Not yet implemented: rendering, forms-based auth, the full column registry, the 
 - **Blank window in `npm run dev`** — the Next dev server must be reachable at `http://localhost:3000`; check the Tauri terminal output.
 - **Port 3000 in use** — stop the other process or run the web app on another port and update `devUrl` in `src-tauri/tauri.conf.json`.
 - **Linux WebKit errors** — install the GTK/WebKit packages listed above; WebKitGTK is the most version-sensitive target.
+
 
 
 

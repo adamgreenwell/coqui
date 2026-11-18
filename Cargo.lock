@@ -502,6 +502,7 @@ name = "coqui-crawl"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "coqui-audit",
  "coqui-core",
  "coqui-store",
  "flate2",

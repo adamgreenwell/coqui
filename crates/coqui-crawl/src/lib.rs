@@ -509,6 +509,32 @@ async fn fetch(client: &Client, requested: &str) -> FetchOutcome {
     }
 }
 
+pub(crate) async fn get_following(
+    client: &Client,
+    url: &str,
+    max_hops: usize,
+) -> Result<reqwest::Response, reqwest::Error> {
+    let mut current = url.to_string();
+    for _ in 0..max_hops {
+        let response = client.get(&current).send().await?;
+        if response.status().is_redirection() {
+            let location = response
+                .headers()
+                .get(LOCATION)
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_string);
+            if let Some(location) = location {
+                if let Ok(next) = resolve_url(&current, &location) {
+                    current = next;
+                    continue;
+                }
+            }
+        }
+        return Ok(response);
+    }
+    client.get(&current).send().await
+}
+
 async fn fetch_robots(client: &Client, seed: &str, user_agent: &str) -> RobotsRules {
     let Ok(mut url) = Url::parse(seed) else {
         return RobotsRules::allow_all();
@@ -516,7 +542,7 @@ async fn fetch_robots(client: &Client, seed: &str, user_agent: &str) -> RobotsRu
     url.set_path("/robots.txt");
     url.set_query(None);
     url.set_fragment(None);
-    match client.get(url).send().await {
+    match get_following(client, url.as_str(), 3).await {
         Ok(response) if response.status().is_success() => {
             if response.content_length().unwrap_or(0) > MAX_ROBOTS_BYTES {
                 return RobotsRules::allow_all();

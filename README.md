@@ -15,6 +15,7 @@ Named after the *coquí*, the tiny frog native to Puerto Rico whose call is ever
 - [Feature inventory](docs/feature-inventory.md) — what the reference product does, measured
 - [Development plan](docs/development-plan.md) — architecture, phases, estimates, risks
 - [Reverse-engineering notes](docs/reverse-engineering.md) — evidence and limitations
+- [WordPress validation](docs/validation/2026-11-18-wordpress.md) — first real-site crawl results and the Cloudflare finding
 - [Dev setup](docs/dev-setup.md) — run the desktop shell, tests and builds
 - [Parity matrix](docs/reference/parity-matrix.csv) — every feature, phase, size, priority
 - [Backlog](https://github.com/adamgreenwell/coqui/issues) and [project board](https://github.com/users/adamgreenwell/projects/16/views/1?layout_template=board)
@@ -86,6 +87,7 @@ The backlog is the roadmap. Pick an issue from the board, comment to claim it, a
 ## License
 
 To be decided by the project owner before the first code release (MIT or Apache-2.0 are the candidates). Until then, no license is granted for reuse.
+
 
 
 

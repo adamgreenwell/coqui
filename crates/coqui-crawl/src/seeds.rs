@@ -91,7 +91,7 @@ async fn collect_sitemap(
     }
     *sitemaps += 1;
 
-    let response = client.get(url).send().await?;
+    let response = crate::get_following(client, url, 5).await?;
     if !response.status().is_success() {
         return Err(SeedError::Invalid(format!(
             "sitemap returned HTTP {} for {url}",
