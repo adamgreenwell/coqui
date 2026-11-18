@@ -261,6 +261,9 @@ pub async fn run_crawl(
                         url: url.clone(),
                         status: outcome.status,
                         blocked: outcome.blocked,
+                        hreflang: Vec::new(),
+                        pagination_next: None,
+                        pagination_prev: None,
                         content_type: outcome.content_type.clone(),
                         title: None,
                         meta_description: None,
@@ -307,6 +310,16 @@ pub async fn run_crawl(
                     url: url.clone(),
                     status: outcome.status,
                     blocked: outcome.blocked,
+                    hreflang: extracted
+                        .as_ref()
+                        .map(|page| page.hreflang.clone())
+                        .unwrap_or_default(),
+                    pagination_next: extracted
+                        .as_ref()
+                        .and_then(|page| page.pagination_next.clone()),
+                    pagination_prev: extracted
+                        .as_ref()
+                        .and_then(|page| page.pagination_prev.clone()),
                     content_type: outcome.content_type.clone(),
                     title: extracted.as_ref().and_then(|page| page.title.clone()),
                     meta_description: extracted

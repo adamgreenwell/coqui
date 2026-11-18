@@ -105,6 +105,15 @@ Re-analysing the 3,000-page crawl with the new rules produced:
 
 The 714 over-long descriptions are a genuine WordPress excerpt problem; the 43 duplicate titles and 40 duplicate descriptions point at archive/template pages worth reviewing.
 
+### Hreflang, pagination and index trim
+
+A 3,000-page run with the rebuilt extractor found:
+
+- **0 pages with hreflang** — this site is English-only, so the hreflang rules had no input.
+- **1 page with `rel=next`** — `/2021-gieexpo-preview-the-show-goes-on/` links to `/2/`, which returns 404. The new `pagination_broken` rule caught it.
+
+Dropping `idx_links_crawl_to` reduced the same crawl from 56.4 MB to **45.3 MB** (~20%). Existing databases need a `VACUUM` to reclaim the freed pages.
+
 ## Scale test (synthetic, local)
 
 | URLs | Crawl time | Rate | DB |
@@ -119,6 +128,7 @@ The 714 over-long descriptions are a genuine WordPress excerpt problem; the 43 d
 3. Extend audit rules (canonical mismatch, missing H1, hreflang, pagination).
 4. Classify assets (X-04) so images stop counting as HTML URL rows.
 5. Incremental frontier for 100k-scale crawls (C-01).
+
 
 
 

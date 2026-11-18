@@ -124,6 +124,9 @@ const ISSUE_LABELS: Record<string, string> = {
   duplicate_meta_description: 'Duplicate meta description',
   title_too_short: 'Title too short',
   meta_description_too_long: 'Meta description too long',
+  hreflang_missing_return: 'Hreflang missing return link',
+  hreflang_invalid_target: 'Hreflang target not reachable',
+  pagination_broken: 'Broken pagination link',
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -907,6 +910,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 

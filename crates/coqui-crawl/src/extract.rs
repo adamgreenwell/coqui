@@ -3,7 +3,7 @@
 //! The full column registry (X-01) will replace this module with a field-oriented design; the
 //! shape here is intentionally simple: one page in, the values the UI and audit rules need.
 
-use coqui_core::resolve_url;
+use coqui_core::{HreflangLink, resolve_url};
 use scraper::{Html, Selector};
 use std::collections::HashSet;
 
@@ -22,6 +22,9 @@ pub struct ExtractedPage {
     pub h1_count: u32,
     pub canonical: Option<String>,
     pub meta_robots: Option<String>,
+    pub hreflang: Vec<HreflangLink>,
+    pub pagination_next: Option<String>,
+    pub pagination_prev: Option<String>,
     pub word_count: u32,
     pub links: Vec<ExtractedLink>,
 }
@@ -69,6 +72,37 @@ pub fn extract_page(html: &str, base_url: &str) -> ExtractedPage {
         .and_then(|element| element.value().attr("href"))
         .and_then(|href| resolve_url(base_url, href).ok());
 
+    let mut hreflang = Vec::new();
+    for link in document.select(&selector("link[rel=alternate][hreflang]")) {
+        let (Some(lang), Some(href)) = (link.value().attr("hreflang"), link.value().attr("href"))
+        else {
+            continue;
+        };
+        if let Ok(url) = resolve_url(base_url, href) {
+            hreflang.push(HreflangLink {
+                lang: lang.trim().to_ascii_lowercase(),
+                url,
+            });
+        }
+    }
+
+    let pagination_rel = |rel: &str| -> Option<String> {
+        document
+            .select(&selector(&format!("link[rel~={rel}]")))
+            .next()
+            .and_then(|element| element.value().attr("href"))
+            .and_then(|href| resolve_url(base_url, href).ok())
+            .or_else(|| {
+                document
+                    .select(&selector(&format!("a[rel~={rel}][href]")))
+                    .next()
+                    .and_then(|element| element.value().attr("href"))
+                    .and_then(|href| resolve_url(base_url, href).ok())
+            })
+    };
+    let pagination_next = pagination_rel("next");
+    let pagination_prev = pagination_rel("prev");
+
     let body_text = document
         .select(&selector("body"))
         .next()
@@ -102,6 +136,9 @@ pub fn extract_page(html: &str, base_url: &str) -> ExtractedPage {
         h1_count,
         canonical,
         meta_robots,
+        hreflang,
+        pagination_next,
+        pagination_prev,
         word_count,
         links,
     }
@@ -119,6 +156,8 @@ mod tests {
             <meta name="description" content="Tiny frogs, loud calls.">
             <meta name="robots" content="index, follow">
             <link rel="canonical" href="/frogs">
+            <link rel="alternate" hreflang="es" href="/es/frogs">
+            <link rel="next" href="/frogs?page=2">
           </head>
           <body>
             <h1>Coquí</h1>
@@ -143,6 +182,12 @@ mod tests {
         assert_eq!(page.h1.as_deref(), Some("Coquí"));
         assert_eq!(page.h1_count, 2);
         assert_eq!(page.meta_robots.as_deref(), Some("index, follow"));
+        assert_eq!(page.hreflang.len(), 1);
+        assert_eq!(page.hreflang[0].lang, "es");
+        assert_eq!(
+            page.pagination_next.as_deref(),
+            Some("https://example.com/frogs?page=2")
+        );
         assert_eq!(page.canonical.as_deref(), Some("https://example.com/frogs"));
         assert!(page.word_count >= 6);
     }

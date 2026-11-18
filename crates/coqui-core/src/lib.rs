@@ -161,6 +161,9 @@ pub struct UrlRecord {
     pub h1_count: u32,
     pub canonical: Option<String>,
     pub meta_robots: Option<String>,
+    pub hreflang: Vec<HreflangLink>,
+    pub pagination_next: Option<String>,
+    pub pagination_prev: Option<String>,
     pub redirect_target: Option<String>,
     pub redirect_chain: Vec<String>,
     pub word_count: Option<u32>,
@@ -205,6 +208,9 @@ pub struct NewUrl {
     pub h1_count: u32,
     pub canonical: Option<String>,
     pub meta_robots: Option<String>,
+    pub hreflang: Vec<HreflangLink>,
+    pub pagination_next: Option<String>,
+    pub pagination_prev: Option<String>,
     pub redirect_target: Option<String>,
     pub redirect_chain: Vec<String>,
     pub word_count: Option<u32>,
@@ -267,6 +273,14 @@ pub struct CrawlCheckpoint {
     pub blocked_by_robots: u64,
     #[serde(default)]
     pub blocked: u64,
+}
+
+/// An hreflang alternate declared by a page.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HreflangLink {
+    pub lang: String,
+    pub url: String,
 }
 
 /// A link edge discovered on a page.

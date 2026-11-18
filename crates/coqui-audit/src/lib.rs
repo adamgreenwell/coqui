@@ -81,6 +81,21 @@ pub const RULES: &[RuleDef] = &[
         label: "Meta description too long",
         severity: IssueSeverity::Warning,
     },
+    RuleDef {
+        id: "hreflang_missing_return",
+        label: "Hreflang missing return link",
+        severity: IssueSeverity::Warning,
+    },
+    RuleDef {
+        id: "hreflang_invalid_target",
+        label: "Hreflang target not reachable",
+        severity: IssueSeverity::Warning,
+    },
+    RuleDef {
+        id: "pagination_broken",
+        label: "Broken pagination link",
+        severity: IssueSeverity::Error,
+    },
 ];
 
 pub fn rule_label(rule: &str) -> &str {
@@ -297,6 +312,68 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
             )?;
         }
 
+        for alternate in &url.hreflang {
+            match status_by_url.get(alternate.url.as_str()) {
+                Some(target)
+                    if !target.blocked
+                        && target
+                            .status
+                            .map(|status| (200..300).contains(&status))
+                            .unwrap_or(false) =>
+                {
+                    if !target.hreflang.iter().any(|back| back.url == url.url) {
+                        issue(
+                            store,
+                            crawl_id,
+                            &url.url,
+                            "hreflang_missing_return",
+                            Some(format!(
+                                "{} ({}) does not link back",
+                                alternate.lang, alternate.url
+                            )),
+                        )?;
+                    }
+                }
+                _ => {
+                    issue(
+                        store,
+                        crawl_id,
+                        &url.url,
+                        "hreflang_invalid_target",
+                        Some(format!("{} -> {}", alternate.lang, alternate.url)),
+                    )?;
+                }
+            }
+        }
+
+        for (direction, target) in [
+            ("next", url.pagination_next.as_deref()),
+            ("prev", url.pagination_prev.as_deref()),
+        ] {
+            let Some(target) = target else {
+                continue;
+            };
+            let ok = status_by_url
+                .get(target)
+                .map(|row| {
+                    !row.blocked
+                        && row
+                            .status
+                            .map(|status| (200..300).contains(&status))
+                            .unwrap_or(false)
+                })
+                .unwrap_or(false);
+            if !ok {
+                issue(
+                    store,
+                    crawl_id,
+                    &url.url,
+                    "pagination_broken",
+                    Some(format!("rel={direction} -> {target}")),
+                )?;
+            }
+        }
+
         if let Some(targets) = broken.get(&url.url) {
             issue(
                 store,
@@ -356,6 +433,12 @@ mod tests {
                 url: url.to_string(),
                 status: Some(200),
                 blocked: false,
+
+                hreflang: Vec::new(),
+
+                pagination_next: None,
+
+                pagination_prev: None,
                 content_type: Some("text/html".into()),
                 title: title.map(str::to_string),
                 meta_description: None,
@@ -404,6 +487,12 @@ mod tests {
                 url: "https://example.com/missing".into(),
                 status: Some(404),
                 blocked: false,
+
+                hreflang: Vec::new(),
+
+                pagination_next: None,
+
+                pagination_prev: None,
                 content_type: Some("text/html".into()),
                 title: Some("Not found".into()),
                 meta_description: Some("missing".into()),
@@ -437,6 +526,12 @@ mod tests {
                 url: "https://example.com/forbidden".into(),
                 status: Some(403),
                 blocked: true,
+
+                hreflang: Vec::new(),
+
+                pagination_next: None,
+
+                pagination_prev: None,
                 content_type: Some("text/html".into()),
                 title: Some("Just a moment...".into()),
                 meta_description: None,
@@ -494,6 +589,12 @@ mod wordpress_rules {
                 url: url.into(),
                 status: Some(200),
                 blocked: false,
+
+                hreflang: Vec::new(),
+
+                pagination_next: None,
+
+                pagination_prev: None,
                 content_type: Some("text/html".into()),
                 title: Some(title.into()),
                 meta_description: Some(meta.into()),
@@ -511,6 +612,97 @@ mod wordpress_rules {
                 discovered_at: now_ms(),
             })
             .unwrap();
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn add_page(
+        store: &Store,
+        id: &str,
+        url: &str,
+        hreflang: Vec<coqui_core::HreflangLink>,
+        next: Option<&str>,
+    ) {
+        store
+            .insert_url(&NewUrl {
+                crawl_id: id.into(),
+                url: url.into(),
+                status: Some(200),
+                blocked: false,
+                hreflang,
+                pagination_next: next.map(str::to_string),
+                pagination_prev: None,
+                content_type: Some("text/html".into()),
+                title: Some("A reasonably unique title".into()),
+                meta_description: Some("A reasonably unique description".into()),
+                h1: Some("Heading".into()),
+                h1_count: 1,
+                canonical: Some(url.into()),
+                meta_robots: None,
+                redirect_target: None,
+                redirect_chain: Vec::new(),
+                word_count: Some(500),
+                depth: 0,
+                response_time_ms: Some(10),
+                size_bytes: Some(100),
+                error: None,
+                discovered_at: now_ms(),
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn finds_hreflang_and_pagination_issues() {
+        use coqui_core::HreflangLink;
+        let store = Store::open_in_memory().unwrap();
+        let id = "intl";
+        store
+            .create_crawl(
+                id,
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        let link = |url: &str| HreflangLink {
+            lang: "en".into(),
+            url: url.into(),
+        };
+        add_page(
+            &store,
+            id,
+            "https://example.com/a",
+            vec![link("https://example.com/b")],
+            None,
+        );
+        add_page(
+            &store,
+            id,
+            "https://example.com/b",
+            vec![link("https://example.com/a")],
+            None,
+        );
+        add_page(
+            &store,
+            id,
+            "https://example.com/c",
+            vec![link("https://example.com/missing")],
+            None,
+        );
+        add_page(
+            &store,
+            id,
+            "https://example.com/d",
+            vec![link("https://example.com/e")],
+            Some("https://example.com/missing2"),
+        );
+        add_page(&store, id, "https://example.com/e", Vec::new(), None);
+
+        let counts = analyze_crawl(&store, id).unwrap();
+        let by_rule: HashMap<_, _> = counts.iter().map(|c| (c.rule.as_str(), c.count)).collect();
+        assert_eq!(by_rule.get("hreflang_missing_return"), Some(&1));
+        assert_eq!(by_rule.get("hreflang_invalid_target"), Some(&1));
+        assert_eq!(by_rule.get("pagination_broken"), Some(&1));
     }
 
     #[test]
