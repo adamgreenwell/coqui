@@ -1,0 +1,19 @@
+{
+  "name": "coqui",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "tauri dev",
+    "dev:web": "npm --prefix apps/web run dev",
+    "build": "tauri build",
+    "build:web": "npm --prefix apps/web run build",
+    "check": "cargo check --workspace",
+    "test": "cargo test --workspace"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.5"
+  }
+}

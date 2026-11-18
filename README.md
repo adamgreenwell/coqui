@@ -8,11 +8,12 @@ Named after the *coquí*, the tiny frog native to Puerto Rico whose call is ever
 
 ## Status
 
-**Planning.** The parity target has been reverse-engineered and inventoried; the backlog and development plan are published. Implementation starts with the walking skeleton (crawl → store → grid → export).
+**M0 walking skeleton.** The parity target has been reverse-engineered and inventoried; the Tauri 2 shell, Rust crawl engine, SQLite store and a live Next.js results view are in place.
 
 - [Feature inventory](docs/feature-inventory.md) — what the reference product does, measured
 - [Development plan](docs/development-plan.md) — architecture, phases, estimates, risks
 - [Reverse-engineering notes](docs/reverse-engineering.md) — evidence and limitations
+- [Dev setup](docs/dev-setup.md) — run the desktop shell, tests and builds
 - [Parity matrix](docs/reference/parity-matrix.csv) — every feature, phase, size, priority
 - [Backlog](https://github.com/adamgreenwell/coqui/issues) and [project board](https://github.com/users/adamgreenwell/projects/16/views/1?layout_template=board)
 
@@ -25,7 +26,6 @@ Named after the *coquí*, the tiny frog native to Puerto Rico whose call is ever
 | Project fields | Epic · Phase · Priority · Size · Area · Status |
 | Phase split | 16 / 20 / 22 / 11 / 4 features |
 | Dependencies | Tracked per issue and listed in the [parity matrix](docs/reference/parity-matrix.csv) |
-
 ## What Coqui will be
 
 A browser-based SEO crawler and audit workspace that matches the reference tool feature for feature:
@@ -40,21 +40,23 @@ A browser-based SEO crawler and audit workspace that matches the reference tool 
 
 ## Architecture
 
+Tauri is the application shell. The Rust workspace runs in-process and owns crawling, storage and analysis; the Next.js UI is statically exported and rendered in the system WebView (WebView2 / WKWebView / WebKitGTK) from one codebase.
+
 ```
-Next.js workspace  ──REST/SSE──  coqui-api (axum)
-                                     │
-        ┌────────────┬───────────────┼───────────────┬────────────┐
-    coqui-crawl  coqui-render    coqui-parse     coqui-audit  coqui-store
-    frontier     Chromium/CDP    HTML/CSS/JSON-LD rules        SQLite/Postgres
-    HTTP, robots screenshots     links, content  issues       portable crawls
-        │            │
-    coqui-jobs   coqui-export            coqui-ai
-    scheduler    CSV/XLSX/PDF/sitemaps   providers/embeddings
+┌──────────────────────────── Tauri 2 shell ────────────────────────────┐
+│  Next.js static export (apps/web)  ◀── IPC commands / events ──▶ Rust │
+│                                                                       │
+│  coqui-core   coqui-store   coqui-crawl   (later: render, audit, ...)  │
+│  domain       SQLite        HTTP/frontier                             │
+└───────────────────────────────────────────────────────────────────────┘
+                    optional: coqui-cli · coqui-api (axum) · coqui-mcp
 ```
 
-- **Backend:** Rust 2024, tokio, axum, sqlx (SQLite/Postgres), reqwest, scraper/lol_html, chromiumoxide or direct CDP.
-- **Frontend:** Next.js 15 App Router, React 19, TanStack Query/Table/Virtual, Radix + Tailwind, d3/three.js, Monaco.
-- **Sidecars:** Chromium (system or pinned download), Node only for Lighthouse.
+- **Shell:** Tauri 2 (Rust), WebView2/WKWebView/WebKitGTK, signed installers for Windows/macOS/Linux.
+- **Backend:** Rust 2024, tokio, reqwest, scraper, rusqlite (SQLite), later Chromium/CDP and Lighthouse sidecars.
+- **Frontend:** Next.js 16 App Router with `output: 'export'`, React 19, TanStack Query/Table/Virtual, Radix + Tailwind, d3/three.js, Monaco.
+- **Shared core:** the same crates back the desktop app, the CLI and a future HTTP API, so parity logic lives once.
+- **Data:** one portable SQLite crawl file per crawl; Postgres is a server-mode option, not a requirement.
 
 ## Repository layout
 
@@ -82,4 +84,5 @@ The backlog is the roadmap. Pick an issue from the board, comment to claim it, a
 ## License
 
 To be decided by the project owner before the first code release (MIT or Apache-2.0 are the candidates). Until then, no license is granted for reuse.
+
 

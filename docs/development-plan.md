@@ -1,10 +1,10 @@
 # Coqui Development Plan
 
-Coqui is a modern, open-source reimplementation of Screaming Frog SEO Spider: a Rust crawler and analysis engine with a Next.js browser workspace. This plan turns the [feature inventory](feature-inventory.md) into an executable roadmap.
+Coqui is a modern, open-source reimplementation of Screaming Frog SEO Spider: a Rust crawl and analysis engine running inside a Tauri 2 desktop shell, with a Next.js workspace rendered in the system WebView. This plan turns the [feature inventory](feature-inventory.md) into an executable roadmap.
 
 - **Backlog:** 12 epics and 73 feature issues, tracked on the [Coqui project board](https://github.com/users/adamgreenwell/projects/16/views/1?layout_template=board).
 - **Target:** behavioural and data parity with Screaming Frog SEO Spider 25.1.
-- **Stack:** Rust (edition 2024) backend, Next.js 15 / React 19 frontend, SQLite/Postgres storage, Chromium + Node sidecars for rendering and Lighthouse.
+- **Stack:** Tauri 2 shell, Rust (edition 2024) engine, Next.js 16 / React 19 static-export frontend, SQLite (Postgres for server mode), Chromium + Node sidecars for rendering and Lighthouse.
 
 ---
 
@@ -30,44 +30,46 @@ Coqui is a modern, open-source reimplementation of Screaming Frog SEO Spider: a 
 
 ## 3. Architecture
 
+Tauri is the shell, not an afterthought. One Rust workspace owns crawling, storage, rendering and analysis; the Next.js UI is a static export talking to it over Tauri IPC. The same crates are reused by the CLI and a future HTTP server, so parity logic exists once.
+
 ```
-                       ┌─────────────────────────────────────────────┐
-  Browser (Next.js)    │  App Router · RSC shell · client workspaces  │
-                       │  TanStack Query/Table/Virtual · Radix · TW  │
-                       └───────────────┬─────────────────────────────┘
-                                       │ REST + SSE (crawl events) + WS (live rows)
-                       ┌───────────────┴─────────────────────────────┐
-                       │  coqui-api (axum): projects, crawls, tabs,   │
-                       │  filters, exports, config, scheduler, MCP    │
-                       └───────┬───────────────┬───────────────┬─────┘
-                               │               │               │
-                 ┌─────────────┴────┐  ┌───────┴───────┐  ┌────┴──────────┐
-                 │ coqui-crawl      │  │ coqui-store   │  │ coqui-jobs    │
-                 │ frontier, HTTP,  │  │ SQLite/PG,    │  │ scheduler,    │
-                 │ robots, auth,    │  │ migrations,   │  │ queue, retry, │
-                 │ scope, pacing    │  │ aggregates    │  │ pause/resume  │
-                 └───────┬──────────┘  └───────┬───────┘  └────┬──────────┘
-                         │                     │               │
-                 ┌───────┴──────────┐  ┌───────┴───────┐  ┌────┴──────────┐
-                 │ coqui-render     │  │ coqui-parse   │  │ coqui-audit   │
-                 │ CDP pool, waits, │  │ HTML/CSS/JS,  │  │ rules, issues,│
-                 │ screenshots, axe │  │ links, media, │  │ accessibility,│
-                 │ Lighthouse (Node)│  │ structured data│ │ PageSpeed     │
-                 └──────────────────┘  └───────────────┘  └───────────────┘
-                         │
-                 ┌───────┴──────────┐   ┌───────────────────────────────┐
-                 │ coqui-export     │   │ coqui-ai: providers, prompts, │
-                 │ CSV/XLSX/PDF,    │   │ embeddings, clustering, cost  │
-                 │ sitemaps, email  │   └───────────────────────────────┘
-                 └──────────────────┘
+┌────────────────────────────── Tauri 2 application ──────────────────────────────┐
+│                                                                                 │
+│  apps/web (Next.js static export)                                               │
+│    React 19 · TanStack Query/Table/Virtual · Radix · d3                        │
+│         │  invoke(commands)                    ▲  events (progress, finished)   │
+│         ▼                                      │                                │
+│  src-tauri (commands, state, lifecycle) ───────┘                                │
+│         │                                                                       │
+│  ┌──────┴───────┬──────────────┬──────────────┬──────────────┬───────────────┐  │
+│  │ coqui-crawl  │ coqui-render │ coqui-parse  │ coqui-audit  │ coqui-store   │  │
+│  │ frontier     │ Chromium/CDP │ HTML/CSS/    │ rules,       │ SQLite        │  │
+│  │ HTTP, robots │ screenshots  │ JSON-LD      │ issues       │ portable file │  │
+│  └──────┬───────┴──────────────┴──────────────┴──────────────┴───────────────┘  │
+│         │                                                                       │
+│  coqui-jobs (scheduler) · coqui-export (CSV/XLSX/PDF) · coqui-ai (providers)   │
+└─────────────────────────────────────────────────────────────────────────────────┘
+            optional, same crates: coqui-cli · coqui-api (axum) · coqui-mcp
 ```
+
+### Why Tauri
+
+| Benefit | Consequence |
+| --- | --- |
+| One Rust core, three surfaces | Desktop, CLI and server share crawl/extraction/issue semantics; no logic duplicated in a Node backend |
+| Small, native shell | Installers in the tens of MB rather than a bundled browser; system WebView on each OS |
+| Real filesystem and process access | Portable crawl files, sidecar Chromium/Lighthouse, local SQLite without a server |
+| Cross-platform from one codebase | Windows (WebView2), macOS (WKWebView), Linux (WebKitGTK) |
+| Typed IPC | Commands and events are compiled and checked, unlike ad-hoc HTTP contracts |
+
+**Trade-offs we accept:** WebView rendering differs slightly per OS (the UI must be tested on all three); IPC replaces HTTP for local calls, so large payloads must be paged rather than sent whole; Next.js runs as a static export, so no server components with runtime data fetching (all data access is client-side through IPC); Linux WebKitGTK is the weakest target and gets its own test lane.
 
 ### Crate layout
 
 | Crate | Responsibility |
 | --- | --- |
-| `coqui-core` | Domain types, IDs, config schema, issue taxonomy, column registry |
-| `coqui-store` | SQLite/Postgres persistence, migrations, paging queries, aggregates |
+| `coqui-core` | Domain types, IDs, config schema, issue taxonomy, column registry, URL identity |
+| `coqui-store` | SQLite (and later Postgres) persistence, migrations, paging queries, aggregates |
 | `coqui-crawl` | Frontier, scheduler, HTTP transport, robots, scope, auth, pacing |
 | `coqui-render` | Chromium lifecycle, CDP client, render queue, screenshots, axe injection |
 | `coqui-parse` | HTML/CSS/JSON-LD extraction, content analysis, link graph |
@@ -75,18 +77,17 @@ Coqui is a modern, open-source reimplementation of Screaming Frog SEO Spider: a 
 | `coqui-export` | CSV/XLSX/PDF writers, sitemap builder, report templates |
 | `coqui-ai` | Provider clients, prompt targets, embeddings, usage accounting |
 | `coqui-jobs` | Scheduler, task history, pause/resume, crash recovery |
-| `coqui-api` | HTTP API, SSE/WS streaming, OpenAPI schema, auth |
-| `coqui-cli` | Headless CLI, argument grammar, exit codes |
-| `coqui-mcp` | MCP server and tool catalogue |
-| `apps/web` | Next.js workspace |
+| `src-tauri` | Tauri commands, app state, lifecycle, events, menus, updater |
+| `coqui-cli`, `coqui-mcp`, `coqui-api` | Headless and agent surfaces built on the same crates |
+| `apps/web` | Next.js static-export workspace |
 
 ### Frontend layout
 
-- App Router with a server-rendered shell; crawl data fetched through the Rust API.
-- TanStack Table + TanStack Virtual for million-row grids; server-side sort/filter/group.
-- Zustand for ephemeral UI state; TanStack Query for server state; URL as the source of truth for filters and tabs.
-- Radix primitives + Tailwind; charting with visx/ECharts; graphs with d3 + three.js (2D/3D force-directed); Monaco for custom JS/CSS; dnd-kit for dashboards.
-
+- App Router with `output: 'export'`; shell chrome is static, every data surface is a client component.
+- TanStack Table + TanStack Virtual for million-row grids; **server-side paging/sort/filter through IPC**, never full result sets in the WebView.
+- Zustand for ephemeral UI state; TanStack Query for IPC-backed server state; URL/hash as the source of truth for filters and tabs.
+- Radix primitives + Tailwind; visx/ECharts for charts; d3 + three.js for graphs; Monaco for custom JS/CSS; dnd-kit for dashboards.
+- IPC payloads are paginated and typed; events carry progress, not rows.
 ## 4. Storage model
 
 SQLite is the portable crawl format (one file per crawl, WAL enabled), with Postgres for server mode. Core tables:
@@ -131,7 +132,7 @@ Effort assumes two full-time engineers (one Rust, one full-stack) plus design/QA
 
 **Goal:** a crawl you can start, watch, stop, reopen and export.
 
-- Workspace, CI, release pipeline skeleton, ADRs.
+- Workspace, CI, release pipeline skeleton, ADRs; Tauri shell with one command (`ping`) and a static-export page.
 - Store and crawl file format; migrations; project/crawl lifecycle.
 - Config engine with JSON round-trip and profiles.
 - Frontier, HTTP transport, robots, URL normalisation.
@@ -232,6 +233,7 @@ At ~2 engineers this is ~18 months including integration and hardening; the phas
 | Third-party API changes | Integrations break | Adapter layer, contract tests with recorded fixtures, graceful degradation |
 | SQLite write contention at scale | Slow crawls | Batched writers, WAL, single-writer actor per crawl; Postgres path for servers |
 | Frontend grid performance | Unusable at scale | Server-side paging/sort/filter from day one; virtualisation budgets in CI |
+| WebView differences (WebView2/WKWebView/WebKitGTK) | UI bugs on one platform | Visual + interaction test lane per OS; avoid exotic CSS; keep WebKitGTK in CI |
 | Legal exposure from cloning | Project risk | Clean-room process, no copied assets/copy, trademark disclaimer, independent UI design |
 | Scope creep (AI, MCP, dashboards) | 1.0 slips | Phase gates; integrations strictly after core parity |
 
@@ -264,5 +266,7 @@ At ~2 engineers this is ~18 months including integration and hardening; the phas
 6. Job execution: in-process tokio vs external queue.
 7. Config schema versioning and migration policy.
 8. Column registry as code vs database-driven metadata.
+11. IPC paging contract (cursor vs offset) and event granularity for live crawls.
 9. MCP tool surface and permission model.
-10. Packaging: Tauri shell vs browser-only local server.
+10. Tauri as the primary shell, with the same crates exposed by CLI and an optional axum server.
+
