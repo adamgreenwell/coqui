@@ -43,6 +43,21 @@ pub struct CrawlConfig {
     /// Respect robots.txt rules for the configured user agent.
     #[serde(default = "default_true")]
     pub respect_robots: bool,
+    /// Only crawl discovered URLs matching at least one pattern (empty = all).
+    #[serde(default)]
+    pub include_patterns: Vec<String>,
+    /// Never crawl discovered URLs matching any pattern.
+    #[serde(default)]
+    pub exclude_patterns: Vec<String>,
+    /// Optional HTTP basic-auth username.
+    #[serde(default)]
+    pub auth_user: Option<String>,
+    /// Optional HTTP basic-auth password.
+    #[serde(default)]
+    pub auth_password: Option<String>,
+    /// Extra request headers, each `Name: value`.
+    #[serde(default)]
+    pub custom_headers: Vec<String>,
 }
 
 fn default_true() -> bool {
@@ -62,6 +77,11 @@ impl Default for CrawlConfig {
             ),
             same_host_only: true,
             respect_robots: true,
+            include_patterns: Vec::new(),
+            exclude_patterns: Vec::new(),
+            auth_user: None,
+            auth_password: None,
+            custom_headers: Vec::new(),
         }
     }
 }
@@ -112,6 +132,8 @@ impl CrawlStatus {
 pub struct CrawlSummary {
     pub id: CrawlId,
     pub seed: String,
+    /// How the seed was supplied: `url`, `sitemap` or `list`.
+    pub seed_kind: String,
     pub status: CrawlStatus,
     pub config: CrawlConfig,
     pub created_at: i64,
@@ -231,6 +253,8 @@ pub struct IssueCount {
 pub struct CrawlCheckpoint {
     pub frontier: Vec<String>,
     pub seen: Vec<String>,
+    #[serde(default)]
+    pub hosts: Vec<String>,
     pub depth: u32,
     pub crawled: u64,
     pub discovered: u64,

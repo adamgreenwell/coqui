@@ -6,15 +6,18 @@
 
 pub mod extract;
 pub mod robots;
+pub mod seeds;
 
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
 use coqui_core::{
     CrawlCheckpoint, CrawlConfig, CrawlProgress, LinkRecord, NewUrl, UrlError, now_ms, resolve_url,
-    same_host,
 };
 use coqui_store::{Store, StoreError};
 use futures::{StreamExt, stream};
+use regex::Regex;
 use reqwest::Client;
-use reqwest::header::{CONTENT_TYPE, LOCATION};
+use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue, LOCATION};
 use robots::RobotsRules;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -36,6 +39,10 @@ pub enum CrawlError {
     Http(#[from] reqwest::Error),
     #[error("crawl cancelled")]
     Cancelled,
+    #[error("seed error: {0}")]
+    Seeds(String),
+    #[error("configuration error: {0}")]
+    Config(String),
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -77,28 +84,73 @@ pub struct CrawlResult {
 pub async fn run_crawl(
     store: Arc<Store>,
     crawl_id: String,
-    seed: String,
+    seed_kind: String,
+    seed_value: String,
     config: CrawlConfig,
     cancel: CancellationToken,
     pause: Arc<AtomicBool>,
     checkpoint: Option<CrawlCheckpoint>,
     on_progress: Arc<dyn Fn(CrawlProgress) + Send + Sync>,
 ) -> Result<CrawlResult, CrawlError> {
-    let client = Client::builder()
+    let mut headers = HeaderMap::new();
+    for line in &config.custom_headers {
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        let name = HeaderName::from_bytes(name.trim().as_bytes())
+            .map_err(|error| CrawlError::Config(format!("invalid header name: {error}")))?;
+        let value = HeaderValue::from_str(value.trim())
+            .map_err(|error| CrawlError::Config(format!("invalid header value: {error}")))?;
+        headers.insert(name, value);
+    }
+    let builder = Client::builder()
         .user_agent(config.user_agent.clone())
         .timeout(Duration::from_millis(config.request_timeout_ms))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()?;
+        .redirect(reqwest::redirect::Policy::none());
+    if let Some(user) = &config.auth_user {
+        let token = STANDARD.encode(format!(
+            "{}:{}",
+            user,
+            config.auth_password.clone().unwrap_or_default()
+        ));
+        let value = HeaderValue::from_str(&format!("Basic {token}"))
+            .map_err(|error| CrawlError::Config(format!("invalid basic auth value: {error}")))?;
+        headers.insert(AUTHORIZATION, value);
+    }
+    let client = builder.default_headers(headers).build()?;
 
+    let includes = compile_patterns(&config.include_patterns)?;
+    let excludes = compile_patterns(&config.exclude_patterns)?;
+
+    let resolved_seeds = if checkpoint.is_none() {
+        seeds::resolve(&client, &seed_kind, &seed_value)
+            .await
+            .map_err(|error| CrawlError::Seeds(error.to_string()))?
+    } else {
+        Vec::new()
+    };
+
+    let robots_base = resolved_seeds
+        .first()
+        .cloned()
+        .or_else(|| (seed_kind != "list").then(|| seed_value.clone()));
     let robots = if config.respect_robots {
-        fetch_robots(&client, &seed, &config.user_agent).await
+        match robots_base {
+            Some(base) => fetch_robots(&client, &base, &config.user_agent).await,
+            None => RobotsRules::allow_all(),
+        }
     } else {
         RobotsRules::allow_all()
     };
 
-    let (mut frontier, mut seen, mut depth, mut stats) = match checkpoint {
+    let (mut frontier, mut seen, mut depth, mut stats, primary_hosts) = match checkpoint {
         Some(checkpoint) => {
             let seen: HashSet<String> = checkpoint.seen.into_iter().collect();
+            let hosts: HashSet<String> = if checkpoint.hosts.is_empty() {
+                seen.iter().filter_map(|url| seeds::host_of(url)).collect()
+            } else {
+                checkpoint.hosts.into_iter().collect()
+            };
             (
                 checkpoint.frontier,
                 seen,
@@ -110,15 +162,34 @@ pub async fn run_crawl(
                     redirected: checkpoint.redirected,
                     blocked_by_robots: checkpoint.blocked_by_robots,
                 },
+                hosts,
             )
         }
         None => {
-            let mut seen = HashSet::new();
-            seen.insert(seed.clone());
-            (vec![seed.clone()], seen, 0u32, CrawlStats::default())
+            if resolved_seeds.is_empty() {
+                return Err(CrawlError::Seeds("no crawlable seeds".into()));
+            }
+            let seen: HashSet<String> = resolved_seeds.iter().cloned().collect();
+            let hosts: HashSet<String> = resolved_seeds
+                .iter()
+                .filter_map(|url| seeds::host_of(url))
+                .collect();
+            (resolved_seeds, seen, 0u32, CrawlStats::default(), hosts)
         }
     };
-    seen.insert(seed.clone());
+
+    let in_scope = |url: &str| -> bool {
+        if !includes.is_empty() && !includes.iter().any(|pattern| pattern.is_match(url)) {
+            return false;
+        }
+        !excludes.iter().any(|pattern| pattern.is_match(url))
+    };
+    let in_primary_hosts = |url: &str| -> bool {
+        seeds::host_of(url)
+            .map(|host| primary_hosts.contains(&host))
+            .unwrap_or(false)
+    };
+
     let max_discovered = (config.max_urls as usize)
         .saturating_mul(MAX_DISCOVERED_MULTIPLIER)
         .max(1);
@@ -178,7 +249,7 @@ pub async fn run_crawl(
                 stats.crawled += 1;
                 store.insert_url(&record)?;
                 if outcome.final_url != url
-                    && (!config.same_host_only || same_host(&outcome.final_url, &seed))
+                    && (!config.same_host_only || in_primary_hosts(&outcome.final_url))
                     && seen.insert(outcome.final_url.clone())
                 {
                     next.push(outcome.final_url.clone());
@@ -237,7 +308,7 @@ pub async fn run_crawl(
                             to_url: link.url.clone(),
                             anchor: link.anchor.clone(),
                             rel: link.rel.clone(),
-                            internal: same_host(&link.url, &seed),
+                            internal: in_primary_hosts(&link.url),
                         },
                     )?;
                 }
@@ -245,7 +316,10 @@ pub async fn run_crawl(
                     if next.len() + seen.len() > max_discovered {
                         break;
                     }
-                    if config.same_host_only && !same_host(&link.url, &seed) {
+                    if config.same_host_only && !in_primary_hosts(&link.url) {
+                        continue;
+                    }
+                    if !in_scope(&link.url) {
                         continue;
                     }
                     if config.respect_robots && !robots.allows(&path_of(&link.url)) {
@@ -273,6 +347,7 @@ pub async fn run_crawl(
         let checkpoint_state = CrawlCheckpoint {
             frontier: frontier.clone(),
             seen: seen.iter().cloned().collect(),
+            hosts: primary_hosts.iter().cloned().collect(),
             depth,
             crawled: stats.crawled,
             discovered: stats.discovered,
@@ -296,6 +371,19 @@ pub async fn run_crawl(
         stats,
         paused: false,
     })
+}
+
+fn compile_patterns(patterns: &[String]) -> Result<Vec<Regex>, CrawlError> {
+    patterns
+        .iter()
+        .map(|pattern| pattern.trim())
+        .filter(|pattern| !pattern.is_empty())
+        .map(|pattern| {
+            Regex::new(pattern).map_err(|error| {
+                CrawlError::Config(format!("invalid pattern '{pattern}': {error}"))
+            })
+        })
+        .collect()
 }
 
 fn is_html(content_type: Option<&str>) -> bool {

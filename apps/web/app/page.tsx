@@ -7,6 +7,22 @@ const PAGE_SIZE = 50;
 const USER_AGENT =
   'Mozilla/5.0 (compatible; Coqui/0.1; +https://github.com/adamgreenwell/coqui)';
 
+function splitLines(value: string): string[] {
+  return value
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function seedLabel(crawl: CrawlSummary): string {
+  if (crawl.seedKind === 'list') return 'list file';
+  try {
+    return new URL(crawl.seed).host;
+  } catch {
+    return crawl.seedKind;
+  }
+}
+
 type CrawlStatus =
   | 'pending'
   | 'running'
@@ -23,11 +39,17 @@ interface CrawlConfig {
   userAgent: string;
   sameHostOnly: boolean;
   respectRobots: boolean;
+  includePatterns: string[];
+  excludePatterns: string[];
+  authUser: string | null;
+  authPassword: string | null;
+  customHeaders: string[];
 }
 
 interface CrawlSummary {
   id: string;
   seed: string;
+  seedKind: 'url' | 'sitemap' | 'list';
   status: CrawlStatus;
   config: CrawlConfig;
   createdAt: number;
@@ -165,6 +187,12 @@ export default function Home() {
   const [concurrency, setConcurrency] = useState(8);
   const [sameHostOnly, setSameHostOnly] = useState(true);
   const [respectRobots, setRespectRobots] = useState(true);
+  const [seedKind, setSeedKind] = useState<'url' | 'sitemap' | 'list'>('url');
+  const [includePatterns, setIncludePatterns] = useState('');
+  const [excludePatterns, setExcludePatterns] = useState('');
+  const [authUser, setAuthUser] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [customHeaders, setCustomHeaders] = useState('');
 
   const [crawl, setCrawl] = useState<CrawlSummary | null>(null);
   const [phase, setPhase] = useState<CrawlStatus | 'idle'>('idle');
@@ -266,8 +294,17 @@ export default function Home() {
         userAgent: USER_AGENT,
         sameHostOnly,
         respectRobots,
+        includePatterns: splitLines(includePatterns),
+        excludePatterns: splitLines(excludePatterns),
+        authUser: authUser.trim() || null,
+        authPassword: authPassword || null,
+        customHeaders: splitLines(customHeaders),
       };
-      const summary = await invoke<CrawlSummary>('create_crawl', { seed, config });
+      const summary = await invoke<CrawlSummary>('create_crawl', {
+        seedKind,
+        seed,
+        config,
+      });
       setCrawl(summary);
       setPhase('running');
       await invoke('start_crawl', { crawlId: summary.id });
@@ -413,7 +450,7 @@ export default function Home() {
           <span className="brand-name">
             coqu<em>í</em>
           </span>
-          <span className="badge">M2 · pause &amp; resume</span>
+          <span className="badge">M3 · seeds &amp; scope</span>
         </div>
         <div className="topbar-right">
           <span className="badge">{isTauri ? 'Desktop' : 'Browser preview'}</span>
@@ -424,18 +461,45 @@ export default function Home() {
         <aside className="panel sidebar">
           <h2>New crawl</h2>
           <p className="hint">
-            Same-host breadth-first crawl with robots.txt, redirect chains and the first audit
-            rules. Every row lands in a portable SQLite crawl file.
+            Crawl from a URL, sitemap or URL list with regex scope, basic auth, robots.txt and the
+            first audit rules. Every row lands in a portable SQLite crawl file.
           </p>
           <form onSubmit={startCrawl}>
             <div className="field">
-              <label htmlFor="seed">Start URL</label>
+              <label htmlFor="seedKind">Seed type</label>
+              <select
+                id="seedKind"
+                value={seedKind}
+                onChange={(event) =>
+                  setSeedKind(event.target.value as 'url' | 'sitemap' | 'list')
+                }
+                disabled={isRunning}
+              >
+                <option value="url">Single URL</option>
+                <option value="sitemap">Sitemap URL</option>
+                <option value="list">URL list file</option>
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="seed">
+                {seedKind === 'url'
+                  ? 'Start URL'
+                  : seedKind === 'sitemap'
+                    ? 'Sitemap URL'
+                    : 'Path to URL list'}
+              </label>
               <input
                 id="seed"
-                type="url"
+                type={seedKind === 'list' ? 'text' : 'url'}
                 value={seed}
                 onChange={(event) => setSeed(event.target.value)}
-                placeholder="https://example.com"
+                placeholder={
+                  seedKind === 'url'
+                    ? 'https://example.com'
+                    : seedKind === 'sitemap'
+                      ? 'https://example.com/sitemap.xml'
+                      : 'C:\\crawls\\urls.txt'
+                }
                 disabled={isRunning}
                 required
               />
@@ -478,6 +542,66 @@ export default function Home() {
                 disabled={isRunning}
               />
             </div>
+            <details className="advanced">
+              <summary>Scope, auth & headers</summary>
+              <div className="field">
+                <label htmlFor="include">Include patterns (one regex per line)</label>
+                <textarea
+                  id="include"
+                  rows={2}
+                  value={includePatterns}
+                  onChange={(event) => setIncludePatterns(event.target.value)}
+                  placeholder="/blog/.*"
+                  disabled={isRunning}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="exclude">Exclude patterns</label>
+                <textarea
+                  id="exclude"
+                  rows={2}
+                  value={excludePatterns}
+                  onChange={(event) => setExcludePatterns(event.target.value)}
+                  placeholder="/tag/.*"
+                  disabled={isRunning}
+                />
+              </div>
+              <div className="grid-2">
+                <div className="field">
+                  <label htmlFor="authUser">Basic auth user</label>
+                  <input
+                    id="authUser"
+                    type="text"
+                    value={authUser}
+                    onChange={(event) => setAuthUser(event.target.value)}
+                    disabled={isRunning}
+                    autoComplete="off"
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="authPassword">Password</label>
+                  <input
+                    id="authPassword"
+                    type="password"
+                    value={authPassword}
+                    onChange={(event) => setAuthPassword(event.target.value)}
+                    disabled={isRunning}
+                    autoComplete="off"
+                  />
+                </div>
+              </div>
+              <div className="field">
+                <label htmlFor="headers">Custom headers (one per line)</label>
+                <textarea
+                  id="headers"
+                  rows={2}
+                  value={customHeaders}
+                  onChange={(event) => setCustomHeaders(event.target.value)}
+                  placeholder="X-Robots-Tag: noindex"
+                  disabled={isRunning}
+                />
+              </div>
+            </details>
             <label className="checkbox">
               <input
                 type="checkbox"
@@ -533,7 +657,7 @@ export default function Home() {
           </form>
 
           <p className="footer-note" style={{ marginTop: 18, marginBottom: 0 }}>
-            Next up: sitemap seeds, authentication and the full column registry.
+            Next up: incremental frontier scaling, then rendering and form authentication.
           </p>
         </aside>
 
@@ -552,7 +676,7 @@ export default function Home() {
               <div className="status-title">
                 <span className={`dot ${phase}`} />
                 {STATUS_LABEL[phase] ?? phase}
-                {crawl && <span className="badge">{new URL(crawl.seed).host}</span>}
+                {crawl && <span className="badge">{seedLabel(crawl)}</span>}
               </div>
               <div className="status-sub">
                 {displayUrl ??
@@ -743,14 +867,18 @@ export default function Home() {
           </section>
 
           <p className="footer-note">
-            M1 scope: robots.txt, manual redirect chains, canonical/meta-robots extraction, link
-            edges, six audit rules and issue filtering. Rendering, sitemap seeds and resume follow.
+            M3 scope: URL/sitemap/list seeds, regex scope, basic auth, robots.txt, redirect chains,
+            six audit rules and pause/resume. Next: incremental frontier scaling and rendering.
           </p>
         </main>
       </div>
     </div>
   );
 }
+
+
+
+
 
 
 

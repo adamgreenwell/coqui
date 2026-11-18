@@ -50,24 +50,88 @@ impl Drop for TestSite {
 }
 
 fn handle_connection(mut stream: TcpStream) {
-    let mut buffer = [0u8; 4096];
+    let mut buffer = [0u8; 8192];
     let read = stream.read(&mut buffer).unwrap_or(0);
     let request = String::from_utf8_lossy(&buffer[..read]);
-    let path = request
-        .lines()
+    let mut lines = request.lines();
+    let path = lines
         .next()
         .and_then(|line| line.split_whitespace().nth(1))
         .unwrap_or("/");
+    let mut host = "127.0.0.1".to_string();
+    let mut authorization = String::new();
+    for line in lines {
+        let Some((key, value)) = line.split_once(':') else {
+            continue;
+        };
+        if key.eq_ignore_ascii_case("host") {
+            host = value.trim().to_string();
+        }
+        if key.eq_ignore_ascii_case("authorization") {
+            authorization = value.trim().to_string();
+        }
+    }
+    let origin = format!("http://{host}");
+    let expected_auth = format!("Basic {}", "dXNlcjpwYXNz");
 
-    let (status, content_type, body) = match path {
+    let (status, content_type, extra, body) = match path {
         "/robots.txt" => (
             "200 OK",
             "text/plain",
-            "User-agent: *\nDisallow: /blocked\n",
+            "",
+            "User-agent: *\nDisallow: /blocked\n".to_string(),
+        ),
+        "/sitemap.xml" => (
+            "200 OK",
+            "application/xml",
+            "",
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+                <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+                  <url><loc>{origin}/a</loc></url>
+                  <url><loc>{origin}/b</loc></url>
+                  <url><loc>{origin}/about</loc></url>
+                </urlset>"#
+            ),
+        ),
+        "/sitemap-index.xml" => (
+            "200 OK",
+            "application/xml",
+            "",
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+                <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+                  <sitemap><loc>{origin}/sitemap.xml</loc></sitemap>
+                </sitemapindex>"#
+            ),
+        ),
+        "/auth" => {
+            if authorization == expected_auth {
+                (
+                    "200 OK",
+                    "text/html; charset=utf-8",
+                    "",
+                    "<!doctype html><html><head><title>Private</title></head><body><h1>Private</h1></body></html>".to_string(),
+                )
+            } else {
+                (
+                    "401 Unauthorized",
+                    "text/html",
+                    "WWW-Authenticate: Basic realm=\"fixture\"\r\n",
+                    "<html><body>auth required</body></html>".to_string(),
+                )
+            }
+        }
+        "/about" => (
+            "200 OK",
+            "text/html; charset=utf-8",
+            "",
+            "<!doctype html><html><head><title>About</title><meta name=\"description\" content=\"About\"></head><body><h1>About</h1></body></html>".to_string(),
         ),
         "/" => (
             "200 OK",
             "text/html; charset=utf-8",
+            "",
             r#"<!doctype html><html><head><title>Home</title>
                  <meta name="description" content="Test home">
                  <link rel="canonical" href="/">
@@ -77,40 +141,44 @@ fn handle_connection(mut stream: TcpStream) {
                  <a href="/redirect">Redirect</a>
                  <a href="/blocked">Blocked</a>
                  <a href="https://external.invalid/x">External</a>
-               </body></html>"#,
+               </body></html>"#
+                .to_string(),
         ),
         "/a" => (
             "200 OK",
             "text/html; charset=utf-8",
+            "",
             r#"<!doctype html><html><head><title>A</title></head>
-               <body><h1>A</h1><a href="/">Home</a></body></html>"#,
+               <body><h1>A</h1><a href="/">Home</a></body></html>"#
+                .to_string(),
         ),
         "/b" => (
             "200 OK",
             "text/html; charset=utf-8",
-            "<!doctype html><html><head><title>B</title></head><body><h1>B</h1></body></html>",
+            "",
+            "<!doctype html><html><head><title>B</title></head><body><h1>B</h1></body></html>"
+                .to_string(),
         ),
-        "/redirect" => ("302 Found", "text/html", ""),
+        "/redirect" => ("302 Found", "text/html", "Location: /a\r\n", String::new()),
         "/blocked" => (
             "200 OK",
             "text/html; charset=utf-8",
-            "<!doctype html><html><head><title>Blocked</title></head><body><h1>Blocked</h1></body></html>",
+            "",
+            "<!doctype html><html><head><title>Blocked</title></head><body><h1>Blocked</h1></body></html>"
+                .to_string(),
         ),
         _ => (
             "404 Not Found",
             "text/html",
-            "<html><body>not found</body></html>",
+            "",
+            "<html><body>not found</body></html>".to_string(),
         ),
     };
 
-    let mut head = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n",
+    let head = format!(
+        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n{extra}\r\n",
         body.len()
     );
-    if path == "/redirect" {
-        head.push_str("Location: /a\r\n");
-    }
-    head.push_str("\r\n");
     let _ = stream.write_all(head.as_bytes());
     let _ = stream.write_all(body.as_bytes());
 }
@@ -132,12 +200,13 @@ async fn crawls_a_small_site() {
     let seed = format!("{}/", site.base);
     let config = config();
     store
-        .create_crawl(crawl_id, &seed, &config, now_ms())
+        .create_crawl(crawl_id, &seed, "url", &config, now_ms())
         .unwrap();
 
     let result = run_crawl(
         store.clone(),
         crawl_id.to_string(),
+        "url".into(),
         seed.clone(),
         config,
         CancellationToken::new(),
@@ -196,11 +265,12 @@ async fn can_ignore_robots() {
         ..config()
     };
     store
-        .create_crawl(crawl_id, &seed, &config, now_ms())
+        .create_crawl(crawl_id, &seed, "url", &config, now_ms())
         .unwrap();
     let result = run_crawl(
         store.clone(),
         crawl_id.to_string(),
+        "url".into(),
         seed,
         config,
         CancellationToken::new(),
@@ -234,12 +304,13 @@ async fn respects_max_urls() {
         ..CrawlConfig::default()
     };
     store
-        .create_crawl(crawl_id, &seed, &config, now_ms())
+        .create_crawl(crawl_id, &seed, "url", &config, now_ms())
         .unwrap();
 
     let result = run_crawl(
         store.clone(),
         crawl_id.to_string(),
+        "url".into(),
         seed,
         config,
         CancellationToken::new(),
@@ -265,7 +336,7 @@ async fn cancellation_stops_the_crawl() {
         ..CrawlConfig::default()
     };
     store
-        .create_crawl(crawl_id, &seed, &config, now_ms())
+        .create_crawl(crawl_id, &seed, "url", &config, now_ms())
         .unwrap();
 
     let token = CancellationToken::new();
@@ -273,6 +344,7 @@ async fn cancellation_stops_the_crawl() {
     let result = run_crawl(
         store,
         crawl_id.to_string(),
+        "url".into(),
         seed,
         config,
         token,
@@ -297,7 +369,7 @@ async fn pauses_and_resumes() {
         ..CrawlConfig::default()
     };
     store
-        .create_crawl(crawl_id, &seed, &config, now_ms())
+        .create_crawl(crawl_id, &seed, "url", &config, now_ms())
         .unwrap();
 
     let pause = Arc::new(AtomicBool::new(false));
@@ -310,6 +382,7 @@ async fn pauses_and_resumes() {
     let first = run_crawl(
         store.clone(),
         crawl_id.to_string(),
+        "url".into(),
         seed.clone(),
         config.clone(),
         CancellationToken::new(),
@@ -328,6 +401,7 @@ async fn pauses_and_resumes() {
     let second = run_crawl(
         store.clone(),
         crawl_id.to_string(),
+        "url".into(),
         seed,
         config,
         CancellationToken::new(),
@@ -341,4 +415,211 @@ async fn pauses_and_resumes() {
     // home + /a + /b + the /redirect row; /blocked stays disallowed by robots.txt.
     assert_eq!(store.total_urls(crawl_id).unwrap(), 4);
     assert!(store.load_checkpoint(crawl_id).unwrap().is_some());
+}
+
+#[tokio::test]
+async fn sitemap_seed_crawls_every_location() {
+    let site = TestSite::start();
+    let store = Arc::new(Store::open_in_memory().unwrap());
+    let crawl_id = "sitemap-seed";
+    let seed = format!("{}/sitemap.xml", site.base);
+    let config = CrawlConfig {
+        max_depth: 0,
+        max_urls: 10,
+        ..CrawlConfig::default()
+    };
+    store
+        .create_crawl(crawl_id, &seed, "sitemap", &config, now_ms())
+        .unwrap();
+    let result = run_crawl(
+        store.clone(),
+        crawl_id.to_string(),
+        "sitemap".into(),
+        seed,
+        config,
+        CancellationToken::new(),
+        Arc::new(AtomicBool::new(false)),
+        None,
+        Arc::new(|_: CrawlProgress| {}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.stats.crawled, 3);
+    let urls: Vec<String> = store
+        .list_urls(crawl_id, 1, 10, None)
+        .unwrap()
+        .rows
+        .into_iter()
+        .map(|row| row.url)
+        .collect();
+    assert!(urls.iter().any(|url| url.ends_with("/a")));
+    assert!(urls.iter().any(|url| url.ends_with("/b")));
+    assert!(urls.iter().any(|url| url.ends_with("/about")));
+}
+
+#[tokio::test]
+async fn sitemap_index_is_followed() {
+    let site = TestSite::start();
+    let store = Arc::new(Store::open_in_memory().unwrap());
+    let crawl_id = "sitemap-index";
+    let seed = format!("{}/sitemap-index.xml", site.base);
+    let config = CrawlConfig {
+        max_depth: 0,
+        max_urls: 10,
+        ..CrawlConfig::default()
+    };
+    store
+        .create_crawl(crawl_id, &seed, "sitemap", &config, now_ms())
+        .unwrap();
+    let result = run_crawl(
+        store.clone(),
+        crawl_id.to_string(),
+        "sitemap".into(),
+        seed,
+        config,
+        CancellationToken::new(),
+        Arc::new(AtomicBool::new(false)),
+        None,
+        Arc::new(|_: CrawlProgress| {}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.stats.crawled, 3);
+}
+
+#[tokio::test]
+async fn list_seed_reads_a_file() {
+    let site = TestSite::start();
+    let list_path = std::env::temp_dir().join(format!("coqui-list-{}.txt", uuid::Uuid::new_v4()));
+    std::fs::write(
+        &list_path,
+        format!("{}/a\n# comment\n{}/b\n", site.base, site.base),
+    )
+    .unwrap();
+    let store = Arc::new(Store::open_in_memory().unwrap());
+    let crawl_id = "list-seed";
+    let seed = list_path.to_string_lossy().to_string();
+    let config = CrawlConfig {
+        max_depth: 0,
+        max_urls: 10,
+        ..CrawlConfig::default()
+    };
+    store
+        .create_crawl(crawl_id, &seed, "list", &config, now_ms())
+        .unwrap();
+    let result = run_crawl(
+        store.clone(),
+        crawl_id.to_string(),
+        "list".into(),
+        seed,
+        config,
+        CancellationToken::new(),
+        Arc::new(AtomicBool::new(false)),
+        None,
+        Arc::new(|_: CrawlProgress| {}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.stats.crawled, 2);
+    std::fs::remove_file(list_path).ok();
+}
+
+#[tokio::test]
+async fn excludes_keep_urls_out_of_the_crawl() {
+    let site = TestSite::start();
+    let store = Arc::new(Store::open_in_memory().unwrap());
+    let crawl_id = "scoped";
+    let seed = format!("{}/", site.base);
+    let config = CrawlConfig {
+        max_depth: 2,
+        max_urls: 20,
+        exclude_patterns: vec!["/b$".into(), "/redirect$".into()],
+        ..CrawlConfig::default()
+    };
+    store
+        .create_crawl(crawl_id, &seed, "url", &config, now_ms())
+        .unwrap();
+    run_crawl(
+        store.clone(),
+        crawl_id.to_string(),
+        "url".into(),
+        seed,
+        config,
+        CancellationToken::new(),
+        Arc::new(AtomicBool::new(false)),
+        None,
+        Arc::new(|_: CrawlProgress| {}),
+    )
+    .await
+    .unwrap();
+    let urls: Vec<String> = store
+        .list_urls(crawl_id, 1, 20, None)
+        .unwrap()
+        .rows
+        .into_iter()
+        .map(|row| row.url)
+        .collect();
+    assert_eq!(urls.len(), 2, "home and /a only: {urls:?}");
+    assert!(!urls.iter().any(|url| url.ends_with("/b")));
+    assert!(!urls.iter().any(|url| url.ends_with("/redirect")));
+}
+
+#[tokio::test]
+async fn basic_auth_sends_credentials() {
+    let site = TestSite::start();
+    let store = Arc::new(Store::open_in_memory().unwrap());
+    let seed = format!("{}/auth", site.base);
+    let config = CrawlConfig {
+        max_depth: 0,
+        max_urls: 1,
+        auth_user: Some("user".into()),
+        auth_password: Some("pass".into()),
+        ..CrawlConfig::default()
+    };
+    store
+        .create_crawl("auth-ok", &seed, "url", &config, now_ms())
+        .unwrap();
+    run_crawl(
+        store.clone(),
+        "auth-ok".to_string(),
+        "url".into(),
+        seed.clone(),
+        config.clone(),
+        CancellationToken::new(),
+        Arc::new(AtomicBool::new(false)),
+        None,
+        Arc::new(|_: CrawlProgress| {}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        store.list_urls("auth-ok", 1, 1, None).unwrap().rows[0].status,
+        Some(200)
+    );
+
+    let no_auth = CrawlConfig {
+        auth_user: None,
+        auth_password: None,
+        ..config
+    };
+    store
+        .create_crawl("auth-no", &seed, "url", &no_auth, now_ms())
+        .unwrap();
+    run_crawl(
+        store.clone(),
+        "auth-no".to_string(),
+        "url".into(),
+        seed,
+        no_auth,
+        CancellationToken::new(),
+        Arc::new(AtomicBool::new(false)),
+        None,
+        Arc::new(|_: CrawlProgress| {}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        store.list_urls("auth-no", 1, 1, None).unwrap().rows[0].status,
+        Some(401)
+    );
 }

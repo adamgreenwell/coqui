@@ -33,14 +33,23 @@ struct CrawlFinished {
 #[tauri::command]
 fn create_crawl(
     state: State<'_, AppState>,
+    seed_kind: String,
     seed: String,
     config: CrawlConfig,
 ) -> Result<CrawlSummary, String> {
-    let seed = normalize_url(&seed).map_err(|error| format!("Invalid start URL: {error}"))?;
+    if !matches!(seed_kind.as_str(), "url" | "sitemap" | "list") {
+        return Err(format!("Unknown seed kind '{seed_kind}'"));
+    }
+    let seed = match seed_kind.as_str() {
+        "url" | "sitemap" => {
+            normalize_url(&seed).map_err(|error| format!("Invalid seed URL: {error}"))?
+        }
+        _ => seed,
+    };
     let id = uuid::Uuid::new_v4().to_string();
     state
         .store
-        .create_crawl(&id, &seed, &config, now_ms())
+        .create_crawl(&id, &seed, &seed_kind, &config, now_ms())
         .map_err(|error| error.to_string())
 }
 
@@ -116,7 +125,8 @@ fn start_crawl(app: AppHandle, state: State<'_, AppState>, crawl_id: String) -> 
     let id = crawl_id.clone();
 
     tauri::async_runtime::spawn(async move {
-        let seed = summary.seed.clone();
+        let seed_kind = summary.seed_kind.clone();
+        let seed_value = summary.seed.clone();
         let config = summary.config.clone();
         let progress_app = app_handle.clone();
         let progress: Arc<dyn Fn(CrawlProgress) + Send + Sync> = Arc::new(move |event| {
@@ -127,7 +137,8 @@ fn start_crawl(app: AppHandle, state: State<'_, AppState>, crawl_id: String) -> 
         let result = coqui_crawl::run_crawl(
             store.clone(),
             id.clone(),
-            seed,
+            seed_kind,
+            seed_value,
             config,
             token,
             pause,

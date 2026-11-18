@@ -11,6 +11,10 @@ coqui-store.workspace = true
 reqwest.workspace = true
 scraper.workspace = true
 url.workspace = true
+regex.workspace = true
+flate2.workspace = true
+roxmltree.workspace = true
+base64.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 futures.workspace = true
@@ -19,4 +23,8 @@ tracing.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+uuid.workspace = true
+
+
+
 

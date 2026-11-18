@@ -242,6 +242,7 @@ mod tests {
             .create_crawl(
                 id,
                 "https://example.com/",
+                "url",
                 &CrawlConfig::default(),
                 now_ms(),
             )

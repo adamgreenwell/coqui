@@ -670,3 +670,41 @@ tbody tr:hover {
 .dot.paused {
   background: var(--warn);
 }
+
+.field select,
+.field textarea {
+  width: 100%;
+  background: var(--panel-2);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  border-radius: 9px;
+  padding: 9px 11px;
+  outline: none;
+  font: inherit;
+}
+
+.field textarea {
+  resize: vertical;
+  min-height: 52px;
+}
+
+.field select:focus,
+.field textarea:focus {
+  border-color: var(--accent-strong);
+}
+
+.advanced {
+  border-top: 1px dashed var(--border);
+  padding-top: 10px;
+  margin: 2px 0 14px;
+}
+
+.advanced summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 10px;
+  user-select: none;
+}

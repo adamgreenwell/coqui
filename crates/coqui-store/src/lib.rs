@@ -11,7 +11,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const SCHEMA_VERSION: i32 = 2;
+pub const SCHEMA_VERSION: i32 = 3;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -20,6 +20,7 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS crawls (
     id           TEXT PRIMARY KEY,
     seed         TEXT NOT NULL,
+    seed_kind    TEXT NOT NULL DEFAULT 'url',
     status       TEXT NOT NULL,
     config_json  TEXT NOT NULL,
     created_at   INTEGER NOT NULL,
@@ -138,13 +139,21 @@ impl Store {
         &self,
         id: &str,
         seed: &str,
+        seed_kind: &str,
         config: &CrawlConfig,
         created_at: i64,
     ) -> Result<CrawlSummary> {
         let config_json = serde_json::to_string(config)?;
         self.lock()?.execute(
-            "INSERT INTO crawls (id, seed, status, config_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![id, seed, CrawlStatus::Pending.as_str(), config_json, created_at],
+            "INSERT INTO crawls (id, seed, seed_kind, status, config_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                id,
+                seed,
+                seed_kind,
+                CrawlStatus::Pending.as_str(),
+                config_json,
+                created_at
+            ],
         )?;
         self.get_crawl(id)
     }
@@ -152,22 +161,23 @@ impl Store {
     pub fn get_crawl(&self, id: &str) -> Result<CrawlSummary> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
-            "SELECT id, seed, status, config_json, created_at, started_at, finished_at,
+            "SELECT id, seed, seed_kind, status, config_json, created_at, started_at, finished_at,
                     (SELECT COUNT(*) FROM urls WHERE urls.crawl_id = crawls.id)
              FROM crawls WHERE id = ?1",
         )?;
         let summary = stmt
             .query_row(params![id], |row| {
-                let config_json: String = row.get(3)?;
+                let config_json: String = row.get(4)?;
                 Ok(CrawlSummary {
                     id: row.get(0)?,
                     seed: row.get(1)?,
-                    status: CrawlStatus::parse(&row.get::<_, String>(2)?),
+                    seed_kind: row.get(2)?,
+                    status: CrawlStatus::parse(&row.get::<_, String>(3)?),
                     config: serde_json::from_str(&config_json).unwrap_or_default(),
-                    created_at: row.get(4)?,
-                    started_at: row.get(5)?,
-                    finished_at: row.get(6)?,
-                    total_urls: row.get(7)?,
+                    created_at: row.get(5)?,
+                    started_at: row.get(6)?,
+                    finished_at: row.get(7)?,
+                    total_urls: row.get(8)?,
                 })
             })
             .optional()?;
@@ -515,6 +525,12 @@ fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool> {
 
 fn migrate(conn: &Connection) -> Result<()> {
     let version: i32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    if version < 3 && !has_column(conn, "crawls", "seed_kind")? {
+        conn.execute(
+            "ALTER TABLE crawls ADD COLUMN seed_kind TEXT NOT NULL DEFAULT 'url'",
+            [],
+        )?;
+    }
     if version < 2 {
         let additions = [
             ("h1_count", "INTEGER NOT NULL DEFAULT 0"),
@@ -572,6 +588,7 @@ mod tests {
             .create_crawl(
                 id,
                 "https://example.com/",
+                "url",
                 &CrawlConfig::default(),
                 now_ms(),
             )
@@ -617,6 +634,7 @@ mod tests {
             .create_crawl(
                 id,
                 "https://example.com/",
+                "url",
                 &CrawlConfig::default(),
                 now_ms(),
             )
@@ -639,6 +657,7 @@ mod tests {
             .create_crawl(
                 id,
                 "https://example.com/",
+                "url",
                 &CrawlConfig::default(),
                 now_ms(),
             )
@@ -691,6 +710,7 @@ mod tests {
             .create_crawl(
                 id,
                 "https://example.com/",
+                "url",
                 &CrawlConfig::default(),
                 now_ms(),
             )
@@ -715,6 +735,7 @@ mod tests {
         let checkpoint = CrawlCheckpoint {
             frontier: vec!["https://example.com/a".into()],
             seen: vec!["https://example.com/".into()],
+            hosts: vec!["example.com".into()],
             depth: 1,
             crawled: 3,
             discovered: 4,
@@ -726,6 +747,7 @@ mod tests {
         let loaded = store.load_checkpoint("c").unwrap().unwrap();
         assert_eq!(loaded.frontier, checkpoint.frontier);
         assert_eq!(loaded.blocked_by_robots, 2);
+        assert_eq!(loaded.hosts, vec!["example.com".to_string()]);
         store.delete_checkpoint("c").unwrap();
         assert!(store.load_checkpoint("c").unwrap().is_none());
     }
@@ -756,6 +778,7 @@ mod tests {
             .create_crawl(
                 "v1",
                 "https://example.com/",
+                "url",
                 &CrawlConfig::default(),
                 now_ms(),
             )
