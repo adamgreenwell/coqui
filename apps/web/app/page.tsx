@@ -44,6 +44,9 @@ interface CrawlConfig {
   authUser: string | null;
   authPassword: string | null;
   customHeaders: string[];
+  render: boolean;
+  browserPath: string | null;
+  renderWaitMs: number;
 }
 
 interface CrawlSummary {
@@ -209,6 +212,9 @@ export default function Home() {
   const [authUser, setAuthUser] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [customHeaders, setCustomHeaders] = useState('');
+  const [render, setRender] = useState(false);
+  const [browserPath, setBrowserPath] = useState('');
+  const [renderWaitMs, setRenderWaitMs] = useState(500);
 
   const [crawl, setCrawl] = useState<CrawlSummary | null>(null);
   const [phase, setPhase] = useState<CrawlStatus | 'idle'>('idle');
@@ -320,6 +326,9 @@ export default function Home() {
         authUser: authUser.trim() || null,
         authPassword: authPassword || null,
         customHeaders: splitLines(customHeaders),
+        render,
+        browserPath: browserPath.trim() || null,
+        renderWaitMs,
       };
       const summary = await invoke<CrawlSummary>('create_crawl', {
         seedKind,
@@ -625,6 +634,42 @@ export default function Home() {
                   disabled={isRunning}
                 />
               </div>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={render}
+                  onChange={(event) => setRender(event.target.checked)}
+                  disabled={isRunning}
+                />
+                Render JavaScript in headless Chrome/Edge
+              </label>
+              {render && (
+                <div className="grid-2">
+                  <div className="field">
+                    <label htmlFor="browserPath">Browser path (optional)</label>
+                    <input
+                      id="browserPath"
+                      type="text"
+                      value={browserPath}
+                      onChange={(event) => setBrowserPath(event.target.value)}
+                      placeholder="Auto-detect Chrome/Edge"
+                      disabled={isRunning}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="renderWait">Wait after load (ms)</label>
+                    <input
+                      id="renderWait"
+                      type="number"
+                      min={0}
+                      step={100}
+                      value={renderWaitMs}
+                      onChange={(event) => setRenderWaitMs(Number(event.target.value))}
+                      disabled={isRunning}
+                    />
+                  </div>
+                </div>
+              )}
             </details>
             <label className="checkbox">
               <input

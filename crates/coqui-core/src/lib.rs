@@ -43,6 +43,15 @@ pub struct CrawlConfig {
     /// Respect robots.txt rules for the configured user agent.
     #[serde(default = "default_true")]
     pub respect_robots: bool,
+    /// Render pages in a headless Chromium before extraction.
+    #[serde(default)]
+    pub render: bool,
+    /// Optional explicit Chrome/Edge executable.
+    #[serde(default)]
+    pub browser_path: Option<String>,
+    /// Extra delay after load before reading the DOM.
+    #[serde(default = "default_render_wait_ms")]
+    pub render_wait_ms: u64,
     /// Only crawl discovered URLs matching at least one pattern (empty = all).
     #[serde(default)]
     pub include_patterns: Vec<String>,
@@ -64,6 +73,10 @@ fn default_true() -> bool {
     true
 }
 
+fn default_render_wait_ms() -> u64 {
+    500
+}
+
 impl Default for CrawlConfig {
     fn default() -> Self {
         Self {
@@ -77,6 +90,9 @@ impl Default for CrawlConfig {
             ),
             same_host_only: true,
             respect_robots: true,
+            render: false,
+            browser_path: None,
+            render_wait_ms: 500,
             include_patterns: Vec::new(),
             exclude_patterns: Vec::new(),
             auth_user: None,

@@ -55,6 +55,19 @@ const server = http.createServer((request, response) => {
       return send(404, 'text/html', page('Missing', '<h1>Missing</h1>'));
     case '/blocked':
       return send(200, 'text/html; charset=utf-8', page('Blocked', '<h1>Blocked</h1>'));
+    case '/js':
+      return send(
+        200,
+        'text/html; charset=utf-8',
+        `<!doctype html><html><head><title>Static title</title></head><body>
+          <div id="app"></div>
+          <script>
+            document.title = 'Rendered title';
+            document.getElementById('app').innerHTML =
+              '<h1>Rendered H1</h1><p>' + 'word '.repeat(250) + '</p><a href="/about">About</a>';
+          </script>
+        </body></html>`,
+      );
     case '/about':
       return send(
         200,

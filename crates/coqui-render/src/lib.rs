@@ -1,0 +1,284 @@
+//! Minimal Chromium DevTools Protocol renderer.
+//!
+//! The renderer drives an external Chrome/Edge (headless by default), creates a tab per page,
+//! waits for `document.readyState === "complete"`, and returns the rendered outer HTML.
+//! Rendering is serialised: one page at a time per renderer instance.
+
+use futures::{SinkExt, StreamExt};
+use serde_json::{Value, json};
+use std::path::PathBuf;
+use std::process::Stdio;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex as StdMutex};
+use std::time::Duration;
+use tokio::net::TcpStream;
+use tokio::process::{Child, Command};
+use tokio::sync::Mutex;
+use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
+
+#[derive(Debug, thiserror::Error)]
+pub enum RenderError {
+    #[error("no Chrome/Edge binary found; set COQUI_BROWSER_PATH")]
+    NoBrowser,
+    #[error("could not reach the browser: {0}")]
+    Browser(String),
+    #[error("CDP error: {0}")]
+    Protocol(String),
+    #[error("page did not finish loading within {0} ms")]
+    Timeout(u64),
+    #[error("render failed: {0}")]
+    Other(String),
+}
+
+type Ws = WebSocketStream<MaybeTlsStream<TcpStream>>;
+
+pub struct Renderer {
+    ws: Mutex<Ws>,
+    next_id: AtomicU64,
+    child: StdMutex<Option<Child>>,
+    wait_ms: u64,
+}
+
+impl Renderer {
+    /// Connect to `COQUI_CDP_ENDPOINT` if set, otherwise launch a headless browser.
+    pub async fn connect(
+        browser_path: Option<&str>,
+        wait_ms: u64,
+    ) -> Result<Arc<Self>, RenderError> {
+        let (endpoint, child) = match std::env::var("COQUI_CDP_ENDPOINT") {
+            Ok(endpoint) if !endpoint.is_empty() => {
+                (endpoint.trim_end_matches('/').to_string(), None)
+            }
+            _ => launch(browser_path).await?,
+        };
+        let version: Value = reqwest::get(format!("{endpoint}/json/version"))
+            .await
+            .map_err(|error| RenderError::Browser(error.to_string()))?
+            .json()
+            .await
+            .map_err(|error| RenderError::Browser(error.to_string()))?;
+        let ws_url = version
+            .get("webSocketDebuggerUrl")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                RenderError::Protocol("browser did not expose a websocket URL".into())
+            })?;
+        let (ws, _) = connect_async(ws_url)
+            .await
+            .map_err(|error| RenderError::Browser(error.to_string()))?;
+        Ok(Arc::new(Self {
+            ws: Mutex::new(ws),
+            next_id: AtomicU64::new(1),
+            child: StdMutex::new(child),
+            wait_ms,
+        }))
+    }
+
+    /// Render one URL and return its outer HTML.
+    pub async fn render(&self, url: &str) -> Result<String, RenderError> {
+        let target = self
+            .call("Target.createTarget", json!({"url": "about:blank"}), None)
+            .await?;
+        let target_id = target
+            .get("targetId")
+            .and_then(Value::as_str)
+            .ok_or_else(|| RenderError::Protocol("no target id".into()))?
+            .to_string();
+        let result = self.render_target(&target_id, url).await;
+        let _ = self
+            .call("Target.closeTarget", json!({"targetId": target_id}), None)
+            .await;
+        result
+    }
+
+    async fn render_target(&self, target_id: &str, url: &str) -> Result<String, RenderError> {
+        let attached = self
+            .call(
+                "Target.attachToTarget",
+                json!({"targetId": target_id, "flatten": true}),
+                None,
+            )
+            .await?;
+        let session = attached
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .ok_or_else(|| RenderError::Protocol("no session id".into()))?
+            .to_string();
+        self.call("Page.enable", json!({}), Some(&session)).await?;
+        self.call("Page.navigate", json!({"url": url}), Some(&session))
+            .await?;
+
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(20_000);
+        loop {
+            let state = self
+                .call(
+                    "Runtime.evaluate",
+                    json!({"expression": "document.readyState", "returnByValue": true}),
+                    Some(&session),
+                )
+                .await?;
+            let ready = state
+                .get("result")
+                .and_then(|value| value.get("value"))
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            if ready == "complete" {
+                break;
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return Err(RenderError::Timeout(20_000));
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        if self.wait_ms > 0 {
+            tokio::time::sleep(Duration::from_millis(self.wait_ms)).await;
+        }
+        let html = self
+            .call(
+                "Runtime.evaluate",
+                json!({
+                    "expression": "document.documentElement ? document.documentElement.outerHTML : ''",
+                    "returnByValue": true
+                }),
+                Some(&session),
+            )
+            .await?;
+        html.get("result")
+            .and_then(|value| value.get("value"))
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .ok_or_else(|| RenderError::Protocol("no rendered HTML".into()))
+    }
+
+    async fn call(
+        &self,
+        method: &str,
+        params: Value,
+        session: Option<&str>,
+    ) -> Result<Value, RenderError> {
+        let mut ws = self.ws.lock().await;
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let mut message = json!({"id": id, "method": method, "params": params});
+        if let Some(session) = session {
+            message["sessionId"] = Value::String(session.to_string());
+        }
+        ws.send(Message::Text(message.to_string().into()))
+            .await
+            .map_err(|error| RenderError::Protocol(error.to_string()))?;
+        loop {
+            let frame = ws
+                .next()
+                .await
+                .ok_or_else(|| RenderError::Protocol("browser closed the connection".into()))?
+                .map_err(|error| RenderError::Protocol(error.to_string()))?;
+            let Message::Text(text) = frame else {
+                continue;
+            };
+            let value: Value = serde_json::from_str(&text)
+                .map_err(|error| RenderError::Protocol(error.to_string()))?;
+            if value.get("id").and_then(Value::as_u64) != Some(id) {
+                continue;
+            }
+            if let Some(error) = value.get("error") {
+                return Err(RenderError::Protocol(error.to_string()));
+            }
+            return Ok(value.get("result").cloned().unwrap_or(Value::Null));
+        }
+    }
+}
+
+impl Drop for Renderer {
+    fn drop(&mut self) {
+        if let Ok(mut child) = self.child.lock() {
+            if let Some(child) = child.as_mut() {
+                let _ = child.start_kill();
+            }
+        }
+    }
+}
+
+async fn launch(browser_path: Option<&str>) -> Result<(String, Option<Child>), RenderError> {
+    let browser = find_browser(browser_path).ok_or(RenderError::NoBrowser)?;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .map_err(|error| RenderError::Browser(error.to_string()))?;
+    let port = listener
+        .local_addr()
+        .map_err(|error| RenderError::Browser(error.to_string()))?
+        .port();
+    drop(listener);
+
+    let profile = std::env::temp_dir().join(format!("coqui-render-{}", uuid::Uuid::new_v4()));
+    let mut command = Command::new(&browser);
+    command
+        .arg("--headless=new")
+        .arg(format!("--remote-debugging-port={port}"))
+        .arg(format!("--user-data-dir={}", profile.display()))
+        .arg("--no-first-run")
+        .arg("--no-default-browser-check")
+        .arg("--disable-gpu")
+        .arg("--disable-dev-shm-usage")
+        .arg("about:blank")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let child = command
+        .spawn()
+        .map_err(|error| RenderError::Browser(error.to_string()))?;
+
+    let endpoint = format!("http://127.0.0.1:{port}");
+    for _ in 0..150 {
+        if reqwest::get(format!("{endpoint}/json/version"))
+            .await
+            .is_ok()
+        {
+            return Ok((endpoint, Some(child)));
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    Err(RenderError::Browser(
+        "browser did not expose a debugging port".into(),
+    ))
+}
+
+fn find_browser(configured: Option<&str>) -> Option<PathBuf> {
+    if let Some(path) = std::env::var_os("COQUI_BROWSER_PATH") {
+        let path = PathBuf::from(path);
+        if path.exists() {
+            return Some(path);
+        }
+    }
+    if let Some(path) = configured.map(PathBuf::from) {
+        if path.exists() {
+            return Some(path);
+        }
+    }
+    let candidates = if cfg!(windows) {
+        [
+            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        ]
+        .as_slice()
+    } else if cfg!(target_os = "macos") {
+        [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+            "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        ]
+        .as_slice()
+    } else {
+        [
+            "/usr/bin/google-chrome",
+            "/usr/bin/chromium",
+            "/usr/bin/chromium-browser",
+        ]
+        .as_slice()
+    };
+    candidates
+        .iter()
+        .map(PathBuf::from)
+        .find(|path| path.exists())
+}

@@ -1,0 +1,15 @@
+[package]
+name = "coqui-render"
+description = "Chromium/CDP rendering for JavaScript-dependent pages"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+reqwest.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tokio-tungstenite.workspace = true
+futures.workspace = true
+thiserror.workspace = true
+uuid.workspace = true

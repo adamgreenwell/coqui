@@ -89,6 +89,11 @@ async fn main() {
             concurrency,
             request_timeout_ms: 20_000,
             respect_robots: true,
+            render: std::env::var_os("COQUI_RENDER").is_some(),
+            render_wait_ms: std::env::var("COQUI_RENDER_WAIT")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(500),
             ..CrawlConfig::default()
         };
         store
@@ -97,6 +102,7 @@ async fn main() {
         (crawl_id, config, None)
     };
     let mut config = config;
+    config.render = std::env::var_os("COQUI_RENDER").is_some();
     if let Some(user_agent) = &user_agent {
         config.user_agent = user_agent.clone();
     }

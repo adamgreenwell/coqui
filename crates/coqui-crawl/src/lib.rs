@@ -13,6 +13,7 @@ use base64::engine::general_purpose::STANDARD;
 use coqui_core::{
     CrawlCheckpoint, CrawlConfig, CrawlProgress, NewUrl, UrlError, now_ms, resolve_url,
 };
+use coqui_render::Renderer;
 use coqui_store::{Store, StoreError};
 use futures::{StreamExt, stream};
 use regex::Regex;
@@ -222,6 +223,15 @@ pub async fn run_crawl(
         });
     }
 
+    let renderer = if config.render {
+        Some(
+            Renderer::connect(config.browser_path.as_deref(), config.render_wait_ms)
+                .await
+                .map_err(|error| CrawlError::Config(format!("renderer unavailable: {error}")))?,
+        )
+    } else {
+        None
+    };
     let concurrency = usize::from(config.concurrency.max(1));
     let chunk_size = (concurrency * 4).clamp(8, 400);
     let mut last_checkpoint = Instant::now();
@@ -241,8 +251,9 @@ pub async fn run_crawl(
             let batch: Vec<String> = frontier.drain(..take).collect();
             let results: Vec<(String, FetchOutcome)> = stream::iter(batch.into_iter().map(|url| {
                 let client = client.clone();
+                let renderer = renderer.clone();
                 async move {
-                    let outcome = fetch(&client, &url).await;
+                    let outcome = fetch(&client, &url, renderer).await;
                     (url, outcome)
                 }
             }))
@@ -518,7 +529,7 @@ fn path_of(url: &str) -> String {
         .unwrap_or_else(|_| "/".to_string())
 }
 
-async fn fetch(client: &Client, requested: &str) -> FetchOutcome {
+async fn fetch(client: &Client, requested: &str, renderer: Option<Arc<Renderer>>) -> FetchOutcome {
     let debug = std::env::var_os("COQUI_DEBUG_CRAWL").is_some();
     if debug {
         eprintln!("fetch: GET {requested}");
@@ -621,7 +632,25 @@ async fn fetch(client: &Client, requested: &str) -> FetchOutcome {
                 }
             }
         }
+        let mut body = body;
         let blocked = looks_blocked(status, &response_headers, body.as_deref());
+        if !blocked {
+            if let Some(renderer) = renderer {
+                if html && (200..300).contains(&status) {
+                    match renderer.render(&current).await {
+                        Ok(rendered) => {
+                            size_bytes = rendered.len() as u64;
+                            body = Some(rendered);
+                        }
+                        Err(error) => {
+                            if std::env::var_os("COQUI_DEBUG_CRAWL").is_some() {
+                                eprintln!("render: failed for {current}: {error}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
         return FetchOutcome {
             status: first_status,
             final_url: current,

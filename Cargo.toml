@@ -5,6 +5,7 @@ members = [
   "crates/coqui-store",
   "crates/coqui-crawl",
   "crates/coqui-audit",
+  "crates/coqui-render",
   "src-tauri",
 ]
 
@@ -18,19 +19,21 @@ coqui-core = { path = "crates/coqui-core" }
 coqui-store = { path = "crates/coqui-store" }
 coqui-crawl = { path = "crates/coqui-crawl" }
 coqui-audit = { path = "crates/coqui-audit" }
+coqui-render = { path = "crates/coqui-render" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "process", "net", "io-util"] }
 tokio-util = "0.7"
+tokio-tungstenite = { version = "0.28", features = ["connect"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
 rusqlite = { version = "0.43", features = ["bundled"] }
 csv = "1.4"
-reqwest = { version = "0.13", default-features = false, features = ["rustls", "webpki-roots", "charset", "http2", "gzip", "brotli"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "webpki-roots", "charset", "http2", "gzip", "brotli", "json"] }
 scraper = "0.29"
 futures = "0.3"
 regex = "1"
@@ -43,6 +46,8 @@ base64 = "0.22"
 opt-level = 0
 [profile.dev.package."*"]
 opt-level = 2
+
+
 
 
 

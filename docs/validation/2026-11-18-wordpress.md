@@ -120,6 +120,16 @@ A 3,000-page run with the rebuilt extractor found:
 
 Dropping `idx_links_crawl_to` reduced the same crawl from 56.4 MB to **45.3 MB** (~20%). Existing databases need a `VACUUM` to reclaim the freed pages.
 
+### Rendering foundation
+
+The local `/js` fixture serves an empty `<div>` and fills it with JavaScript. With rendering off the crawl recorded the static title, no H1 and 14 words. With `COQUI_RENDER=1` it recorded:
+
+- title: `Rendered title`
+- H1: `Rendered H1`
+- word count: 266
+
+A live render of `https://www.landscapemanagement.net/` returned ~274 KB of rendered HTML. Rendering is serialised per crawl and falls back to raw HTML after a 20-second load timeout.
+
 ## Scale test (synthetic, local)
 
 | URLs | Crawl time | Rate | DB |
@@ -134,6 +144,7 @@ Dropping `idx_links_crawl_to` reduced the same crawl from 56.4 MB to **45.3 MB**
 3. Extend audit rules (canonical mismatch, missing H1, hreflang, pagination).
 4. Classify assets (X-04) so images stop counting as HTML URL rows.
 5. Incremental frontier for 100k-scale crawls (C-01).
+
 
 
 
