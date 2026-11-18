@@ -264,6 +264,7 @@ pub async fn run_crawl(
                         hreflang: Vec::new(),
                         pagination_next: None,
                         pagination_prev: None,
+                        structured_data: Default::default(),
                         content_type: outcome.content_type.clone(),
                         title: None,
                         meta_description: None,
@@ -320,6 +321,10 @@ pub async fn run_crawl(
                     pagination_prev: extracted
                         .as_ref()
                         .and_then(|page| page.pagination_prev.clone()),
+                    structured_data: extracted
+                        .as_ref()
+                        .map(|page| page.structured_data.clone())
+                        .unwrap_or_default(),
                     content_type: outcome.content_type.clone(),
                     title: extracted.as_ref().and_then(|page| page.title.clone()),
                     meta_description: extracted

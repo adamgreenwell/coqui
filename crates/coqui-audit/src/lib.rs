@@ -96,6 +96,21 @@ pub const RULES: &[RuleDef] = &[
         label: "Broken pagination link",
         severity: IssueSeverity::Error,
     },
+    RuleDef {
+        id: "jsonld_malformed",
+        label: "Malformed structured data",
+        severity: IssueSeverity::Warning,
+    },
+    RuleDef {
+        id: "jsonld_missing_required",
+        label: "Structured data missing required fields",
+        severity: IssueSeverity::Warning,
+    },
+    RuleDef {
+        id: "jsonld_missing",
+        label: "No structured data",
+        severity: IssueSeverity::Opportunity,
+    },
 ];
 
 pub fn rule_label(rule: &str) -> &str {
@@ -312,6 +327,41 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
             )?;
         }
 
+        let structured = &url.structured_data;
+        let malformed: Vec<&str> = structured
+            .errors
+            .iter()
+            .map(String::as_str)
+            .filter(|error| error.starts_with("invalid"))
+            .collect();
+        if !malformed.is_empty() {
+            issue(
+                store,
+                crawl_id,
+                &url.url,
+                "jsonld_malformed",
+                Some(malformed.join("; ")),
+            )?;
+        }
+        let missing_fields: Vec<&str> = structured
+            .errors
+            .iter()
+            .map(String::as_str)
+            .filter(|error| error.starts_with("missing "))
+            .collect();
+        if !missing_fields.is_empty() {
+            issue(
+                store,
+                crawl_id,
+                &url.url,
+                "jsonld_missing_required",
+                Some(missing_fields.join("; ")),
+            )?;
+        }
+        if structured.types.is_empty() && structured.errors.is_empty() {
+            issue(store, crawl_id, &url.url, "jsonld_missing", None)?;
+        }
+
         for alternate in &url.hreflang {
             match status_by_url.get(alternate.url.as_str()) {
                 Some(target)
@@ -439,6 +489,8 @@ mod tests {
                 pagination_next: None,
 
                 pagination_prev: None,
+
+                structured_data: Default::default(),
                 content_type: Some("text/html".into()),
                 title: title.map(str::to_string),
                 meta_description: None,
@@ -493,6 +545,8 @@ mod tests {
                 pagination_next: None,
 
                 pagination_prev: None,
+
+                structured_data: Default::default(),
                 content_type: Some("text/html".into()),
                 title: Some("Not found".into()),
                 meta_description: Some("missing".into()),
@@ -532,6 +586,8 @@ mod tests {
                 pagination_next: None,
 
                 pagination_prev: None,
+
+                structured_data: Default::default(),
                 content_type: Some("text/html".into()),
                 title: Some("Just a moment...".into()),
                 meta_description: None,
@@ -595,6 +651,8 @@ mod wordpress_rules {
                 pagination_next: None,
 
                 pagination_prev: None,
+
+                structured_data: Default::default(),
                 content_type: Some("text/html".into()),
                 title: Some(title.into()),
                 meta_description: Some(meta.into()),
@@ -631,6 +689,8 @@ mod wordpress_rules {
                 hreflang,
                 pagination_next: next.map(str::to_string),
                 pagination_prev: None,
+
+                structured_data: Default::default(),
                 content_type: Some("text/html".into()),
                 title: Some("A reasonably unique title".into()),
                 meta_description: Some("A reasonably unique description".into()),
@@ -648,6 +708,75 @@ mod wordpress_rules {
                 discovered_at: now_ms(),
             })
             .unwrap();
+    }
+
+    fn add_structured(store: &Store, id: &str, url: &str, types: Vec<&str>, errors: Vec<&str>) {
+        store
+            .insert_url(&NewUrl {
+                crawl_id: id.into(),
+                url: url.into(),
+                status: Some(200),
+                blocked: false,
+                content_type: Some("text/html".into()),
+                title: Some("A unique structured title".into()),
+                meta_description: Some("A unique structured description".into()),
+                h1: Some("Heading".into()),
+                h1_count: 1,
+                canonical: Some(url.into()),
+                meta_robots: None,
+                hreflang: Vec::new(),
+                pagination_next: None,
+                pagination_prev: None,
+                structured_data: coqui_core::StructuredData {
+                    types: types.into_iter().map(str::to_string).collect(),
+                    errors: errors.into_iter().map(str::to_string).collect(),
+                },
+                redirect_target: None,
+                redirect_chain: Vec::new(),
+                word_count: Some(500),
+                depth: 0,
+                response_time_ms: Some(10),
+                size_bytes: Some(100),
+                error: None,
+                discovered_at: now_ms(),
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn finds_structured_data_issues() {
+        let store = Store::open_in_memory().unwrap();
+        let id = "jsonld";
+        store
+            .create_crawl(
+                id,
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        add_structured(
+            &store,
+            id,
+            "https://example.com/bad",
+            vec![],
+            vec!["invalid json: expected value"],
+        );
+        add_structured(
+            &store,
+            id,
+            "https://example.com/missing",
+            vec!["Article"],
+            vec!["missing headline for Article"],
+        );
+        add_structured(&store, id, "https://example.com/none", vec![], vec![]);
+
+        let counts = analyze_crawl(&store, id).unwrap();
+        let by_rule: HashMap<_, _> = counts.iter().map(|c| (c.rule.as_str(), c.count)).collect();
+        assert_eq!(by_rule.get("jsonld_malformed"), Some(&1));
+        assert_eq!(by_rule.get("jsonld_missing_required"), Some(&1));
+        assert_eq!(by_rule.get("jsonld_missing"), Some(&1));
     }
 
     #[test]

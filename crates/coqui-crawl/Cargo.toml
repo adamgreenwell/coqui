@@ -10,6 +10,7 @@ coqui-core.workspace = true
 coqui-store.workspace = true
 reqwest.workspace = true
 scraper.workspace = true
+serde_json.workspace = true
 url.workspace = true
 regex.workspace = true
 flate2.workspace = true
@@ -25,6 +26,7 @@ tracing.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 uuid.workspace = true
 coqui-audit.workspace = true
+
 
 
 

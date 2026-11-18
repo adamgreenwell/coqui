@@ -3,8 +3,9 @@
 //! The full column registry (X-01) will replace this module with a field-oriented design; the
 //! shape here is intentionally simple: one page in, the values the UI and audit rules need.
 
-use coqui_core::{HreflangLink, resolve_url};
+use coqui_core::{HreflangLink, StructuredData, resolve_url};
 use scraper::{Html, Selector};
+use serde_json::Value;
 use std::collections::HashSet;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,6 +26,7 @@ pub struct ExtractedPage {
     pub hreflang: Vec<HreflangLink>,
     pub pagination_next: Option<String>,
     pub pagination_prev: Option<String>,
+    pub structured_data: StructuredData,
     pub word_count: u32,
     pub links: Vec<ExtractedLink>,
 }
@@ -36,6 +38,86 @@ fn selector(css: &str) -> Selector {
 fn clean(value: String) -> Option<String> {
     let value = value.split_whitespace().collect::<Vec<_>>().join(" ");
     if value.is_empty() { None } else { Some(value) }
+}
+
+fn required_fields(kind: &str) -> &'static [&'static str] {
+    match kind.to_ascii_lowercase().as_str() {
+        "article" | "newsarticle" | "blogposting" => &["headline", "datePublished", "author"],
+        "product" => &["name"],
+        "organization" => &["name"],
+        "localbusiness" => &["name", "address"],
+        "website" => &["name", "url"],
+        "breadcrumblist" => &["itemListElement"],
+        "event" => &["name", "startDate", "location"],
+        "faqpage" => &["mainEntity"],
+        "recipe" => &["name", "recipeIngredient"],
+        "videoobject" => &["name", "description", "thumbnailUrl", "uploadDate"],
+        _ => &[],
+    }
+}
+
+fn collect_jsonld(value: &Value, data: &mut StructuredData, seen: &mut HashSet<String>) {
+    match value {
+        Value::Array(items) => {
+            for item in items {
+                collect_jsonld(item, data, seen);
+            }
+        }
+        Value::Object(map) => {
+            if let Some(graph) = map.get("@graph") {
+                collect_jsonld(graph, data, seen);
+            }
+            let types: Vec<String> = match map.get("@type") {
+                Some(Value::String(kind)) => vec![kind.clone()],
+                Some(Value::Array(kinds)) => kinds
+                    .iter()
+                    .filter_map(|kind| kind.as_str().map(str::to_string))
+                    .collect(),
+                _ => Vec::new(),
+            };
+            for kind in types {
+                let kind = kind.trim().to_string();
+                if kind.is_empty() || !seen.insert(kind.clone()) {
+                    continue;
+                }
+                for field in required_fields(&kind) {
+                    if map.get(*field).is_none() {
+                        data.errors.push(format!("missing {field} for {kind}"));
+                    }
+                }
+                data.types.push(kind);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn extract_structured_data(document: &Html) -> StructuredData {
+    let mut data = StructuredData::default();
+    let mut seen = HashSet::new();
+    for script in document.select(&selector("script[type]")) {
+        let is_jsonld = script
+            .value()
+            .attr("type")
+            .map(|value| value.trim().eq_ignore_ascii_case("application/ld+json"))
+            .unwrap_or(false);
+        if !is_jsonld {
+            continue;
+        }
+        let raw = script.text().collect::<String>();
+        let raw = raw.trim_start_matches('\u{feff}').trim();
+        if raw.is_empty() {
+            continue;
+        }
+        match serde_json::from_str::<Value>(raw) {
+            Ok(value) => collect_jsonld(&value, &mut data, &mut seen),
+            Err(error) => data.errors.push(format!("invalid json: {error}")),
+        }
+    }
+    data.types.sort();
+    data.types.truncate(20);
+    data.errors.truncate(10);
+    data
 }
 
 /// Extract the current field set and the crawlable outlinks of a document.
@@ -103,6 +185,8 @@ pub fn extract_page(html: &str, base_url: &str) -> ExtractedPage {
     let pagination_next = pagination_rel("next");
     let pagination_prev = pagination_rel("prev");
 
+    let structured_data = extract_structured_data(&document);
+
     let body_text = document
         .select(&selector("body"))
         .next()
@@ -139,6 +223,7 @@ pub fn extract_page(html: &str, base_url: &str) -> ExtractedPage {
         hreflang,
         pagination_next,
         pagination_prev,
+        structured_data,
         word_count,
         links,
     }
@@ -206,5 +291,54 @@ mod tests {
     fn tolerates_malformed_html() {
         let page = extract_page("<html><body><h1>Only a heading", "https://example.com/");
         assert_eq!(page.h1.as_deref(), Some("Only a heading"));
+    }
+}
+
+#[cfg(test)]
+mod structured_data_tests {
+    use super::*;
+
+    #[test]
+    fn extracts_types_and_reports_malformed_blocks() {
+        let html = r#"
+            <html><head>
+              <script type="application/ld+json">
+                {"@context":"https://schema.org","@type":"Article","headline":"Frogs","datePublished":"2026-01-01","author":{"@type":"Person","name":"A"}}
+              </script>
+              <script type="application/ld+json">{ this is not json }</script>
+            </head><body></body></html>
+        "#;
+        let page = extract_page(html, "https://example.com/");
+        assert_eq!(page.structured_data.types, vec!["Article"]);
+        assert_eq!(page.structured_data.errors.len(), 1);
+        assert!(page.structured_data.errors[0].starts_with("invalid json"));
+    }
+
+    #[test]
+    fn organization_url_is_optional() {
+        let html = r#"
+            <html><head>
+              <script type="application/ld+json">
+                {"@context":"https://schema.org","@type":"Organization","name":"Example"}
+              </script>
+            </head><body></body></html>
+        "#;
+        let page = extract_page(html, "https://example.com/");
+        assert_eq!(page.structured_data.types, vec!["Organization"]);
+        assert!(page.structured_data.errors.is_empty());
+    }
+
+    #[test]
+    fn reports_missing_required_fields() {
+        let html = r#"
+            <html><head>
+              <script type="application/ld+json">
+                {"@context":"https://schema.org","@type":"Product","name":"Frog food"}
+              </script>
+            </head><body></body></html>
+        "#;
+        let page = extract_page(html, "https://example.com/");
+        assert_eq!(page.structured_data.types, vec!["Product"]);
+        assert!(page.structured_data.errors.is_empty());
     }
 }

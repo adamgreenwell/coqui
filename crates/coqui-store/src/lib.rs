@@ -11,7 +11,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const SCHEMA_VERSION: i32 = 6;
+pub const SCHEMA_VERSION: i32 = 7;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS urls (
     hreflang_json     TEXT,
     pagination_next   TEXT,
     pagination_prev   TEXT,
+    structured_data_json TEXT,
     discovered_at     INTEGER NOT NULL,
     UNIQUE (crawl_id, url)
 );
@@ -252,9 +253,9 @@ impl Store {
                 (crawl_id, url, status, content_type, title, meta_description, h1, h1_count,
                  canonical, meta_robots, redirect_target, redirect_chain, word_count, depth,
                  response_time_ms, size_bytes, error, blocked, hreflang_json, pagination_next,
-                 pagination_prev, discovered_at)
+                 pagination_prev, structured_data_json, discovered_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
-                     ?18, ?19, ?20, ?21, ?22)",
+                     ?18, ?19, ?20, ?21, ?22, ?23)",
             params![
                 record.crawl_id,
                 record.url,
@@ -277,6 +278,8 @@ impl Store {
                 serde_json::to_string(&record.hreflang).unwrap_or_else(|_| "[]".into()),
                 record.pagination_next,
                 record.pagination_prev,
+                serde_json::to_string(&record.structured_data)
+                    .unwrap_or_else(|_| "{\"types\":[],\"errors\":[]}".into()),
                 record.discovered_at,
             ],
         )?;
@@ -423,7 +426,7 @@ impl Store {
             "SELECT id, crawl_id, url, status, content_type, title, meta_description, h1, h1_count,
                     canonical, meta_robots, redirect_target, redirect_chain, word_count, depth,
                     response_time_ms, size_bytes, error, discovered_at, blocked, hreflang_json,
-                    pagination_next, pagination_prev
+                    pagination_next, pagination_prev, structured_data_json
              FROM urls WHERE crawl_id = ?1
                AND (?3 IS NULL OR EXISTS (
                     SELECT 1 FROM issues
@@ -451,7 +454,7 @@ impl Store {
             "SELECT id, crawl_id, url, status, content_type, title, meta_description, h1, h1_count,
                     canonical, meta_robots, redirect_target, redirect_chain, word_count, depth,
                     response_time_ms, size_bytes, error, discovered_at, blocked, hreflang_json,
-                    pagination_next, pagination_prev
+                    pagination_next, pagination_prev, structured_data_json
              FROM urls WHERE crawl_id = ?1 ORDER BY id",
         )?;
         let rows = stmt
@@ -617,6 +620,10 @@ fn map_url_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<UrlRecord> {
             .unwrap_or_default(),
         pagination_next: row.get(21)?,
         pagination_prev: row.get(22)?,
+        structured_data: row
+            .get::<_, Option<String>>(23)?
+            .and_then(|value| serde_json::from_str(&value).ok())
+            .unwrap_or_default(),
         discovered_at: row.get(18)?,
     })
 }
@@ -663,6 +670,9 @@ fn migrate(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_links_crawl_from ON links (crawl_id, from_id);
          CREATE INDEX IF NOT EXISTS idx_links_crawl_to ON links (crawl_id, to_id);",
     )?;
+    if version < 7 && !has_column(conn, "urls", "structured_data_json")? {
+        conn.execute("ALTER TABLE urls ADD COLUMN structured_data_json TEXT", [])?;
+    }
     if version < 6 {
         for (column, definition) in [
             ("hreflang_json", "TEXT"),
@@ -728,6 +738,8 @@ mod tests {
             pagination_next: None,
 
             pagination_prev: None,
+
+            structured_data: Default::default(),
             content_type: Some("text/html".into()),
             title: Some("Example".into()),
             meta_description: None,

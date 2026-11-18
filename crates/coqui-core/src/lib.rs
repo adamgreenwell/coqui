@@ -164,6 +164,7 @@ pub struct UrlRecord {
     pub hreflang: Vec<HreflangLink>,
     pub pagination_next: Option<String>,
     pub pagination_prev: Option<String>,
+    pub structured_data: StructuredData,
     pub redirect_target: Option<String>,
     pub redirect_chain: Vec<String>,
     pub word_count: Option<u32>,
@@ -211,6 +212,7 @@ pub struct NewUrl {
     pub hreflang: Vec<HreflangLink>,
     pub pagination_next: Option<String>,
     pub pagination_prev: Option<String>,
+    pub structured_data: StructuredData,
     pub redirect_target: Option<String>,
     pub redirect_chain: Vec<String>,
     pub word_count: Option<u32>,
@@ -281,6 +283,16 @@ pub struct CrawlCheckpoint {
 pub struct HreflangLink {
     pub lang: String,
     pub url: String,
+}
+
+/// JSON-LD structured data discovered on a page.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StructuredData {
+    /// Distinct `@type` values found in valid JSON-LD blocks.
+    pub types: Vec<String>,
+    /// Syntax and required-field problems, each with a short prefix.
+    pub errors: Vec<String>,
 }
 
 /// A link edge discovered on a page.

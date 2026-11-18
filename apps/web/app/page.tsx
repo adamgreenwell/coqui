@@ -127,6 +127,9 @@ const ISSUE_LABELS: Record<string, string> = {
   hreflang_missing_return: 'Hreflang missing return link',
   hreflang_invalid_target: 'Hreflang target not reachable',
   pagination_broken: 'Broken pagination link',
+  jsonld_malformed: 'Malformed structured data',
+  jsonld_missing_required: 'Structured data missing required fields',
+  jsonld_missing: 'No structured data',
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -910,6 +913,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 

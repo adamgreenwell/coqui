@@ -105,6 +105,12 @@ Re-analysing the 3,000-page crawl with the new rules produced:
 
 The 714 over-long descriptions are a genuine WordPress excerpt problem; the 43 duplicate titles and 40 duplicate descriptions point at archive/template pages worth reviewing.
 
+### Structured data (JSON-LD)
+
+Schema v7 extracts JSON-LD types and validation errors. On the 3,000-page run every page carried valid JSON-LD (`NewsArticle`, `WebSite`, `Organization`, `Person`, `ImageObject`, `WebPage`), so `jsonld_malformed`, `jsonld_missing_required` and `jsonld_missing` were all zero.
+
+The first pass flagged 2,999 pages for a missing `Organization.url`; Yoast emits that node with `@id` and `name` only, so `url` was removed from the required set and a regression test added.
+
 ### Hreflang, pagination and index trim
 
 A 3,000-page run with the rebuilt extractor found:
@@ -128,6 +134,7 @@ Dropping `idx_links_crawl_to` reduced the same crawl from 56.4 MB to **45.3 MB**
 3. Extend audit rules (canonical mismatch, missing H1, hreflang, pagination).
 4. Classify assets (X-04) so images stop counting as HTML URL rows.
 5. Incremental frontier for 100k-scale crawls (C-01).
+
 
 
 
