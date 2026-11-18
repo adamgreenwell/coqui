@@ -130,6 +130,23 @@ The local `/js` fixture serves an empty `<div>` and fills it with JavaScript. Wi
 
 A live render of `https://www.landscapemanagement.net/` returned ~274 KB of rendered HTML. With screenshots enabled, the fixture crawl stored a 68 KB JPEG and captured the fixture `console.error` in `console_json`. The renderer runs a 1–8 worker pool, applies session cookies/headers/user agent, and captures console + uncaught exceptions from CDP events. A 20-second load timeout falls back to raw HTML.
 
+### Rendered crawl at scale (staging)
+
+`stage.landscapemanagement.net` was crawled with `render=4 workers` and screenshots enabled, 500 URLs:
+
+| Metric | Value |
+| --- | --- |
+| Time | 711 s (0.7 URLs/s) |
+| Status | 500 × 200, 0 blocked |
+| Screenshots | 500 (15.8 MB, ~31.5 KB/page) |
+| Console errors | 470 pages / 2,390 entries |
+| DB | 28.4 MB (screenshots 56%) |
+| Canonicals | 0 (staging currently emits none) |
+
+Console errors are dominated by `ERR_BLOCKED_BY_CLIENT` resource failures and a recurring `TypeError: Cannot read properties of null (reading 'offsetWidth')` from third-party scripts. They are now prefixed `network:`, `js:` or `console:` so JS exceptions can be separated from resource-load failures.
+
+The pool launched four separate browsers, which spawned ~144 OS processes. Rendering is now the bottleneck: page load dominates, not the raw fetch. Next levers are blocking images/fonts/media, moving to one browser with multiple tabs, and classifying captured errors.
+
 ## Scale test (synthetic, local)
 
 | URLs | Crawl time | Rate | DB |
@@ -144,6 +161,8 @@ A live render of `https://www.landscapemanagement.net/` returned ~274 KB of rend
 3. Extend audit rules (canonical mismatch, missing H1, hreflang, pagination).
 4. Classify assets (X-04) so images stop counting as HTML URL rows.
 5. Incremental frontier for 100k-scale crawls (C-01).
+
+
 
 
 

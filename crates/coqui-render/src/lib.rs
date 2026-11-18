@@ -216,7 +216,7 @@ impl Renderer {
                             .and_then(Value::as_str)
                             .or_else(|| details.get("text").and_then(Value::as_str))
                             .unwrap_or("Uncaught exception");
-                        console.push(text.lines().next().unwrap_or(text).to_string());
+                        console.push(format!("js: {}", text.lines().next().unwrap_or(text)));
                     }
                 }
                 "Runtime.consoleAPICalled"
@@ -235,7 +235,7 @@ impl Renderer {
                         }
                     }
                     if !parts.is_empty() {
-                        console.push(parts.join(" "));
+                        console.push(format!("console: {}", parts.join(" ")));
                     }
                 }
                 "Log.entryAdded"
@@ -244,7 +244,7 @@ impl Renderer {
                 {
                     if let Some(text) = event.pointer("/params/entry/text").and_then(Value::as_str)
                     {
-                        console.push(text.to_string());
+                        console.push(format!("network: {text}"));
                     }
                 }
                 _ => {}

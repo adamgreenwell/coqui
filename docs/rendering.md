@@ -30,7 +30,7 @@ Auto-detection order: `COQUI_BROWSER_PATH`, configured path, then Edge/Chrome in
 With `screenshots` enabled, each rendered page also captures:
 
 - a JPEG screenshot (`Page.captureScreenshot`, quality 60) stored in the `screenshots` table keyed by crawl and URL id;
-- browser console errors and uncaught exceptions, collected from CDP `Runtime.consoleAPICalled`, `Runtime.exceptionThrown` and `Log.entryAdded` events and stored as `urls.console_json`.
+- browser console errors and uncaught exceptions, collected from CDP `Runtime.consoleAPICalled`, `Runtime.exceptionThrown` and `Log.entryAdded` events and stored as `urls.console_json`, prefixed `console:`, `js:` and `network:` so JS exceptions can be separated from resource-load failures.
 
 The app exposes `get_screenshot(crawlId, urlId)` returning a data URL, shows a `JS n` badge on rows with console errors, and opens screenshots in a modal.
 
@@ -54,5 +54,6 @@ Custom headers, cookies and the configured user agent are pushed into each brows
 - `cargo test -p coqui-render -- --ignored` runs the live browser test (requires Chrome/Edge).
 - `node tools/fixture/site.mjs 4174`, then `COQUI_RENDER=1 cargo run -p coqui-crawl --example audit -- url http://127.0.0.1:4174/js out 1 1` should record the JS-generated title and H1.
 - Live check: `cargo run -p coqui-render --example render -- https://www.landscapemanagement.net/` returned ~274 KB of rendered HTML.
+
 
 
