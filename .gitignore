@@ -1,0 +1,20 @@
+# Local reverse-engineering artifacts: extracted application resources and raw inventories.
+# Only derived, non-proprietary analysis is committed.
+research/
+
+# Generated issue payloads (the backlog lives on GitHub; regenerate with tools/plan/build.mjs)
+tools/plan/.generated/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+dist/
+target/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log
+.env
+.env.*

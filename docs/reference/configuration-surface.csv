@@ -1,0 +1,183 @@
+section,strings
+"Spider extraction",76
+"Spider crawl",66
+"Spider rendering",55
+"Custom extraction",53
+"Ai config",40
+"Spider advanced",39
+"Spider preferences",30
+"Spider content",28
+"Custom search",25
+"Apis ga4",23
+"Spider limits",22
+"Custom javascript",19
+"Custom linkpositions",19
+"Apis user account",18
+"Apis date range",18
+"Robots custom",16
+"Embeddings cosine",16
+"System mcp",15
+"Ai tester",14
+"Openai advanced",14
+"Gsc dimension",14
+"Ai advanced",13
+"",12
+"Ai html prompt target",11
+"Gsc url inspection",11
+"Gemini advanced",10
+"Segments tester",9
+"Custom url path limits",9
+"Embeddings low relevance",9
+"Content spelling and grammar",8
+"Segments",8
+"Url rewriting normalisation",8
+"Content",7
+"Ai name",7
+"Majestic metrics",7
+"System mcp server",7
+"System language",6
+"Trusted certs discovery",6
+"Readonly",6
+"Url rewriting regex replace",6
+"Ai model name",6
+"Ai prompt dialog",6
+"Openai model category",6
+"Googleservice general",6
+"Auth forms",6
+"Url rewriting options",5
+"Cdns test",5
+"Excludes linkpath",5
+"Http headers",5
+"Custom",5
+"Ai presets",5
+"Gemini model category",5
+"Psi lighthouse",5
+"Psi advanced",5
+"Ahrefs account",5
+"Moz account",5
+"Storage mode",5
+"System memory",4
+"Content markdown",4
+"Robots settings",4
+"Segment",4
+"Ai content type",4
+"Ollama model category",4
+"Ollama advanced",4
+"Anthropic advanced",4
+"Apis",4
+"Apis dimensions",4
+"Gsc user account",4
+"Psi metrics",4
+"Ahrefs metrics",4
+"Ahrefs options",4
+"Moz metrics",4
+"System crawlrentention",4
+"Proxy invalid",3
+"Trusted certs",3
+"Readonly clear crawl",3
+"Content html elements",3
+"Url rewriting add remove mode",3
+"Url rewriting remove parameters",3
+"Spider percent",3
+"Url rewriting test",3
+"Cdns config",3
+"Include exclude test",3
+"Includes test",3
+"Excludes test",3
+"Ai prompts",3
+"Ai pdf prompt target",3
+"Apis metrics",3
+"Apis google",3
+"Majestic account",3
+"Auth standard",3
+"Crawl analysis",3
+"Embeddings",3
+"Colour",2
+"System licence",2
+"Proxy use",2
+"Proxy address",2
+"Proxy port",2
+"Proxy usecredentials",2
+"Proxy username",2
+"Proxy password",2
+"Readonly component",2
+"Spider",2
+"Advanced respect next prev",2
+"Content area",2
+"Content check alt text",2
+"Content include hidden content",2
+"Content tags",2
+"Content classes",2
+"Content ids",2
+"Content clear",2
+"Robots",2
+"Segment max segments exceeded",2
+"Segment delete used by ai",2
+"Url rewriting",2
+"Includes",2
+"Excludes",2
+"Excludes url",2
+"Speed",2
+"Speed max threads",2
+"Speed limit urls",2
+"Speed auto throttle",2
+"Speed rate limit retries",2
+"Speed pause on unreachable",2
+"User agent",2
+"User agent preset",2
+"User agent http user agent",2
+"User agent robots user agent",2
+"Ai segments",2
+"Ai validation",2
+"Ollama account",2
+"Openai account",2
+"Gemini account",2
+"Anthropic model category",2
+"Anthropic account",2
+"Apis ua",2
+"Apis general",2
+"Apis gsc",2
+"Gsc search analytics",2
+"Googlesearchconsole general",2
+"Psi",2
+"Psi account",2
+"Psi device",2
+"Majestic",2
+"Moz",2
+"Ahrefs",2
+"Json config tab",2
+"Embedding enabled",2
+"System crawlretention",2
+"Network",2
+"Network ipv4 only",2
+"Network unable to set",2
+"Embedded browser",2
+"Embedded browser enable",2
+"Index",1
+"Error count",1
+"Proxy",1
+"Trusted certs add button",1
+"Segments resegmenting dialog",1
+"Segments clear segments dialog",1
+"Url rewriting rules",1
+"Cdns",1
+"Speed max urls",1
+"Ai url details prompt target",1
+"Ai",1
+"Apis ga",1
+"Psi local",1
+"Ahrefs authenticate",1
+"Ahrefs remove",1
+"Auth",1
+"Json config",1
+"Crawl analysis info",1
+"Embeddings general",1
+"Licence",1
+"Memory",1
+"Storage mode memory",1
+"Storage mode database",1
+"Storage mode directory",1
+"System",1
+"System max response size bytes",1
+"User interface",1
+"Content types",1

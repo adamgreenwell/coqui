@@ -1,0 +1,53 @@
+{
+  "reference": {
+    "product": "Screaming Frog SEO Spider",
+    "version": "25.1",
+    "build": "4a68a9139d6be0ce3eee7799e71945c5cb2c28e3",
+    "jarSha256": "3894c61083db5067dfd944d83edd70bc06f3a7a33abb7dd5a40b12cb6ffaa7ec",
+    "jarEntries": 6430,
+    "classes": 6105
+  },
+  "surface": {
+    "menuStrings": 239,
+    "configurationStrings": 1144,
+    "configurationSections": 182,
+    "tabs": 34,
+    "columnLayouts": 32,
+    "columnsTrackedPerTab": 366,
+    "distinctColumnStrings": 220,
+    "issueFamilies": 9,
+    "issueRules": 344,
+    "reports": 97,
+    "bulkExports": 42,
+    "cliOptions": 57,
+    "integrations": 80,
+    "aiStrings": 118,
+    "locales": 7
+  },
+  "backlog": {
+    "epics": 12,
+    "features": 73,
+    "byPhase": {
+      "0": 16,
+      "1": 20,
+      "2": 22,
+      "3": 11,
+      "4": 4
+    },
+    "byArea": {
+      "platform": 7,
+      "crawler": 7,
+      "http": 1,
+      "extraction": 8,
+      "rendering": 7,
+      "ui": 7,
+      "audit": 9,
+      "reports": 5,
+      "integrations": 5,
+      "ai": 5,
+      "automation": 4,
+      "config": 4,
+      "quality": 4
+    }
+  }
+}
