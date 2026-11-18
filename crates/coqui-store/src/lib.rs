@@ -11,7 +11,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const SCHEMA_VERSION: i32 = 4;
+pub const SCHEMA_VERSION: i32 = 5;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS urls (
     response_time_ms  INTEGER,
     size_bytes        INTEGER,
     error             TEXT,
+    blocked           INTEGER NOT NULL DEFAULT 0,
     discovered_at     INTEGER NOT NULL,
     UNIQUE (crawl_id, url)
 );
@@ -169,7 +170,8 @@ impl Store {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
             "SELECT id, seed, seed_kind, status, config_json, created_at, started_at, finished_at,
-                    (SELECT COUNT(*) FROM urls WHERE urls.crawl_id = crawls.id)
+                    (SELECT COUNT(*) FROM urls WHERE urls.crawl_id = crawls.id),
+                    (SELECT COUNT(*) FROM urls WHERE urls.crawl_id = crawls.id AND urls.blocked = 1)
              FROM crawls WHERE id = ?1",
         )?;
         let summary = stmt
@@ -185,6 +187,7 @@ impl Store {
                     started_at: row.get(6)?,
                     finished_at: row.get(7)?,
                     total_urls: row.get(8)?,
+                    blocked_urls: row.get(9)?,
                 })
             })
             .optional()?;
@@ -245,8 +248,8 @@ impl Store {
             "INSERT OR IGNORE INTO urls
                 (crawl_id, url, status, content_type, title, meta_description, h1, h1_count,
                  canonical, meta_robots, redirect_target, redirect_chain, word_count, depth,
-                 response_time_ms, size_bytes, error, discovered_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+                 response_time_ms, size_bytes, error, blocked, discovered_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
             params![
                 record.crawl_id,
                 record.url,
@@ -265,6 +268,7 @@ impl Store {
                 response_time_ms,
                 size_bytes,
                 record.error,
+                i64::from(record.blocked),
                 record.discovered_at,
             ],
         )?;
@@ -410,7 +414,7 @@ impl Store {
         let mut stmt = conn.prepare(
             "SELECT id, crawl_id, url, status, content_type, title, meta_description, h1, h1_count,
                     canonical, meta_robots, redirect_target, redirect_chain, word_count, depth,
-                    response_time_ms, size_bytes, error, discovered_at
+                    response_time_ms, size_bytes, error, discovered_at, blocked
              FROM urls WHERE crawl_id = ?1
                AND (?3 IS NULL OR EXISTS (
                     SELECT 1 FROM issues
@@ -437,7 +441,7 @@ impl Store {
         let mut stmt = conn.prepare(
             "SELECT id, crawl_id, url, status, content_type, title, meta_description, h1, h1_count,
                     canonical, meta_robots, redirect_target, redirect_chain, word_count, depth,
-                    response_time_ms, size_bytes, error, discovered_at
+                    response_time_ms, size_bytes, error, discovered_at, blocked
              FROM urls WHERE crawl_id = ?1 ORDER BY id",
         )?;
         let rows = stmt
@@ -596,6 +600,7 @@ fn map_url_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<UrlRecord> {
         response_time_ms: row.get::<_, Option<i64>>(15)?.map(|value| value as u64),
         size_bytes: row.get::<_, Option<i64>>(16)?.map(|value| value as u64),
         error: row.get(17)?,
+        blocked: row.get::<_, i64>(19)? != 0,
         discovered_at: row.get(18)?,
     })
 }
@@ -642,6 +647,12 @@ fn migrate(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_links_crawl_from ON links (crawl_id, from_id);
          CREATE INDEX IF NOT EXISTS idx_links_crawl_to ON links (crawl_id, to_id);",
     )?;
+    if version < 5 && !has_column(conn, "urls", "blocked")? {
+        conn.execute(
+            "ALTER TABLE urls ADD COLUMN blocked INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
     if version < 3 && !has_column(conn, "crawls", "seed_kind")? {
         conn.execute(
             "ALTER TABLE crawls ADD COLUMN seed_kind TEXT NOT NULL DEFAULT 'url'",
@@ -679,6 +690,7 @@ mod tests {
             crawl_id: crawl_id.to_string(),
             url: url.to_string(),
             status: Some(200),
+            blocked: false,
             content_type: Some("text/html".into()),
             title: Some("Example".into()),
             meta_description: None,
@@ -854,6 +866,7 @@ mod tests {
             failed: 0,
             redirected: 1,
             blocked_by_robots: 2,
+            blocked: 0,
         };
         store.save_checkpoint("c", &checkpoint).unwrap();
         let loaded = store.load_checkpoint("c").unwrap().unwrap();

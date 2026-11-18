@@ -141,6 +141,8 @@ pub struct CrawlSummary {
     pub finished_at: Option<i64>,
     /// Number of URL rows currently stored for this crawl.
     pub total_urls: i64,
+    /// URLs that returned a WAF/challenge response rather than content.
+    pub blocked_urls: i64,
 }
 
 /// One crawled (or attempted) URL.
@@ -151,6 +153,7 @@ pub struct UrlRecord {
     pub crawl_id: CrawlId,
     pub url: String,
     pub status: Option<u16>,
+    pub blocked: bool,
     pub content_type: Option<String>,
     pub title: Option<String>,
     pub meta_description: Option<String>,
@@ -194,6 +197,7 @@ pub struct NewUrl {
     pub crawl_id: CrawlId,
     pub url: String,
     pub status: Option<u16>,
+    pub blocked: bool,
     pub content_type: Option<String>,
     pub title: Option<String>,
     pub meta_description: Option<String>,
@@ -261,6 +265,8 @@ pub struct CrawlCheckpoint {
     pub failed: u64,
     pub redirected: u64,
     pub blocked_by_robots: u64,
+    #[serde(default)]
+    pub blocked: u64,
 }
 
 /// A link edge discovered on a page.

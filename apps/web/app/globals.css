@@ -708,3 +708,8 @@ tbody tr:hover {
   margin-bottom: 10px;
   user-select: none;
 }
+.status-chip.blocked {
+  color: #fca5a5;
+  background: rgba(248, 113, 113, 0.12);
+  border-color: rgba(248, 113, 113, 0.4);
+}

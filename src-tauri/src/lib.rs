@@ -19,6 +19,8 @@ pub struct AppState {
     pub store: Arc<Store>,
     pub cancels: Mutex<HashMap<String, CancellationToken>>,
     pub pauses: Mutex<HashMap<String, Arc<AtomicBool>>>,
+    /// Session-only headers (Cookie/Authorization) kept out of the persisted crawl config.
+    pub sessions: Mutex<HashMap<String, Vec<String>>>,
     pub data_dir: PathBuf,
 }
 
@@ -30,12 +32,28 @@ struct CrawlFinished {
     error: Option<String>,
 }
 
+fn split_session_headers(config: &mut CrawlConfig) -> Vec<String> {
+    let mut session = Vec::new();
+    config.custom_headers.retain(|line| {
+        let name = line
+            .split_once(':')
+            .map(|(name, _)| name.trim().to_ascii_lowercase())
+            .unwrap_or_default();
+        if name == "cookie" || name == "authorization" {
+            session.push(line.clone());
+            false
+        } else {
+            true
+        }
+    });
+    session
+}
 #[tauri::command]
 fn create_crawl(
     state: State<'_, AppState>,
     seed_kind: String,
     seed: String,
-    config: CrawlConfig,
+    mut config: CrawlConfig,
 ) -> Result<CrawlSummary, String> {
     if !matches!(seed_kind.as_str(), "url" | "sitemap" | "list") {
         return Err(format!("Unknown seed kind '{seed_kind}'"));
@@ -46,7 +64,15 @@ fn create_crawl(
         }
         _ => seed,
     };
+    let session_headers = split_session_headers(&mut config);
     let id = uuid::Uuid::new_v4().to_string();
+    if !session_headers.is_empty() {
+        state
+            .sessions
+            .lock()
+            .map_err(|_| "crawl registry poisoned".to_string())?
+            .insert(id.clone(), session_headers);
+    }
     state
         .store
         .create_crawl(&id, &seed, &seed_kind, &config, now_ms())
@@ -120,6 +146,13 @@ fn start_crawl(app: AppHandle, state: State<'_, AppState>, crawl_id: String) -> 
         .load_checkpoint(&crawl_id)
         .map_err(|error| error.to_string())?;
 
+    let session_headers = state
+        .sessions
+        .lock()
+        .map_err(|_| "crawl registry poisoned".to_string())?
+        .get(&crawl_id)
+        .cloned()
+        .unwrap_or_default();
     let store = state.store.clone();
     let app_handle = app.clone();
     let id = crawl_id.clone();
@@ -127,7 +160,8 @@ fn start_crawl(app: AppHandle, state: State<'_, AppState>, crawl_id: String) -> 
     tauri::async_runtime::spawn(async move {
         let seed_kind = summary.seed_kind.clone();
         let seed_value = summary.seed.clone();
-        let config = summary.config.clone();
+        let mut config = summary.config.clone();
+        config.custom_headers.extend(session_headers);
         let progress_app = app_handle.clone();
         let progress: Arc<dyn Fn(CrawlProgress) + Send + Sync> = Arc::new(move |event| {
             let _ = progress_app.emit("crawl-progress", event);
@@ -171,6 +205,9 @@ fn start_crawl(app: AppHandle, state: State<'_, AppState>, crawl_id: String) -> 
         }
         if let Ok(mut pauses) = app_handle.state::<AppState>().pauses.lock() {
             pauses.remove(&id);
+        }
+        if let Ok(mut sessions) = app_handle.state::<AppState>().sessions.lock() {
+            sessions.remove(&id);
         }
         let _ = app_handle.emit(
             "crawl-finished",
@@ -248,6 +285,7 @@ pub fn run() {
                 store: Arc::new(store),
                 cancels: Mutex::new(HashMap::new()),
                 pauses: Mutex::new(HashMap::new()),
+                sessions: Mutex::new(HashMap::new()),
                 data_dir,
             });
             Ok(())

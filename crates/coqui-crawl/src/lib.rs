@@ -43,6 +43,8 @@ pub enum CrawlError {
     Seeds(String),
     #[error("configuration error: {0}")]
     Config(String),
+    #[error("site blocked the crawler ({0} challenge responses)")]
+    Blocked(u64),
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -52,6 +54,7 @@ pub struct CrawlStats {
     pub failed: u64,
     pub redirected: u64,
     pub blocked_by_robots: u64,
+    pub blocked: u64,
 }
 
 struct FetchOutcome {
@@ -63,12 +66,14 @@ struct FetchOutcome {
     size_bytes: u64,
     elapsed_ms: u64,
     error: Option<String>,
+    blocked: bool,
 }
 
 /// Run a crawl to completion (or cancellation).
 ///
 /// The caller owns crawl lifecycle status transitions around this function; it does not mark the
 /// crawl as running or completed, so the same engine can serve the Tauri shell, CLI and tests.
+#[derive(Debug)]
 pub struct CrawlResult {
     pub stats: CrawlStats,
     pub paused: bool,
@@ -166,6 +171,7 @@ pub async fn run_crawl(
                     failed: checkpoint.failed,
                     redirected: checkpoint.redirected,
                     blocked_by_robots: checkpoint.blocked_by_robots,
+                    blocked: checkpoint.blocked,
                 },
                 hosts,
             )
@@ -254,6 +260,7 @@ pub async fn run_crawl(
                         crawl_id: crawl_id.clone(),
                         url: url.clone(),
                         status: outcome.status,
+                        blocked: outcome.blocked,
                         content_type: outcome.content_type.clone(),
                         title: None,
                         meta_description: None,
@@ -291,6 +298,7 @@ pub async fn run_crawl(
                 let extracted = outcome
                     .body
                     .as_deref()
+                    .filter(|_| !outcome.blocked)
                     .filter(|_| is_html(outcome.content_type.as_deref()))
                     .map(|body| extract::extract_page(body, &url));
 
@@ -298,6 +306,7 @@ pub async fn run_crawl(
                     crawl_id: crawl_id.clone(),
                     url: url.clone(),
                     status: outcome.status,
+                    blocked: outcome.blocked,
                     content_type: outcome.content_type.clone(),
                     title: extracted.as_ref().and_then(|page| page.title.clone()),
                     meta_description: extracted
@@ -320,6 +329,9 @@ pub async fn run_crawl(
                 stats.crawled += 1;
                 if outcome.error.is_some() || outcome.status.is_none() {
                     stats.failed += 1;
+                }
+                if outcome.blocked {
+                    stats.blocked += 1;
                 }
                 store.insert_url(&record)?;
                 let page_id = store.url_id(&crawl_id, &url)?.unwrap_or_default();
@@ -366,7 +378,9 @@ pub async fn run_crawl(
             }
 
             let pause_requested = pause.load(Ordering::Relaxed);
+            let blocked_abort = stats.blocked >= 20 && stats.blocked * 2 > stats.crawled;
             let should_checkpoint = pause_requested
+                || blocked_abort
                 || frontier.is_empty()
                 || last_checkpoint.elapsed() >= Duration::from_secs(10);
             if should_checkpoint {
@@ -383,6 +397,7 @@ pub async fn run_crawl(
                     failed: stats.failed,
                     redirected: stats.redirected,
                     blocked_by_robots: stats.blocked_by_robots,
+                    blocked: stats.blocked,
                 };
                 store.save_checkpoint(&crawl_id, &checkpoint_state)?;
                 last_checkpoint = Instant::now();
@@ -398,6 +413,9 @@ pub async fn run_crawl(
                     stats,
                     paused: true,
                 });
+            }
+            if blocked_abort {
+                return Err(CrawlError::Blocked(stats.blocked));
             }
         }
 
@@ -434,6 +452,38 @@ fn is_html(content_type: Option<&str>) -> bool {
             value.contains("text/html") || value.contains("application/xhtml")
         })
         .unwrap_or(false)
+}
+
+fn looks_blocked(status: u16, headers: &HeaderMap, body: Option<&str>) -> bool {
+    if !matches!(status, 403 | 503) {
+        return false;
+    }
+    let cloudflare = headers.get("cf-mitigated").is_some()
+        || headers
+            .get("server")
+            .and_then(|value| value.to_str().ok())
+            .map(|value| value.eq_ignore_ascii_case("cloudflare"))
+            .unwrap_or(false);
+    let marker = body
+        .map(|body| {
+            body.contains("Just a moment")
+                || body.contains("cf-challenge")
+                || body.contains("Attention Required")
+                || body.contains("you have been blocked")
+        })
+        .unwrap_or(false);
+    if std::env::var_os("COQUI_DEBUG_CRAWL").is_some() && matches!(status, 403 | 503) {
+        eprintln!(
+            "blocked check status={status} cf_mitigated={} cloudflare_header={} marker={}",
+            headers.get("cf-mitigated").is_some(),
+            headers
+                .get("server")
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or(""),
+            marker
+        );
+    }
+    cloudflare || marker
 }
 
 fn path_of(url: &str) -> String {
@@ -473,6 +523,7 @@ async fn fetch(client: &Client, requested: &str) -> FetchOutcome {
                     size_bytes: 0,
                     elapsed_ms: started.elapsed().as_millis() as u64,
                     error: Some(truncate(&error.to_string(), 500)),
+                    blocked: false,
                 };
             }
         };
@@ -504,6 +555,7 @@ async fn fetch(client: &Client, requested: &str) -> FetchOutcome {
             }
         }
 
+        let response_headers = response.headers().clone();
         let content_type = response
             .headers()
             .get(CONTENT_TYPE)
@@ -529,10 +581,12 @@ async fn fetch(client: &Client, requested: &str) -> FetchOutcome {
                         size_bytes,
                         elapsed_ms: started.elapsed().as_millis() as u64,
                         error: Some(truncate(&error.to_string(), 500)),
+                        blocked: looks_blocked(status, &response_headers, body.as_deref()),
                     };
                 }
             }
         }
+        let blocked = looks_blocked(status, &response_headers, body.as_deref());
         return FetchOutcome {
             status: first_status,
             final_url: current,
@@ -542,6 +596,7 @@ async fn fetch(client: &Client, requested: &str) -> FetchOutcome {
             size_bytes,
             elapsed_ms: started.elapsed().as_millis() as u64,
             error: None,
+            blocked,
         };
     }
 
@@ -554,6 +609,7 @@ async fn fetch(client: &Client, requested: &str) -> FetchOutcome {
         size_bytes: 0,
         elapsed_ms: started.elapsed().as_millis() as u64,
         error: Some("too many redirects or unresolvable redirect target".to_string()),
+        blocked: false,
     }
 }
 
@@ -590,18 +646,42 @@ async fn fetch_robots(client: &Client, seed: &str, user_agent: &str) -> RobotsRu
     url.set_path("/robots.txt");
     url.set_query(None);
     url.set_fragment(None);
-    match get_following(client, url.as_str(), 3).await {
-        Ok(response) if response.status().is_success() => {
-            if response.content_length().unwrap_or(0) > MAX_ROBOTS_BYTES {
+
+    for attempt in 0..3 {
+        match get_following(client, url.as_str(), 3).await {
+            Ok(response) if response.status().is_success() => {
+                if std::env::var_os("COQUI_DEBUG_CRAWL").is_some() {
+                    eprintln!("robots: {} from {}", response.status(), url);
+                }
+                if response.content_length().unwrap_or(0) > MAX_ROBOTS_BYTES {
+                    return RobotsRules::allow_all();
+                }
+                return match response.text().await {
+                    Ok(text) => RobotsRules::parse(&text, user_agent),
+                    Err(_) => RobotsRules::allow_all(),
+                };
+            }
+            Ok(response) => {
+                if std::env::var_os("COQUI_DEBUG_CRAWL").is_some() {
+                    eprintln!(
+                        "robots: unexpected status {} from {}",
+                        response.status(),
+                        url
+                    );
+                }
                 return RobotsRules::allow_all();
             }
-            match response.text().await {
-                Ok(text) => RobotsRules::parse(&text, user_agent),
-                Err(_) => RobotsRules::allow_all(),
+            Err(error) => {
+                if std::env::var_os("COQUI_DEBUG_CRAWL").is_some() {
+                    eprintln!("robots: attempt {attempt} failed for {url}: {error}");
+                }
+                if attempt < 2 {
+                    tokio::time::sleep(Duration::from_millis(25)).await;
+                }
             }
         }
-        _ => RobotsRules::allow_all(),
     }
+    RobotsRules::allow_all()
 }
 
 fn truncate(value: &str, max: usize) -> String {

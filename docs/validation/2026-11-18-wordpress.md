@@ -29,9 +29,9 @@ Cloudflare challenges plain HTTP clients, including a browser user-agent. A real
 | Metric | Value |
 | --- | --- |
 | Sitemap | `/sitemap_index.xml`, 24 sub-sitemaps, 16,704 URLs (15,904 unique seeds) |
-| Runs | two 3,000-URL validation runs |
-| Status (first run) | 2,999 × 200, 1 × 404 |
-| Issues (first run) | 2,472 titles > 60 chars, 3 missing meta, 2 multiple H1 |
+| Runs | three 3,000-URL validation runs |
+| Status (clean run) | 2,999 × 200, 1 × 404, 0 blocked |
+| Issues (clean run) | 2,472 titles > 60 chars, 2 missing meta, 2 multiple H1 |
 | Throughput | ~8–19 URLs/s at concurrency 20–40 |
 
 ### Storage change: string links → URL ids
@@ -40,18 +40,23 @@ Cloudflare challenges plain HTTP clients, including a browser user-agent. A real
 | --- | --- | --- | --- |
 | v3 string links | 3,000 | 342,269 | 253.7 MB |
 | v4 URL-id links (pilot) | 500 | 57k | 13.6 MB |
-| v4 URL-id links | 3,000 | 179,503 | 32.2 MB |
+| v4 URL-id links (403-truncated run) | 3,000 | 179,503 | 32.2 MB |
+| v5 URL-id links (clean run) | 3,000 | 342,269 | 56.4 MB |
 
-That is roughly an **8× reduction** at 3,000 pages. The link table now references `url_map` ids with two indexes instead of storing full URL strings plus a three-column unique index.
+Against the original 253.7 MB, the clean v5 run is ~4.5× smaller while storing twice as many link rows. The link table now references `url_map` ids instead of full URL strings plus a three-column unique index. The `to_id` index is a known 11 MB optimisation target.
 
-### Cookie lifetime finding
+### Session lifetime and challenge handling
 
-The second 3,000-URL run started with a session that was already near expiry: 1,574 pages returned 200, then 1,426 returned Cloudflare 403 challenge pages. The audit initially reported 223 `broken_internal_link` issues against those challenge targets.
+The second 3,000-URL run started near expiry: 1,574 pages returned 200, then 1,426 returned Cloudflare 403 challenge pages. Before R-08 this produced 223 false `broken_internal_link` issues.
 
-Two consequences:
+R-08 now:
 
-1. The audit now ignores 403 link targets rather than calling them broken, pending R-08 classification.
-2. A full 16,704-URL crawl needs a longer-lived allowlist or a cookie-refresh mechanism. The crawler does not persist cookies.
+- marks 403/503 challenge responses as `blocked`, without extracting content;
+- aborts a crawl once 20 challenges are seen and they exceed half of all responses (checkpoint kept for resume);
+- excludes blocked targets from the audit;
+- keeps Cookie/Authorization headers out of the persisted crawl config (memory only).
+
+Validation: with a refreshed session the full 3,000-URL run completed with **0 blocked** and a clean issue set. With the stale session, the crawl aborted after 63 challenge responses instead of storing 1,426 bogus rows.
 
 ## Scale test (synthetic, local)
 
@@ -62,8 +67,9 @@ Two consequences:
 
 ## Actions
 
-1. **R-08**: classify challenge responses, surface incomplete coverage, support secret-stored sessions and refresh.
-2. Run the full 16,704-URL crawl with a fresh/allowlisted session.
+1. **R-08 follow-up**: OS keychain storage and cookie refresh; challenge classification, abort and UI warning are done.
+2. Run the full 16,704-URL crawl with a fresh/allowlisted session (a 3,000-URL crawl fits within cookie lifetime; 16.7k likely does not).
 3. Extend audit rules (canonical mismatch, missing H1, hreflang, pagination).
 4. Classify assets (X-04) so images stop counting as HTML URL rows.
 5. Incremental frontier for 100k-scale crawls (C-01).
+

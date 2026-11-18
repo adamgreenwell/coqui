@@ -50,14 +50,29 @@ impl Drop for TestSite {
 }
 
 fn handle_connection(mut stream: TcpStream) {
-    let mut buffer = [0u8; 8192];
-    let read = stream.read(&mut buffer).unwrap_or(0);
-    let request = String::from_utf8_lossy(&buffer[..read]);
+    let _ = stream.set_nonblocking(false);
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+    let mut buffer = Vec::new();
+    let mut chunk = [0u8; 1024];
+    while buffer.len() < 8192 {
+        match stream.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(read) => {
+                buffer.extend_from_slice(&chunk[..read]);
+                if buffer.windows(4).any(|window| window == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            Err(_) => break,
+        }
+    }
+    let request = String::from_utf8_lossy(&buffer);
     let mut lines = request.lines();
     let path = lines
         .next()
         .and_then(|line| line.split_whitespace().nth(1))
         .unwrap_or("/");
+    let path = path.split('?').next().unwrap_or(path);
     let mut host = "127.0.0.1".to_string();
     let mut authorization = String::new();
     for line in lines {
@@ -120,6 +135,13 @@ fn handle_connection(mut stream: TcpStream) {
                   <sitemap><loc>{origin}/sitemap.xml</loc></sitemap>
                 </sitemapindex>"#
             ),
+        ),
+        "/challenge" => (
+            "403 Forbidden",
+            "text/html",
+            "cf-mitigated: challenge\r\n",
+            "<html><head><title>Just a moment...</title></head><body>cf-challenge</body></html>"
+                .to_string(),
         ),
         "/auth" => {
             if authorization == expected_auth {
@@ -706,4 +728,79 @@ async fn sitemap_image_locations_are_not_seeds() {
         .map(|row| row.url)
         .collect();
     assert!(!urls.iter().any(|url| url.ends_with(".png")));
+}
+
+#[tokio::test]
+async fn challenge_responses_are_blocked_not_content() {
+    let site = TestSite::start();
+    let store = Arc::new(Store::open_in_memory().unwrap());
+    let crawl_id = "challenge";
+    let seed = format!("{}/challenge", site.base);
+    let config = CrawlConfig {
+        max_depth: 0,
+        max_urls: 1,
+        ..CrawlConfig::default()
+    };
+    store
+        .create_crawl(crawl_id, &seed, "url", &config, now_ms())
+        .unwrap();
+    let result = run_crawl(
+        store.clone(),
+        crawl_id.to_string(),
+        "url".into(),
+        seed,
+        config,
+        CancellationToken::new(),
+        Arc::new(AtomicBool::new(false)),
+        None,
+        Arc::new(|_: CrawlProgress| {}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.stats.blocked, 1);
+    let row = &store.list_urls(crawl_id, 1, 1, None).unwrap().rows[0];
+    assert!(row.blocked);
+    assert!(row.title.is_none(), "challenge pages must not be extracted");
+}
+
+#[tokio::test]
+async fn sustained_challenges_abort_the_crawl() {
+    let site = TestSite::start();
+    let list_path =
+        std::env::temp_dir().join(format!("coqui-challenge-{}.txt", uuid::Uuid::new_v4()));
+    let mut lines = String::new();
+    for index in 0..30 {
+        lines.push_str(&format!("{}/challenge?i={index}\n", site.base));
+    }
+    std::fs::write(&list_path, lines).unwrap();
+
+    let store = Arc::new(Store::open_in_memory().unwrap());
+    let crawl_id = "challenge-abort";
+    let seed = list_path.to_string_lossy().to_string();
+    let config = CrawlConfig {
+        max_depth: 0,
+        max_urls: 30,
+        concurrency: 5,
+        ..CrawlConfig::default()
+    };
+    store
+        .create_crawl(crawl_id, &seed, "list", &config, now_ms())
+        .unwrap();
+    let result = run_crawl(
+        store.clone(),
+        crawl_id.to_string(),
+        "list".into(),
+        seed,
+        config,
+        CancellationToken::new(),
+        Arc::new(AtomicBool::new(false)),
+        None,
+        Arc::new(|_: CrawlProgress| {}),
+    )
+    .await;
+    assert!(
+        matches!(result, Err(coqui_crawl::CrawlError::Blocked(_))),
+        "expected Blocked, got {result:?}"
+    );
+    std::fs::remove_file(list_path).ok();
 }

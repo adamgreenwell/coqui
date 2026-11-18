@@ -56,6 +56,7 @@ interface CrawlSummary {
   startedAt: number | null;
   finishedAt: number | null;
   totalUrls: number;
+  blockedUrls: number;
 }
 
 interface UrlRow {
@@ -63,6 +64,7 @@ interface UrlRow {
   crawlId: string;
   url: string;
   status: number | null;
+  blocked: boolean;
   contentType: string | null;
   title: string | null;
   metaDescription: string | null;
@@ -155,6 +157,7 @@ const DEFAULT_COLUMNS: Record<ColumnKey, boolean> = {
 };
 
 function statusCodeClass(row: UrlRow): string {
+  if (row.blocked) return 'blocked';
   if (row.error) return 'error';
   const code = row.status ?? 0;
   if (code >= 200 && code < 300) return 'ok';
@@ -246,6 +249,11 @@ export default function Home() {
         setPhase(event.payload.status);
         if (event.payload.error) setError(event.payload.error);
         setActiveIssue(null);
+        const { invoke } = await import('@tauri-apps/api/core');
+        const summary = await invoke<CrawlSummary>('get_crawl', {
+          crawlId: event.payload.crawlId,
+        });
+        setCrawl(summary);
         await Promise.all([
           loadPage(event.payload.crawlId, 1, null),
           loadIssues(event.payload.crawlId),
@@ -393,8 +401,11 @@ export default function Home() {
     switch (key) {
       case 'status':
         return (
-          <span className={`status-chip ${statusCodeClass(row)}`}>
-            {row.error ? 'ERR' : (row.status ?? '—')}
+          <span
+            className={`status-chip ${statusCodeClass(row)}`}
+            title={row.blocked ? 'Blocked by the site edge (WAF challenge)' : undefined}
+          >
+            {row.blocked ? 'WAF' : row.error ? 'ERR' : (row.status ?? '—')}
           </span>
         );
       case 'url':
@@ -671,6 +682,14 @@ export default function Home() {
 
           {error && <div className="error">{error}</div>}
 
+          {crawl && crawl.blockedUrls > 0 && (
+            <div className="notice">
+              {crawl.blockedUrls.toLocaleString()} URLs were blocked by the site edge
+              (WAF/challenge) and are excluded from content results. Coverage is incomplete:
+              refresh the session and resume the crawl.
+            </div>
+          )}
+
           <section className="panel status-card">
             <div>
               <div className="status-title">
@@ -698,6 +717,12 @@ export default function Home() {
                 Issues
                 <strong>{issueTotal}</strong>
               </div>
+              {crawl && crawl.blockedUrls > 0 && (
+                <div>
+                  Blocked
+                  <strong>{crawl.blockedUrls}</strong>
+                </div>
+              )}
               <div>
                 Limit
                 <strong>{cap}</strong>
