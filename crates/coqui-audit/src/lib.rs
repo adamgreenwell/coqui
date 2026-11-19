@@ -72,6 +72,11 @@ pub const RULES: &[RuleDef] = &[
         severity: IssueSeverity::Warning,
     },
     RuleDef {
+        id: "duplicate_content",
+        label: "Duplicate content",
+        severity: IssueSeverity::Warning,
+    },
+    RuleDef {
         id: "title_too_short",
         label: "Title too short",
         severity: IssueSeverity::Opportunity,
@@ -163,6 +168,24 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
     let mut status_by_url: HashMap<&str, &UrlRecord> = HashMap::new();
     for url in &urls {
         status_by_url.insert(url.url.as_str(), url);
+    }
+
+    let mut duplicate_content: HashMap<String, Vec<String>> = HashMap::new();
+    let mut content_hash_by_url: HashMap<String, String> = HashMap::new();
+    for (url, markdown) in store.all_page_texts(crawl_id)? {
+        let normalised = markdown.split_whitespace().collect::<Vec<_>>().join(" ");
+        let normalised = normalised.to_ascii_lowercase();
+        if normalised.chars().count() < 200 {
+            continue;
+        }
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        std::hash::Hash::hash(&normalised, &mut hasher);
+        let key = format!("{:x}", std::hash::Hasher::finish(&hasher));
+        duplicate_content
+            .entry(key.clone())
+            .or_default()
+            .push(url.clone());
+        content_hash_by_url.insert(url, key);
     }
 
     let mut duplicate_titles: HashMap<String, Vec<String>> = HashMap::new();
@@ -304,6 +327,20 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
                         &url.url,
                         "duplicate_meta_description",
                         Some(format!("{} pages share this description", group.len())),
+                    )?;
+                }
+            }
+        }
+
+        if let Some(hash) = content_hash_by_url.get(&url.url) {
+            if let Some(group) = duplicate_content.get(hash) {
+                if group.len() > 1 {
+                    issue(
+                        store,
+                        crawl_id,
+                        &url.url,
+                        "duplicate_content",
+                        Some(format!("{} pages share this content", group.len())),
                     )?;
                 }
             }
@@ -720,6 +757,34 @@ mod tests {
         // Re-running replaces rather than duplicates.
         let again = analyze_crawl(&store, id).unwrap();
         assert_eq!(again.len(), counts.len());
+    }
+
+    #[test]
+    fn flags_duplicate_content() {
+        let store = Store::open_in_memory().unwrap();
+        let id = "dupe";
+        store
+            .create_crawl(
+                id,
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        add_url(&store, id, "https://example.com/a", Some("A"), 1, 600);
+        add_url(&store, id, "https://example.com/b", Some("B"), 1, 600);
+        let text = "the same body copy over and over ".repeat(20);
+        for path in ["/a", "/b"] {
+            let url_id = store
+                .url_id(id, &format!("https://example.com{path}"))
+                .unwrap()
+                .unwrap();
+            store.save_page_text(id, url_id, &text, &text).unwrap();
+        }
+        let counts = analyze_crawl(&store, id).unwrap();
+        let by_rule: HashMap<_, _> = counts.iter().map(|c| (c.rule.as_str(), c.count)).collect();
+        assert_eq!(by_rule.get("duplicate_content"), Some(&2), "{:?}", by_rule);
     }
 }
 

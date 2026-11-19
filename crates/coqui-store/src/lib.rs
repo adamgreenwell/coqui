@@ -547,6 +547,20 @@ impl Store {
         Ok(rows)
     }
 
+    /// Stored page text (url, markdown) for a crawl.
+    pub fn all_page_texts(&self, crawl_id: &str) -> Result<Vec<(String, String)>> {
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT urls.url, page_text.markdown FROM page_text
+             JOIN urls ON urls.id = page_text.url_id
+             WHERE page_text.crawl_id = ?1 ORDER BY urls.url",
+        )?;
+        let rows = stmt
+            .query_map(params![crawl_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     pub fn url_custom_js(&self, crawl_id: &str, url_id: i64) -> Result<Vec<(i64, String)>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
