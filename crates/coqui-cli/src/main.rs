@@ -99,7 +99,7 @@ fn load_config(path: &Path, required: bool) -> Result<FileConfig, String> {
 }
 
 fn usage() -> &'static str {
-    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance] [--out DIR]\n       coqui reports"
+    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance] [--out DIR]\n       coqui reports\n       coqui export [--out DIR]"
 }
 
 fn parse_args(values: &[String], config: &FileConfig) -> Result<Args, String> {
@@ -293,6 +293,38 @@ fn run_report(values: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn run_export(values: &[String]) -> Result<(), String> {
+    let mut out = PathBuf::from("coqui-out");
+    let mut index = 0;
+    while index < values.len() {
+        match values[index].as_str() {
+            "--out" => {
+                index += 1;
+                out = PathBuf::from(values.get(index).ok_or("missing --out value")?);
+            }
+            other => return Err(format!("unknown option '{other}'")),
+        }
+        index += 1;
+    }
+    let store = Store::open(out.join("coqui.db")).map_err(|error| error.to_string())?;
+    let crawl = store
+        .latest_crawl()
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "no crawl found".to_string())?;
+    let path = out.join(format!("urls-{}.csv", now_ms()));
+    let started = std::time::Instant::now();
+    let rows = store
+        .export_urls_csv(&crawl.id, &path, &[], None)
+        .map_err(|error| error.to_string())?;
+    println!(
+        "export: {} ({} rows in {:.3}s)",
+        path.display(),
+        rows,
+        started.elapsed().as_secs_f64()
+    );
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() {
     let values: Vec<String> = std::env::args().collect();
@@ -308,6 +340,15 @@ async fn main() {
             );
         }
         return;
+    }
+    if values.get(1).map(String::as_str) == Some("export") {
+        match run_export(&values[2..]) {
+            Ok(()) => return,
+            Err(message) => {
+                eprintln!("{message}");
+                std::process::exit(2);
+            }
+        }
     }
     if values.get(1).map(String::as_str) == Some("reports") {
         for (id, label, description) in coqui_report::REPORTS {
