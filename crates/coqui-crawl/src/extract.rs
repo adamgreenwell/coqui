@@ -38,17 +38,69 @@ pub fn apply_extractors(html: &str, extractors: &[(String, String)]) -> Vec<(Str
     let document = Html::parse_document(html);
     extractors
         .iter()
-        .filter_map(|(name, css)| {
+        .filter_map(|(name, spec)| {
+            let (css, attribute) = match spec.rsplit_once('@') {
+                Some((css, attribute))
+                    if !attribute.trim().is_empty() && !css.trim().is_empty() =>
+                {
+                    (css.trim(), Some(attribute.trim()))
+                }
+                _ => (spec.trim(), None),
+            };
             let selector = Selector::parse(css).ok()?;
-            let element = document.select(&selector).next()?;
-            let text = element.text().collect::<String>().trim().to_string();
-            if text.is_empty() {
+            let values: Vec<String> = document
+                .select(&selector)
+                .filter_map(|element| match attribute {
+                    Some(attribute) => element
+                        .value()
+                        .attr(attribute)
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(str::to_string),
+                    None => {
+                        let text = element.text().collect::<String>().trim().to_string();
+                        if text.is_empty() { None } else { Some(text) }
+                    }
+                })
+                .collect();
+            if values.is_empty() {
                 None
             } else {
-                Some((name.clone(), text))
+                Some((name.clone(), values.join(" | ")))
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod extractor_tests {
+    use super::*;
+
+    #[test]
+    fn extracts_text_attributes_and_multiple_matches() {
+        let html = r#"
+            <html><body>
+              <h2>First</h2><h2>Second</h2>
+              <a href="/one">One</a>
+              <img src="/image.png" alt="Pic">
+            </body></html>
+        "#;
+        let extractors = vec![
+            ("headings".to_string(), "h2".to_string()),
+            ("href".to_string(), "a@href".to_string()),
+            ("src".to_string(), "img@src".to_string()),
+        ];
+        let values = apply_extractors(html, &extractors);
+        let get = |name: &str| {
+            values
+                .iter()
+                .find(|(key, _)| key == name)
+                .map(|(_, value)| value.as_str())
+        };
+        assert_eq!(get("headings"), Some("First | Second"));
+        assert_eq!(get("href"), Some("/one"));
+        assert_eq!(get("src"), Some("/image.png"));
+    }
 }
 
 fn selector(css: &str) -> Selector {

@@ -917,7 +917,7 @@ export default function Home() {
                     type="text"
                     value={extractorSelector}
                     onChange={(event) => setExtractorSelector(event.target.value)}
-                    placeholder="CSS selector"
+                    placeholder="CSS selector or selector@attr"
                     aria-label="Extractor selector"
                   />
                   <button
