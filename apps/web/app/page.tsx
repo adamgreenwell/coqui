@@ -332,6 +332,7 @@ export default function Home() {
   const [history, setHistory] = useState<CrawlSummary[]>([]);
   const [detail, setDetail] = useState<UrlDetail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
   const [lighthouse, setLighthouse] = useState<LighthouseSummary | null>(null);
   const [lighthouseBusy, setLighthouseBusy] = useState(false);
   const [lighthouseError, setLighthouseError] = useState<string | null>(null);
@@ -724,6 +725,16 @@ export default function Home() {
     setPage(1);
     setActiveIssue(null);
     await Promise.all([loadPage(summary.id, 1, null), loadIssues(summary.id)]);
+  };
+
+  const copyValue = async (label: string, value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(label);
+      window.setTimeout(() => setCopied(null), 1500);
+    } catch {
+      setCopied(`copy failed: ${label}`);
+    }
   };
 
   const openDetail = async (row: UrlRow) => {
@@ -1956,6 +1967,23 @@ export default function Home() {
                 onClick={(event) => event.stopPropagation()}
               >
                 <h3>{String(detail.url.url ?? '')}</h3>
+                <div className="detail-actions">
+                  <button
+                    className="secondary"
+                    type="button"
+                    onClick={() => void copyValue('URL', String(detail.url.url ?? ''))}
+                  >
+                    {copied === 'URL' ? 'Copied URL' : 'Copy URL'}
+                  </button>
+                  <button
+                    className="secondary"
+                    type="button"
+                    disabled={!detail.url.title}
+                    onClick={() => void copyValue('title', String(detail.url.title ?? ''))}
+                  >
+                    {copied === 'title' ? 'Copied title' : 'Copy title'}
+                  </button>
+                </div>
                 <ul className="settings-reference">
                   <li>Status: {String(detail.url.status ?? '—')}</li>
                   <li>Title: {String(detail.url.title ?? '—')}</li>
