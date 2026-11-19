@@ -522,6 +522,21 @@ impl Store {
         Ok(rows)
     }
 
+    pub fn link_counts(&self, crawl_id: &str, url_id: i64) -> Result<(i64, i64)> {
+        let conn = self.lock()?;
+        let incoming = conn.query_row(
+            "SELECT COUNT(*) FROM links WHERE crawl_id = ?1 AND to_id = ?2",
+            params![crawl_id, url_id],
+            |row| row.get(0),
+        )?;
+        let outgoing = conn.query_row(
+            "SELECT COUNT(*) FROM links WHERE crawl_id = ?1 AND from_id = ?2",
+            params![crawl_id, url_id],
+            |row| row.get(0),
+        )?;
+        Ok((incoming, outgoing))
+    }
+
     pub fn status_counts(&self, crawl_id: &str) -> Result<Vec<(Option<u16>, i64)>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
@@ -2839,6 +2854,10 @@ mod tests {
         let custom = store.url_custom_js("c1", id).unwrap();
         assert_eq!(custom.len(), 1);
         assert!(custom[0].1.contains("Rendered title"));
+        store
+            .insert_link("c1", id, id, Some("self"), None, true)
+            .unwrap();
+        assert_eq!(store.link_counts("c1", id).unwrap(), (1, 1));
         std::fs::remove_dir_all(dir).ok();
     }
 
