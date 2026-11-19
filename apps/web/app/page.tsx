@@ -190,6 +190,9 @@ const ISSUE_LABELS: Record<string, string> = {
   canonical_to_non_200: 'Canonical to non-200',
   slow_response: 'Slow response',
   large_page: 'Large page',
+  client_error: '4xx client error',
+  server_error: '5xx server error',
+  redirected_url: 'Redirected URL',
   hreflang_missing_return: 'Hreflang missing return link',
   hreflang_invalid_target: 'Hreflang target not reachable',
   pagination_broken: 'Broken pagination link',
@@ -219,6 +222,9 @@ const ISSUE_DESCRIPTIONS: Record<string, string> = {
   canonical_to_non_200: 'The canonical target is missing, uncrawled or not 2xx.',
   slow_response: 'Response took longer than one second.',
   large_page: 'The HTML page is larger than 1 MB.',
+  client_error: 'The URL returned a 4xx status.',
+  server_error: 'The URL returned a 5xx status.',
+  redirected_url: 'The URL redirects with a 3xx status.',
   multiple_h1: 'More than one H1 heading was found.',
   missing_h1: 'No H1 heading was found.',
   thin_content: 'The page has very little body text.',
@@ -3097,6 +3103,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 

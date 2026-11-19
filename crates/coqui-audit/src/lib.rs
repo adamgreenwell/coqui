@@ -171,6 +171,21 @@ pub const RULES: &[RuleDef] = &[
         severity: IssueSeverity::Opportunity,
     },
     RuleDef {
+        id: "client_error",
+        label: "4xx client error",
+        severity: IssueSeverity::Error,
+    },
+    RuleDef {
+        id: "server_error",
+        label: "5xx server error",
+        severity: IssueSeverity::Error,
+    },
+    RuleDef {
+        id: "redirected_url",
+        label: "Redirected URL",
+        severity: IssueSeverity::Opportunity,
+    },
+    RuleDef {
         id: "hreflang_missing_return",
         label: "Hreflang missing return link",
         severity: IssueSeverity::Warning,
@@ -259,6 +274,39 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
 
     for url in urls.iter().filter(|url| url.blocked) {
         issue(store, crawl_id, &url.url, "blocked_by_robots", None)?;
+    }
+
+    for url in &urls {
+        match url.status {
+            Some(status @ 300..=399) => {
+                issue(
+                    store,
+                    crawl_id,
+                    &url.url,
+                    "redirected_url",
+                    Some(format!("status {status}")),
+                )?;
+            }
+            Some(status @ 400..=499) => {
+                issue(
+                    store,
+                    crawl_id,
+                    &url.url,
+                    "client_error",
+                    Some(format!("status {status}")),
+                )?;
+            }
+            Some(status @ 500..=599) => {
+                issue(
+                    store,
+                    crawl_id,
+                    &url.url,
+                    "server_error",
+                    Some(format!("status {status}")),
+                )?;
+            }
+            _ => {}
+        }
     }
 
     let mut duplicate_content: HashMap<String, Vec<String>> = HashMap::new();
@@ -1219,6 +1267,55 @@ mod tests {
         let by_rule: HashMap<_, _> = counts.iter().map(|c| (c.rule.as_str(), c.count)).collect();
         assert_eq!(by_rule.get("slow_response"), Some(&1));
         assert_eq!(by_rule.get("large_page"), Some(&1));
+    }
+
+    #[test]
+    fn flags_client_errors() {
+        let store = Store::open_in_memory().unwrap();
+        let id = "status";
+        store
+            .create_crawl(
+                id,
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        store
+            .insert_url(&NewUrl {
+                crawl_id: id.to_string(),
+                url: "https://example.com/missing".to_string(),
+                status: Some(404),
+                blocked: false,
+                hreflang: Vec::new(),
+                pagination_next: None,
+                pagination_prev: None,
+                structured_data: Default::default(),
+                console_errors: Vec::new(),
+                axe: Vec::new(),
+                vitals: None,
+                headers: Vec::new(),
+                content_type: Some("text/html".into()),
+                title: None,
+                meta_description: None,
+                h1: None,
+                h1_count: 0,
+                canonical: None,
+                meta_robots: None,
+                redirect_target: None,
+                redirect_chain: Vec::new(),
+                word_count: None,
+                depth: 0,
+                response_time_ms: Some(10),
+                size_bytes: Some(100),
+                error: None,
+                discovered_at: now_ms(),
+            })
+            .unwrap();
+        let counts = analyze_crawl(&store, id).unwrap();
+        let by_rule: HashMap<_, _> = counts.iter().map(|c| (c.rule.as_str(), c.count)).collect();
+        assert_eq!(by_rule.get("client_error"), Some(&1));
     }
 
     #[test]
