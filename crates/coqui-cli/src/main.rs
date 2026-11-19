@@ -104,7 +104,7 @@ fn load_config(path: &Path, required: bool) -> Result<FileConfig, String> {
 }
 
 fn usage() -> &'static str {
-    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance] [--out DIR]\n       coqui reports\n       coqui export [--out DIR]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui mcp [--out DIR]"
+    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance] [--out DIR]\n       coqui reports\n       coqui export [--out DIR] [--family urls|issues|links|headers|images|a11y|structured|vitals|console|text|markdown|extractions|custom-js]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui mcp [--out DIR]"
 }
 
 fn parse_args(values: &[String], config: &FileConfig) -> Result<Args, String> {
@@ -314,12 +314,17 @@ fn run_report(values: &[String]) -> Result<(), String> {
 
 fn run_export(values: &[String]) -> Result<(), String> {
     let mut out = PathBuf::from("coqui-out");
+    let mut family = "urls".to_string();
     let mut index = 0;
     while index < values.len() {
         match values[index].as_str() {
             "--out" => {
                 index += 1;
                 out = PathBuf::from(values.get(index).ok_or("missing --out value")?);
+            }
+            "--family" => {
+                index += 1;
+                family = values.get(index).ok_or("missing --family value")?.clone();
             }
             other => return Err(format!("unknown option '{other}'")),
         }
@@ -330,13 +335,29 @@ fn run_export(values: &[String]) -> Result<(), String> {
         .latest_crawl()
         .map_err(|error| error.to_string())?
         .ok_or_else(|| "no crawl found".to_string())?;
-    let path = out.join(format!("urls-{}.csv", now_ms()));
+    let stamp = now_ms();
+    let path = out.join(format!("{family}-{stamp}.csv"));
     let started = std::time::Instant::now();
-    let rows = store
-        .export_urls_csv(&crawl.id, &path, &[], None)
-        .map_err(|error| error.to_string())?;
+    let rows = match family.as_str() {
+        "urls" => store.export_urls_csv(&crawl.id, &path, &[], None),
+        "issues" => store.export_issues_csv(&crawl.id, &path),
+        "links" => store.export_links_csv(&crawl.id, &path),
+        "headers" => store.export_headers_csv(&crawl.id, &path),
+        "images" => store.export_images_csv(&crawl.id, &path),
+        "a11y" => store.export_accessibility_csv(&crawl.id, &path),
+        "structured" => store.export_structured_data_csv(&crawl.id, &path),
+        "vitals" => store.export_vitals_csv(&crawl.id, &path),
+        "console" => store.export_console_csv(&crawl.id, &path),
+        "text" => store.export_text_csv(&crawl.id, &path),
+        "markdown" => store.export_markdown_csv(&crawl.id, &path),
+        "extractions" => store.export_extractions_csv(&crawl.id, &path),
+        "custom-js" => store.export_custom_js_csv(&crawl.id, &path),
+        other => return Err(format!("unknown export family '{other}'")),
+    }
+    .map_err(|error| error.to_string())?;
     println!(
-        "export: {} ({} rows in {:.3}s)",
+        "export {}: {} ({} rows in {:.3}s)",
+        family,
         path.display(),
         rows,
         started.elapsed().as_secs_f64()
