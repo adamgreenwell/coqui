@@ -130,6 +130,8 @@ pub struct ReportOptions {
     pub top: Option<usize>,
     /// Restrict to a single HTTP status code.
     pub status: Option<u16>,
+    /// Override the report title (document title and H1).
+    pub title: Option<String>,
 }
 
 /// Named reports available from the report engine.
@@ -330,3 +332,5 @@ mod tests {
         std::fs::remove_dir_all(dir).ok();
     }
 }
+
+

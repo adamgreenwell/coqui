@@ -260,7 +260,7 @@ fn run_report(values: &[String]) -> Result<(), String> {
                 index += 1;
                 out = PathBuf::from(values.get(index).ok_or("missing --out value")?);
             }
-            "--top" | "--status" => {
+            "--top" | "--status" | "--title" => {
                 index += 1;
             }
             other if !other.starts_with("--") => kind = other.to_string(),
@@ -1340,3 +1340,4 @@ mod tests {
         assert_eq!(parsed.max_urls, 25);
     }
 }
+
