@@ -411,6 +411,11 @@ async fn run_lighthouse_sample(
 }
 
 #[tauri::command]
+fn export_catalog() -> Vec<coqui_core::ExportDefinition> {
+    coqui_core::export_catalog()
+}
+
+#[tauri::command]
 fn export_view(
     state: State<'_, AppState>,
     crawl_id: String,
@@ -552,6 +557,7 @@ pub fn run() {
             get_screenshot,
             run_lighthouse,
             run_lighthouse_sample,
+            export_catalog,
             export_view
         ])
         .run(tauri::generate_context!())
