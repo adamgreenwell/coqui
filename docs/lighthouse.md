@@ -2,6 +2,10 @@
 
 On-demand Lighthouse runs for a single crawled URL, using **system Node.js + npx** (option B). The app does not bundle Node or Lighthouse yet.
 
+## Bundled sidecar (preferred when present)
+
+If `node`/`node.exe` and `lighthouse/lighthouse-cli/index.js` sit next to the Coqui executable, or `COQUI_NODE` / `COQUI_LIGHTHOUSE_CLI` point at them, Coqui runs them directly. Otherwise it falls back to system `npx`.
+
 ## Requirements
 
 - Node.js 20+ and `npx` on `PATH`.
@@ -46,4 +50,5 @@ The SEO score reflects staging behaviour (no canonical/noindex), matching the cr
 ## Path to 1.0
 
 Bundle Node + Lighthouse as a Tauri sidecar so the feature works offline and behind logins (with our session material). The command and storage contract stay the same.
+
 

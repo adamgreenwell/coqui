@@ -263,6 +263,132 @@ fn export_csv(state: State<'_, AppState>, crawl_id: String) -> Result<String, St
     Ok(path.to_string_lossy().to_string())
 }
 
+fn lighthouse_command(url: &str, output_path: &std::path::Path) -> tokio::process::Command {
+    let sidecar = |name: &str| {
+        std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|dir| dir.join(name)))
+            .filter(|path| path.exists())
+    };
+    let node = std::env::var_os("COQUI_NODE")
+        .map(std::path::PathBuf::from)
+        .filter(|path| path.exists())
+        .or_else(|| sidecar(if cfg!(windows) { "node.exe" } else { "node" }));
+    let cli = std::env::var_os("COQUI_LIGHTHOUSE_CLI")
+        .map(std::path::PathBuf::from)
+        .filter(|path| path.exists())
+        .or_else(|| sidecar("lighthouse/lighthouse-cli/index.js"));
+    let mut command = match (node, cli) {
+        (Some(node), Some(cli)) => {
+            let mut command = tokio::process::Command::new(node);
+            command.arg(cli);
+            command
+        }
+        _ => {
+            let mut command =
+                tokio::process::Command::new(if cfg!(windows) { "npx.cmd" } else { "npx" });
+            command.arg("--yes").arg("lighthouse@12.8.2");
+            command
+        }
+    };
+    command
+        .arg(url)
+        .arg("--quiet")
+        .arg("--output=json")
+        .arg(format!("--output-path={}", output_path.display()))
+        .arg("--only-categories=performance,accessibility,best-practices,seo")
+        .arg("--chrome-flags=--headless=new --no-sandbox --disable-gpu")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped());
+    command
+}
+
+async fn lighthouse_summary(url: &str) -> Result<coqui_lighthouse::LighthouseSummary, String> {
+    let output_path =
+        std::env::temp_dir().join(format!("coqui-lighthouse-{}.json", uuid::Uuid::new_v4()));
+    let mut command = lighthouse_command(url, &output_path);
+    let output = tokio::time::timeout(std::time::Duration::from_secs(240), command.output())
+        .await
+        .map_err(|_| "Lighthouse timed out after 240 seconds".to_string())?
+        .map_err(|error| {
+            format!("could not run npx: {error}. Install Node.js or add it to PATH.")
+        })?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let snippet: String = stderr.chars().take(500).collect();
+        return Err(format!("Lighthouse failed: {snippet}"));
+    }
+    let report = std::fs::read_to_string(&output_path)
+        .map_err(|error| format!("Lighthouse produced no report: {error}"))?;
+    let _ = std::fs::remove_file(&output_path);
+    coqui_lighthouse::summarize(&report).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn get_screenshot(
+    state: State<'_, AppState>,
+    crawl_id: String,
+    url_id: i64,
+) -> Result<Option<String>, String> {
+    use base64::Engine as _;
+    let data = state
+        .store
+        .get_screenshot(&crawl_id, url_id)
+        .map_err(|error| error.to_string())?;
+    Ok(data.map(|bytes| {
+        format!(
+            "data:image/jpeg;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(bytes)
+        )
+    }))
+}
+
+#[tauri::command]
+async fn run_lighthouse(
+    state: State<'_, AppState>,
+    crawl_id: String,
+    url_id: i64,
+) -> Result<coqui_lighthouse::LighthouseSummary, String> {
+    let record = state
+        .store
+        .get_url(&crawl_id, url_id)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "URL not found".to_string())?;
+    let summary = lighthouse_summary(&record.url).await?;
+    let json = serde_json::to_string(&summary).map_err(|error| error.to_string())?;
+    state
+        .store
+        .save_lighthouse(&crawl_id, url_id, &json)
+        .map_err(|error| error.to_string())?;
+    Ok(summary)
+}
+
+#[tauri::command]
+async fn run_lighthouse_sample(
+    state: State<'_, AppState>,
+    crawl_id: String,
+    sample: u32,
+) -> Result<Vec<coqui_lighthouse::LighthouseSummary>, String> {
+    let urls = state
+        .store
+        .sample_urls(&crawl_id, sample)
+        .map_err(|error| error.to_string())?;
+    if urls.is_empty() {
+        return Err("No 2xx HTML URLs available to sample".to_string());
+    }
+    let mut summaries = Vec::new();
+    for record in urls {
+        let summary = lighthouse_summary(&record.url).await?;
+        let json = serde_json::to_string(&summary).map_err(|error| error.to_string())?;
+        state
+            .store
+            .save_lighthouse(&crawl_id, record.id, &json)
+            .map_err(|error| error.to_string())?;
+        summaries.push(summary);
+    }
+    Ok(summaries)
+}
+
 pub fn run() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
@@ -298,7 +424,10 @@ pub fn run() {
             start_crawl,
             cancel_crawl,
             pause_crawl,
-            export_csv
+            export_csv,
+            get_screenshot,
+            run_lighthouse,
+            run_lighthouse_sample
         ])
         .run(tauri::generate_context!())
         .expect("error while running Coqui");
