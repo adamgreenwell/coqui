@@ -428,6 +428,14 @@ fn export_view(
 ) -> Result<String, String> {
     let dir = state.data_dir.join("exports");
     std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+    if view == "sitemap-bundle" {
+        let target = dir.join(format!("{crawl_id}-sitemaps-{}", now_ms()));
+        state
+            .store
+            .export_sitemap_bundle(&crawl_id, &target, true)
+            .map_err(|error| error.to_string())?;
+        return Ok(target.to_string_lossy().to_string());
+    }
     if view == "screenshots" {
         let target = dir.join(format!("{crawl_id}-screenshots-{}", now_ms()));
         state

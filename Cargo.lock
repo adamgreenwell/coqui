@@ -575,6 +575,7 @@ version = "0.1.0"
 dependencies = [
  "coqui-core",
  "csv",
+ "flate2",
  "rusqlite",
  "rust_xlsxwriter",
  "serde",

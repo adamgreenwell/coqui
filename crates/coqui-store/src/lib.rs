@@ -956,6 +956,94 @@ impl Store {
         Ok(count)
     }
 
+    pub fn export_sitemap_bundle(
+        &self,
+        crawl_id: &str,
+        directory: impl AsRef<Path>,
+        gzip: bool,
+    ) -> Result<u64> {
+        use std::io::Write;
+        let directory = directory.as_ref();
+        std::fs::create_dir_all(directory)?;
+        let conn = self.lock()?;
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM urls WHERE crawl_id = ?1 AND status = 200
+             AND (meta_robots IS NULL OR lower(meta_robots) NOT LIKE '%noindex%')",
+            params![crawl_id],
+            |row| row.get(0),
+        )?;
+        let count = count.max(0) as u64;
+        let chunks = count.div_ceil(50_000).max(1);
+        let suffix = if gzip { ".xml.gz" } else { ".xml" };
+        let mut urls = conn.prepare(
+            "SELECT id, url FROM urls WHERE crawl_id = ?1 AND status = 200
+             AND (meta_robots IS NULL OR lower(meta_robots) NOT LIKE '%noindex%')
+             ORDER BY id LIMIT 50000 OFFSET ?2",
+        )?;
+        let mut images = conn
+            .prepare("SELECT src FROM images WHERE crawl_id = ?1 AND url_id = ?2 ORDER BY src")?;
+        let mut total = 0u64;
+        for chunk in 0..chunks {
+            let name = format!("sitemap-{}{suffix}", chunk + 1);
+            let file = std::fs::File::create(directory.join(&name))?;
+            let mut writer: Box<dyn Write> = if gzip {
+                Box::new(flate2::write::GzEncoder::new(
+                    file,
+                    flate2::Compression::default(),
+                ))
+            } else {
+                Box::new(file)
+            };
+            writeln!(writer, r#"<?xml version="1.0" encoding="UTF-8"?>"#)?;
+            writeln!(
+                writer,
+                r#"<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">"#
+            )?;
+            let mut rows = urls.query(params![crawl_id, (chunk * 50_000) as i64])?;
+            while let Some(row) = rows.next()? {
+                let id: i64 = row.get(0)?;
+                let url: String = row.get(1)?;
+                writeln!(writer, "  <url>")?;
+                writeln!(writer, "    <loc>{}</loc>", xml_escape(&url))?;
+                let mut image_rows = images.query(params![crawl_id, id])?;
+                while let Some(image) = image_rows.next()? {
+                    let src: String = image.get(0)?;
+                    writeln!(writer, "    <image:image>")?;
+                    writeln!(writer, "      <image:loc>{}</image:loc>", xml_escape(&src))?;
+                    writeln!(writer, "    </image:image>")?;
+                }
+                writeln!(writer, "  </url>")?;
+                total += 1;
+            }
+            writeln!(writer, "</urlset>")?;
+            writer.flush()?;
+        }
+        if chunks > 1 {
+            let file = std::fs::File::create(directory.join("sitemap-index.xml"))?;
+            let mut writer: Box<dyn Write> = if gzip {
+                Box::new(flate2::write::GzEncoder::new(
+                    file,
+                    flate2::Compression::default(),
+                ))
+            } else {
+                Box::new(file)
+            };
+            writeln!(writer, r#"<?xml version="1.0" encoding="UTF-8"?>"#)?;
+            writeln!(
+                writer,
+                r#"<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">"#
+            )?;
+            for chunk in 0..chunks {
+                writeln!(writer, "  <sitemap>")?;
+                writeln!(writer, "    <loc>sitemap-{}{suffix}</loc>", chunk + 1)?;
+                writeln!(writer, "  </sitemap>")?;
+            }
+            writeln!(writer, "</sitemapindex>")?;
+            writer.flush()?;
+        }
+        Ok(total)
+    }
+
     pub fn export_headers_csv(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {
         if let Some(parent) = path.as_ref().parent() {
             std::fs::create_dir_all(parent)?;
@@ -1840,6 +1928,34 @@ mod tests {
         assert!(xml.contains("https://example.com/</loc>"));
         assert!(xml.contains("a.png?a=1&amp;b=2"));
         assert!(!xml.contains("private"));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn sitemap_bundle_splits_and_gzips() {
+        let dir = std::env::temp_dir().join(format!("coqui-sitemap-bundle-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        store
+            .create_crawl(
+                "c1",
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        for path in ["https://example.com/", "https://example.com/about"] {
+            store.insert_url(&sample_record("c1", path)).unwrap();
+        }
+        let out = dir.join("sitemaps");
+        assert_eq!(store.export_sitemap_bundle("c1", &out, false).unwrap(), 2);
+        assert!(out.join("sitemap-1.xml").exists());
+        assert!(!out.join("sitemap-index.xml").exists());
+        let gz = dir.join("sitemaps-gz");
+        assert_eq!(store.export_sitemap_bundle("c1", &gz, true).unwrap(), 2);
+        let bytes = std::fs::read(gz.join("sitemap-1.xml.gz")).unwrap();
+        assert_eq!(&bytes[..2], &[0x1f, 0x8b]);
         std::fs::remove_dir_all(dir).ok();
     }
 
