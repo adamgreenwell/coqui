@@ -260,6 +260,9 @@ export default function Home() {
   const [accessibility, setAccessibility] = useState(false);
   const [webVitals, setWebVitals] = useState(false);
   const [storeText, setStoreText] = useState(false);
+  const [extractors, setExtractors] = useState<{ name: string; selector: string }[]>([]);
+  const [extractorName, setExtractorName] = useState('');
+  const [extractorSelector, setExtractorSelector] = useState('');
   const [settingsQuery, setSettingsQuery] = useState('');
   const [probe, setProbe] = useState<{ status: number; ms: number; finalUrl: string } | null>(null);
   const [probeError, setProbeError] = useState<string | null>(null);
@@ -402,6 +405,13 @@ export default function Home() {
       });
       setCrawl(summary);
       setPhase('running');
+      for (const extractor of extractors) {
+        await invoke('add_extractor', {
+          crawlId: summary.id,
+          name: extractor.name,
+          selector: extractor.selector,
+        });
+      }
       await invoke('start_crawl', { crawlId: summary.id });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -789,6 +799,61 @@ export default function Home() {
             </div>
             <details className="advanced">
               <summary>Scope, auth & headers</summary>
+              <div className="field">
+                <label>Custom extraction</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    type="text"
+                    value={extractorName}
+                    onChange={(event) => setExtractorName(event.target.value)}
+                    placeholder="Name"
+                    aria-label="Extractor name"
+                  />
+                  <input
+                    type="text"
+                    value={extractorSelector}
+                    onChange={(event) => setExtractorSelector(event.target.value)}
+                    placeholder="CSS selector"
+                    aria-label="Extractor selector"
+                  />
+                  <button
+                    className="secondary"
+                    type="button"
+                    onClick={() => {
+                      const name = extractorName.trim();
+                      const selector = extractorSelector.trim();
+                      if (!name || !selector) return;
+                      setExtractors((current) => [
+                        ...current.filter((entry) => entry.name !== name),
+                        { name, selector },
+                      ]);
+                      setExtractorName('');
+                      setExtractorSelector('');
+                    }}
+                  >
+                    Add
+                  </button>
+                </div>
+                <ul className="settings-reference">
+                  {extractors.map((extractor) => (
+                    <li key={extractor.name}>
+                      <strong>{extractor.name}</strong> — {extractor.selector}{' '}
+                      <button
+                        className="secondary"
+                        type="button"
+                        onClick={() =>
+                          setExtractors((current) =>
+                            current.filter((entry) => entry.name !== extractor.name),
+                          )
+                        }
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                  {extractors.length === 0 && <li>No extractors yet.</li>}
+                </ul>
+              </div>
               <div className="field">
                 <label htmlFor="settingsSearch">Find a setting</label>
                 <input
@@ -1304,6 +1369,53 @@ export default function Home() {
                     </div>
                   )}
                 </div>
+                <select
+                  value={bulkView}
+                  onChange={(event) => setBulkView(event.target.value)}
+                  aria-label="Export view"
+                  disabled={!isTauri || !crawl}
+                >
+                  <option value="urls">URLs</option>
+                  <option value="issues">Issues</option>
+                  <option value="links">Links</option>
+                  <option value="headers">Response headers</option>
+                  <option value="images">Images</option>
+                  <option value="accessibility">Accessibility</option>
+                  <option value="structured">Structured data</option>
+                  <option value="vitals">Web Vitals</option>
+                  <option value="console">Console errors</option>
+                  <option value="text">Page text</option>
+                  <option value="markdown">Page Markdown</option>
+                  <option value="extractions">Custom extraction</option>
+                  <option value="sitemap">Sitemap XML</option>
+                  <option value="screenshots">Screenshots (folder)</option>
+                  <option value="sitemap-bundle">Sitemap bundle (gzip)</option>
+                </select>
+                <button
+                  className="secondary"
+                  type="button"
+                  onClick={async () => {
+                    if (!crawl) return;
+                    try {
+                      const { invoke } = await import('@tauri-apps/api/core');
+                      const path = await invoke<string>('export_view', {
+                        crawlId: crawl.id,
+                        view: bulkView,
+                        issue: null,
+                        columns: [],
+                        format: bulkView === 'sitemap' ? 'xml' : 'csv',
+                        pattern: exportPattern.trim() || null,
+                        skipEmpty,
+                      });
+                      setExportPath(path);
+                    } catch (cause) {
+                      setError(cause instanceof Error ? cause.message : String(cause));
+                    }
+                  }}
+                  disabled={!isTauri || !crawl}
+                >
+                  Export data
+                </button>
                 <button
                   className="secondary"
                   type="button"
