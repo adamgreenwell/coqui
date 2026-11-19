@@ -2,10 +2,66 @@
 
 use coqui_core::{CrawlConfig, CrawlProgress, now_ms};
 use coqui_store::Store;
-use std::path::PathBuf;
+use serde::Deserialize;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use tokio_util::sync::CancellationToken;
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct FileConfig {
+    out: Option<String>,
+    max_urls: Option<u32>,
+    depth: Option<u32>,
+    concurrency: Option<u16>,
+    respect_robots: Option<bool>,
+    user_agent: Option<String>,
+    headers: Option<Vec<String>>,
+    auth: Option<String>,
+    timeout_ms: Option<u64>,
+    render: Option<bool>,
+    screenshots: Option<bool>,
+    accessibility: Option<bool>,
+    web_vitals: Option<bool>,
+    render_workers: Option<u32>,
+}
+
+impl Args {
+    fn from_config(config: &FileConfig) -> Self {
+        let (auth_user, auth_password) = config
+            .auth
+            .as_deref()
+            .and_then(|value| value.split_once(':'))
+            .map(|(user, password)| (user.to_string(), password.to_string()))
+            .map_or((None, None), |(user, password)| {
+                (Some(user), Some(password))
+            });
+        Args {
+            kind: String::new(),
+            seed: String::new(),
+            out: config
+                .out
+                .as_deref()
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("coqui-out")),
+            max_urls: config.max_urls.unwrap_or(5000),
+            depth: config.depth.unwrap_or(3),
+            concurrency: config.concurrency.unwrap_or(8),
+            respect_robots: config.respect_robots.unwrap_or(true),
+            user_agent: config.user_agent.clone(),
+            headers: config.headers.clone().unwrap_or_default(),
+            auth: auth_user.zip(auth_password),
+            timeout_ms: config.timeout_ms.unwrap_or(20_000),
+            render: config.render.unwrap_or(false),
+            screenshots: config.screenshots.unwrap_or(false),
+            accessibility: config.accessibility.unwrap_or(false),
+            web_vitals: config.web_vitals.unwrap_or(false),
+            render_workers: config.render_workers.unwrap_or(2),
+            resume: false,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Args {
@@ -28,11 +84,23 @@ struct Args {
     resume: bool,
 }
 
+fn load_config(path: &Path, required: bool) -> Result<FileConfig, String> {
+    if !path.exists() {
+        if required {
+            return Err(format!("config not found: {}", path.display()));
+        }
+        return Ok(FileConfig::default());
+    }
+    let text = std::fs::read_to_string(path)
+        .map_err(|error| format!("read {}: {error}", path.display()))?;
+    toml::from_str(&text).map_err(|error| format!("parse {}: {error}", path.display()))
+}
+
 fn usage() -> &'static str {
     "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]"
 }
 
-fn parse_args(values: &[String]) -> Result<Args, String> {
+fn parse_args(values: &[String], config: &FileConfig) -> Result<Args, String> {
     if values.len() < 3 || values[1] != "crawl" {
         return Err(usage().to_string());
     }
@@ -44,28 +112,15 @@ fn parse_args(values: &[String]) -> Result<Args, String> {
         .get(3)
         .ok_or_else(|| "missing seed".to_string())?
         .clone();
-    let mut args = Args {
-        kind,
-        seed,
-        out: PathBuf::from("coqui-out"),
-        max_urls: 5000,
-        depth: 3,
-        concurrency: 8,
-        respect_robots: true,
-        user_agent: None,
-        headers: Vec::new(),
-        auth: None,
-        timeout_ms: 20_000,
-        render: false,
-        screenshots: false,
-        accessibility: false,
-        web_vitals: false,
-        render_workers: 2,
-        resume: false,
-    };
+    let mut args = Args::from_config(config);
+    args.kind = kind;
+    args.seed = seed;
     let mut index = 4;
     while index < values.len() {
         match values[index].as_str() {
+            "--config" => {
+                index += 1;
+            }
             "--out" => {
                 index += 1;
                 args.out = PathBuf::from(values.get(index).ok_or("missing --out value")?);
@@ -144,29 +199,15 @@ fn parse_args(values: &[String]) -> Result<Args, String> {
     Ok(args)
 }
 
-fn parse_resume(values: &[String]) -> Result<Args, String> {
-    let mut args = Args {
-        kind: String::new(),
-        seed: String::new(),
-        out: PathBuf::from("coqui-out"),
-        max_urls: 0,
-        depth: 0,
-        concurrency: 0,
-        respect_robots: true,
-        user_agent: None,
-        headers: Vec::new(),
-        auth: None,
-        timeout_ms: 20_000,
-        render: false,
-        screenshots: false,
-        accessibility: false,
-        web_vitals: false,
-        render_workers: 2,
-        resume: true,
-    };
+fn parse_resume(values: &[String], config: &FileConfig) -> Result<Args, String> {
+    let mut args = Args::from_config(config);
+    args.resume = true;
     let mut index = 2;
     while index < values.len() {
         match values[index].as_str() {
+            "--config" => {
+                index += 1;
+            }
             "--out" => {
                 index += 1;
                 args.out = PathBuf::from(values.get(index).ok_or("missing --out value")?);
@@ -201,10 +242,23 @@ async fn main() {
         println!("coqui {}", env!("CARGO_PKG_VERSION"));
         return;
     }
+    let explicit_config = values.windows(2).any(|pair| pair[0] == "--config");
+    let config_path = values
+        .windows(2)
+        .find(|pair| pair[0] == "--config")
+        .map(|pair| pair[1].clone())
+        .unwrap_or_else(|| "coqui.toml".to_string());
+    let config = match load_config(Path::new(&config_path), explicit_config) {
+        Ok(config) => config,
+        Err(message) => {
+            eprintln!("{message}");
+            std::process::exit(2);
+        }
+    };
     let parsed = if values.get(1).map(String::as_str) == Some("resume") {
-        parse_resume(&values)
+        parse_resume(&values, &config)
     } else {
-        parse_args(&values)
+        parse_args(&values, &config)
     };
     let args = match parsed {
         Ok(args) => args,
@@ -321,26 +375,51 @@ mod tests {
 
     #[test]
     fn parses_defaults() {
-        let parsed = parse_args(&args(&["crawl", "url", "https://example.com"])).unwrap();
+        let parsed = parse_args(
+            &args(&["crawl", "url", "https://example.com"]),
+            &FileConfig::default(),
+        )
+        .unwrap();
         assert_eq!(parsed.max_urls, 5000);
         assert_eq!(parsed.depth, 3);
         assert!(parsed.respect_robots);
     }
 
     #[test]
+    fn config_supplies_defaults_and_flags_win() {
+        let config = FileConfig {
+            max_urls: Some(10),
+            concurrency: Some(2),
+            ..FileConfig::default()
+        };
+        let parsed = parse_args(&args(&["crawl", "url", "https://example.com"]), &config).unwrap();
+        assert_eq!(parsed.max_urls, 10);
+        assert_eq!(parsed.concurrency, 2);
+        let overridden = parse_args(
+            &args(&["crawl", "url", "https://example.com", "--max-urls", "50"]),
+            &config,
+        )
+        .unwrap();
+        assert_eq!(overridden.max_urls, 50);
+    }
+
+    #[test]
     fn parses_flags() {
-        let parsed = parse_args(&args(&[
-            "crawl",
-            "sitemap",
-            "https://example.com/sitemap.xml",
-            "--max-urls",
-            "50",
-            "--depth",
-            "1",
-            "--concurrency",
-            "4",
-            "--ignore-robots",
-        ]))
+        let parsed = parse_args(
+            &args(&[
+                "crawl",
+                "sitemap",
+                "https://example.com/sitemap.xml",
+                "--max-urls",
+                "50",
+                "--depth",
+                "1",
+                "--concurrency",
+                "4",
+                "--ignore-robots",
+            ]),
+            &FileConfig::default(),
+        )
         .unwrap();
         assert_eq!(parsed.max_urls, 50);
         assert_eq!(parsed.depth, 1);
@@ -350,25 +429,28 @@ mod tests {
 
     #[test]
     fn parses_auth_headers_and_rendering() {
-        let parsed = parse_args(&args(&[
-            "crawl",
-            "url",
-            "https://example.com",
-            "--user-agent",
-            "Coqui/1.0",
-            "--header",
-            "X-Test: yes",
-            "--auth",
-            "user:pass",
-            "--timeout-ms",
-            "5000",
-            "--render",
-            "--screenshots",
-            "--a11y",
-            "--vitals",
-            "--render-workers",
-            "4",
-        ]))
+        let parsed = parse_args(
+            &args(&[
+                "crawl",
+                "url",
+                "https://example.com",
+                "--user-agent",
+                "Coqui/1.0",
+                "--header",
+                "X-Test: yes",
+                "--auth",
+                "user:pass",
+                "--timeout-ms",
+                "5000",
+                "--render",
+                "--screenshots",
+                "--a11y",
+                "--vitals",
+                "--render-workers",
+                "4",
+            ]),
+            &FileConfig::default(),
+        )
         .unwrap();
         assert_eq!(parsed.user_agent.as_deref(), Some("Coqui/1.0"));
         assert_eq!(parsed.headers, vec!["X-Test: yes"]);
@@ -381,18 +463,15 @@ mod tests {
 
     #[test]
     fn rejects_unknown_kind() {
-        assert!(parse_args(&args(&["crawl", "ftp", "x"])).is_err());
+        assert!(parse_args(&args(&["crawl", "ftp", "x"]), &FileConfig::default()).is_err());
     }
 
     #[test]
     fn parses_resume() {
-        let parsed = parse_resume(&args(&[
-            "resume",
-            "--out",
-            "crawls/example",
-            "--max-urls",
-            "25",
-        ]))
+        let parsed = parse_resume(
+            &args(&["resume", "--out", "crawls/example", "--max-urls", "25"]),
+            &FileConfig::default(),
+        )
         .unwrap();
         assert!(parsed.resume);
         assert_eq!(parsed.out, PathBuf::from("crawls/example"));

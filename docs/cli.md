@@ -22,6 +22,27 @@ coqui crawl url https://example.com/ --render --screenshots --a11y --vitals --ou
 
 With `--render`, pages are rendered in headless Chrome/Edge before extraction. `--screenshots` writes JPEGs to `DIR/screenshots/<crawl-id>/`, `--a11y` stores axe violations, and `--vitals` stores LCP/CLS/TBT/TTFB/FCP. Verified against the local fixture: rendered title/H1, one screenshot, console errors, axe violations and vitals all captured.
 
+## Config file
+
+Pass `--config PATH` to load defaults from TOML; without the flag, `coqui.toml` in the working directory is used when present. CLI flags override config values.
+
+```toml
+out = "crawls/example"
+max_urls = 5000
+depth = 3
+concurrency = 8
+respect_robots = true
+user_agent = "Coqui/0.1"
+headers = ["X-Test: yes"]
+auth = "user:pass"
+timeout_ms = 20000
+render = false
+screenshots = false
+accessibility = false
+web_vitals = false
+render_workers = 2
+```
+
 ## Resume
 
 `coqui resume --out DIR` reloads the latest crawl and its checkpoint from `DIR/coqui.db`, then continues. `--max-urls` and `--concurrency` override the stored config for the resumed run. If no checkpoint exists, the command exits with an error.
@@ -43,6 +64,7 @@ With `--render`, pages are rendered in headless Chrome/Edge before extraction. `
 ## Current limits
 
 Supports URL/sitemap/list seeds, crawl limits, user agent, custom headers, basic auth, timeout, and rendering with screenshots/axe/Web Vitals. Export formats, config files, profiles and checkpoint/resume flags are next.
+
 
 
 

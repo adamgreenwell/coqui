@@ -506,8 +506,10 @@ dependencies = [
  "coqui-core",
  "coqui-crawl",
  "coqui-store",
+ "serde",
  "tokio",
  "tokio-util",
+ "toml 1.2.1+spec-1.1.0",
 ]
 
 [[package]]
