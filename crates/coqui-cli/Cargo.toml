@@ -16,3 +16,5 @@ coqui-crawl.workspace = true
 coqui-audit.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
+toml = "1.2.1"
+serde = { workspace = true, features = ["derive"] }
