@@ -71,6 +71,7 @@ struct FetchOutcome {
     console: Vec<String>,
     screenshot: Option<Vec<u8>>,
     axe: Vec<coqui_core::AxeViolation>,
+    vitals: Option<coqui_core::WebVitals>,
 }
 
 /// Run a crawl to completion (or cancellation).
@@ -258,6 +259,7 @@ pub async fn run_crawl(
             wait_dom: config.render_early,
             block_patterns: config.render_block_patterns.clone(),
             accessibility: config.accessibility,
+            web_vitals: config.web_vitals,
         };
         Some(
             RenderPool::connect(
@@ -314,6 +316,7 @@ pub async fn run_crawl(
                         blocked: outcome.blocked,
                         console_errors: outcome.console.clone(),
                         axe: outcome.axe.clone(),
+                        vitals: outcome.vitals,
                         hreflang: Vec::new(),
                         pagination_next: None,
                         pagination_prev: None,
@@ -366,6 +369,7 @@ pub async fn run_crawl(
                     blocked: outcome.blocked,
                     console_errors: outcome.console.clone(),
                     axe: outcome.axe.clone(),
+                    vitals: outcome.vitals,
                     hreflang: extracted
                         .as_ref()
                         .map(|page| page.hreflang.clone())
@@ -611,6 +615,7 @@ async fn fetch(
                     console: Vec::new(),
                     screenshot: None,
                     axe: Vec::new(),
+                    vitals: None,
                 };
             }
         };
@@ -687,6 +692,7 @@ async fn fetch(
                         console: Vec::new(),
                         screenshot: None,
                         axe: Vec::new(),
+                        vitals: None,
                     };
                 }
             }
@@ -695,6 +701,7 @@ async fn fetch(
         let mut console = Vec::new();
         let mut screenshot = None;
         let mut axe = Vec::new();
+        let mut vitals = None;
         let blocked = looks_blocked(status, &response_headers, body.as_deref());
         if !blocked {
             if let Some(renderer) = renderer {
@@ -706,6 +713,7 @@ async fn fetch(
                             console = rendered.console;
                             screenshot = rendered.screenshot;
                             axe = rendered.axe;
+                            vitals = rendered.vitals;
                         }
                         Err(error) => {
                             if std::env::var_os("COQUI_DEBUG_CRAWL").is_some() {
@@ -729,6 +737,7 @@ async fn fetch(
             console,
             screenshot,
             axe,
+            vitals,
         };
     }
 
@@ -745,6 +754,7 @@ async fn fetch(
         console: Vec::new(),
         screenshot: None,
         axe: Vec::new(),
+        vitals: None,
     }
 }
 

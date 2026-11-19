@@ -147,6 +147,19 @@ Console errors are dominated by `ERR_BLOCKED_BY_CLIENT` resource failures and a 
 
 The pool launched four separate browsers, which spawned ~144 OS processes. A follow-up benchmark on 50 pages showed four separate browsers at 85–93 s / ~144 processes; one browser with four tabs at 64.1 s / 34 processes; eight tabs at 63.1 s. Blocking fonts/media or third-party scripts gave no further gain. A single stage homepage took 14.6 s to reach full load, so remaining throughput is site-bound.
 
+### Web Vitals (staging)
+
+Fifty rendered staging pages with vitals enabled:
+
+| Metric | Median | Max |
+| --- | --- | --- |
+| LCP | 2,964 ms | 7,092 ms |
+| TTFB | 1,979 ms | 4,104 ms |
+| CLS | 0 | 0.01 |
+| TBT | 0 | 0 |
+
+Rules: 37 poor LCP, 49 slow TTFB, 0 layout shift, 0 long blocking. Capturing vitals added no measurable crawl time (63.9 s vs 64.1 s).
+
 ### Accessibility audit (staging)
 
 Fifty rendered staging pages with axe-core enabled:

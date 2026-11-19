@@ -23,6 +23,7 @@ Coqui can render pages in an external headless Chrome/Edge before extraction. Th
 | `renderBlockAssets` | Block fonts/media (default off; no measured gain) |
 | `renderBlockPatterns` | Extra URL patterns blocked while rendering (JSON/harness) |
 | `accessibility` | Run axe-core on each rendered page |
+| `webVitals` | Capture LCP, CLS, TBT, TTFB, FCP |
 | `renderEarly` | Continue at DOMContentLoaded instead of full load (default off) |
 
 Environment overrides for the CLI/harness: `COQUI_BROWSER_PATH`, `COQUI_CDP_ENDPOINT`, `COQUI_RENDER=1`, `COQUI_RENDER_WAIT`, `COQUI_RENDER_WORKERS`, `COQUI_SCREENSHOTS=1`.
@@ -45,6 +46,14 @@ Custom headers, cookies and the configured user agent are pushed into each brows
 - `Cookie` headers are split into `Network.setCookie` calls for the page URL.
 - Other headers go through `Network.setExtraHTTPHeaders`; basic auth becomes an `Authorization` header.
 - User agent is applied with `Emulation.setUserAgentOverride`.
+
+## Web Vitals
+
+With `webVitals` enabled, each rendered tab reports LCP, CLS, TBT, TTFB and FCP. The renderer forces a 1×1 paint first (headless pages otherwise skip paint timing), waits briefly for paint entries, then reads buffered PerformanceObserver data and navigation timing.
+
+Values are stored per URL as `vitals_json`; the `poor_lcp`, `layout_shift`, `slow_ttfb` and `long_blocking_time` rules surface them, and LCP/CLS are available as grid columns.
+
+Staging, 50 pages: median LCP 2,964 ms, median TTFB 1,979 ms, 37 poor LCP, 49 slow TTFB, no layout shift or long-blocking. Capturing vitals added no measurable crawl time (63.9 s vs 64.1 s without).
 
 ## Accessibility (axe)
 

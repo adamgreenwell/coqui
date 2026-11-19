@@ -51,6 +51,7 @@ interface CrawlConfig {
   screenshots: boolean;
   renderBlockAssets: boolean;
   accessibility: boolean;
+  webVitals: boolean;
 }
 
 interface CrawlSummary {
@@ -73,6 +74,13 @@ interface UrlRow {
   status: number | null;
   blocked: boolean;
   consoleErrors: string[];
+  vitals: {
+    lcpMs: number;
+    cls: number;
+    tbtMs: number;
+    ttfbMs: number;
+    fcpMs: number;
+  } | null;
   contentType: string | null;
   title: string | null;
   metaDescription: string | null;
@@ -139,6 +147,10 @@ const ISSUE_LABELS: Record<string, string> = {
   jsonld_missing_required: 'Structured data missing required fields',
   jsonld_missing: 'No structured data',
   accessibility_violations: 'Accessibility violations',
+  poor_lcp: 'Poor Largest Contentful Paint',
+  layout_shift: 'Layout shift',
+  slow_ttfb: 'Slow server response',
+  long_blocking_time: 'Long blocking time',
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -161,6 +173,8 @@ const COLUMNS = [
   { key: 'redirect', label: 'Redirect' },
   { key: 'depth', label: 'Depth' },
   { key: 'time', label: 'Time' },
+  { key: 'lcp', label: 'LCP' },
+  { key: 'cls', label: 'CLS' },
 ] as const;
 
 type ColumnKey = (typeof COLUMNS)[number]['key'];
@@ -176,6 +190,8 @@ const DEFAULT_COLUMNS: Record<ColumnKey, boolean> = {
   redirect: false,
   depth: false,
   time: false,
+  lcp: false,
+  cls: false,
 };
 
 function statusCodeClass(row: UrlRow): string {
@@ -225,6 +241,7 @@ export default function Home() {
   const [screenshots, setScreenshots] = useState(false);
   const [renderBlockAssets, setRenderBlockAssets] = useState(false);
   const [accessibility, setAccessibility] = useState(false);
+  const [webVitals, setWebVitals] = useState(false);
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
 
   const [crawl, setCrawl] = useState<CrawlSummary | null>(null);
@@ -344,6 +361,7 @@ export default function Home() {
         screenshots,
         renderBlockAssets,
         accessibility,
+        webVitals,
       };
       const summary = await invoke<CrawlSummary>('create_crawl', {
         seedKind,
@@ -471,6 +489,10 @@ export default function Home() {
             )}
           </div>
         );
+      case 'lcp':
+        return row.vitals ? `${(row.vitals.lcpMs / 1000).toFixed(2)}s` : '—';
+      case 'cls':
+        return row.vitals ? row.vitals.cls.toFixed(3) : '—';
       case 'url':
         return (
           <div className="url-cell" title={row.url}>
@@ -536,7 +558,7 @@ export default function Home() {
           <h2>New crawl</h2>
           <p className="hint">
             Crawl from a URL, sitemap or URL list with regex scope, basic auth, robots.txt,
-            optional Chromium rendering, screenshots, axe accessibility and 20 audit rules. Every row lands in a
+            optional Chromium rendering, screenshots, axe accessibility, Web Vitals and 24 audit rules. Every row lands in a
             portable SQLite crawl file.
           </p>
           <form onSubmit={startCrawl}>
@@ -752,6 +774,15 @@ export default function Home() {
                       disabled={isRunning}
                     />
                     Run axe accessibility audit
+                  </label>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={webVitals}
+                      onChange={(event) => setWebVitals(event.target.checked)}
+                      disabled={isRunning}
+                    />
+                    Capture Web Vitals (LCP, CLS, TBT)
                   </label>
                 </>
               )}
@@ -1051,7 +1082,7 @@ export default function Home() {
 
           <p className="footer-note">
             M4 scope: URL/sitemap/list seeds, regex scope, auth, robots.txt, redirects, Chromium
-            rendering with screenshots and console capture, structured data, axe accessibility, 20 audit rules and
+            rendering with screenshots and console capture, structured data, axe accessibility, Web Vitals, 24 audit rules and
             pause/resume. Next: Lighthouse and axe audits.
           </p>
         </main>
@@ -1059,6 +1090,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 

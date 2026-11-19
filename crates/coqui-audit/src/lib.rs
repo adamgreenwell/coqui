@@ -116,6 +116,26 @@ pub const RULES: &[RuleDef] = &[
         label: "Accessibility violations",
         severity: IssueSeverity::Warning,
     },
+    RuleDef {
+        id: "poor_lcp",
+        label: "Poor Largest Contentful Paint",
+        severity: IssueSeverity::Warning,
+    },
+    RuleDef {
+        id: "layout_shift",
+        label: "Layout shift",
+        severity: IssueSeverity::Warning,
+    },
+    RuleDef {
+        id: "slow_ttfb",
+        label: "Slow server response",
+        severity: IssueSeverity::Opportunity,
+    },
+    RuleDef {
+        id: "long_blocking_time",
+        label: "Long blocking time",
+        severity: IssueSeverity::Opportunity,
+    },
 ];
 
 pub fn rule_label(rule: &str) -> &str {
@@ -332,6 +352,45 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
             )?;
         }
 
+        if let Some(vitals) = url.vitals {
+            if vitals.lcp_ms > 2500 {
+                issue(
+                    store,
+                    crawl_id,
+                    &url.url,
+                    "poor_lcp",
+                    Some(format!("{:.1}s LCP", vitals.lcp_ms as f64 / 1000.0)),
+                )?;
+            }
+            if vitals.cls > 0.1 {
+                issue(
+                    store,
+                    crawl_id,
+                    &url.url,
+                    "layout_shift",
+                    Some(format!("CLS {:.3}", vitals.cls)),
+                )?;
+            }
+            if vitals.ttfb_ms > 800 {
+                issue(
+                    store,
+                    crawl_id,
+                    &url.url,
+                    "slow_ttfb",
+                    Some(format!("{} ms TTFB", vitals.ttfb_ms)),
+                )?;
+            }
+            if vitals.tbt_ms > 200 {
+                issue(
+                    store,
+                    crawl_id,
+                    &url.url,
+                    "long_blocking_time",
+                    Some(format!("{} ms blocking", vitals.tbt_ms)),
+                )?;
+            }
+        }
+
         if !url.axe.is_empty() {
             let total: u32 = url.axe.iter().map(|violation| violation.nodes).sum();
             let top: Vec<String> = url
@@ -520,6 +579,7 @@ mod tests {
                 structured_data: Default::default(),
                 console_errors: Vec::new(),
                 axe: Vec::new(),
+                vitals: None,
                 content_type: Some("text/html".into()),
                 title: title.map(str::to_string),
                 meta_description: None,
@@ -578,6 +638,7 @@ mod tests {
                 structured_data: Default::default(),
                 console_errors: Vec::new(),
                 axe: Vec::new(),
+                vitals: None,
                 content_type: Some("text/html".into()),
                 title: Some("Not found".into()),
                 meta_description: Some("missing".into()),
@@ -621,6 +682,7 @@ mod tests {
                 structured_data: Default::default(),
                 console_errors: Vec::new(),
                 axe: Vec::new(),
+                vitals: None,
                 content_type: Some("text/html".into()),
                 title: Some("Just a moment...".into()),
                 meta_description: None,
@@ -688,6 +750,7 @@ mod wordpress_rules {
                 structured_data: Default::default(),
                 console_errors: Vec::new(),
                 axe: Vec::new(),
+                vitals: None,
                 content_type: Some("text/html".into()),
                 title: Some(title.into()),
                 meta_description: Some(meta.into()),
@@ -728,6 +791,7 @@ mod wordpress_rules {
                 structured_data: Default::default(),
                 console_errors: Vec::new(),
                 axe: Vec::new(),
+                vitals: None,
                 content_type: Some("text/html".into()),
                 title: Some("A reasonably unique title".into()),
                 meta_description: Some("A reasonably unique description".into()),
@@ -766,6 +830,7 @@ mod wordpress_rules {
                 pagination_prev: None,
                 console_errors: Vec::new(),
                 axe: Vec::new(),
+                vitals: None,
                 structured_data: coqui_core::StructuredData {
                     types: types.into_iter().map(str::to_string).collect(),
                     errors: errors.into_iter().map(str::to_string).collect(),

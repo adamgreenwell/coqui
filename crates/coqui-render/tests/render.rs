@@ -2,25 +2,41 @@ use coqui_render::{RenderOptions, RenderPool, Renderer};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 async fn serve_once(listener: tokio::net::TcpListener, body: &'static str, require_session: bool) {
-    if let Ok((mut socket, _)) = listener.accept().await {
-        let mut buffer = [0u8; 4096];
-        let read = socket.read(&mut buffer).await.unwrap_or(0);
-        let request = String::from_utf8_lossy(&buffer[..read]).to_ascii_lowercase();
-        let authorised = !require_session
-            || (request.contains("cookie: session=ok") && request.contains("x-test: yes"));
-        let (status, payload) = if authorised {
-            ("200 OK", body)
-        } else {
-            (
-                "401 Unauthorized",
-                "<html><body><h1>Denied</h1></body></html>",
-            )
+    loop {
+        let Ok((mut socket, _)) = listener.accept().await else {
+            return;
         };
-        let response = format!(
-            "HTTP/1.1 {status}\r\ncontent-type: text/html\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{payload}",
-            payload.len()
-        );
-        let _ = socket.write_all(response.as_bytes()).await;
+        tokio::spawn(async move {
+            let mut buffer = [0u8; 4096];
+            let read = match tokio::time::timeout(
+                std::time::Duration::from_secs(1),
+                socket.read(&mut buffer),
+            )
+            .await
+            {
+                Ok(Ok(read)) => read,
+                _ => 0,
+            };
+            if read == 0 {
+                return;
+            }
+            let request = String::from_utf8_lossy(&buffer[..read]).to_ascii_lowercase();
+            let authorised = !require_session
+                || (request.contains("cookie: session=ok") && request.contains("x-test: yes"));
+            let (status, payload) = if authorised {
+                ("200 OK", body)
+            } else {
+                (
+                    "401 Unauthorized",
+                    "<html><body><h1>Denied</h1></body></html>",
+                )
+            };
+            let response = format!(
+                "HTTP/1.1 {status}\r\ncontent-type: text/html\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{payload}",
+                payload.len()
+            );
+            let _ = socket.write_all(response.as_bytes()).await;
+        });
     }
 }
 
@@ -79,6 +95,7 @@ async fn applies_session_headers_and_cookies() {
         wait_dom: false,
         block_patterns: Vec::new(),
         accessibility: false,
+        web_vitals: false,
     };
     let renderer = Renderer::connect(None, 200, options)
         .await
@@ -139,6 +156,7 @@ async fn runs_axe_accessibility_audit() {
         100,
         RenderOptions {
             accessibility: true,
+            web_vitals: false,
             ..RenderOptions::default()
         },
     )
@@ -160,4 +178,34 @@ async fn runs_axe_accessibility_audit() {
             .map(|violation| &violation.id)
             .collect::<Vec<_>>()
     );
+}
+
+#[tokio::test]
+#[ignore = "requires a local Chrome/Edge installation"]
+async fn captures_web_vitals() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(serve_once(
+        listener,
+        "<!doctype html><html><body><h1>Vitals</h1><p>Rendered content for LCP.</p></body></html>",
+        false,
+    ));
+
+    let renderer = Renderer::connect(
+        None,
+        200,
+        RenderOptions {
+            web_vitals: true,
+            ..RenderOptions::default()
+        },
+    )
+    .await
+    .expect("a local Chrome/Edge is required");
+    let output = renderer
+        .render_page(&format!("http://{address}/"))
+        .await
+        .expect("render");
+    let vitals = output.vitals.expect("vitals");
+    assert!(vitals.ttfb_ms > 0, "ttfb missing: {vitals:?}");
+    assert!(vitals.lcp_ms > 0, "lcp missing: {vitals:?}");
 }

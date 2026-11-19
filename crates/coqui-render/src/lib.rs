@@ -4,7 +4,7 @@
 //! tab, with up to `render_workers` tabs in flight. Session cookies, headers and user agent are
 //! applied per tab before navigation.
 
-use coqui_core::AxeViolation;
+use coqui_core::{AxeViolation, WebVitals};
 use futures::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -43,6 +43,7 @@ pub struct RenderOptions {
     pub wait_dom: bool,
     pub block_patterns: Vec<String>,
     pub accessibility: bool,
+    pub web_vitals: bool,
 }
 
 /// Rendered HTML plus page evidence.
@@ -51,6 +52,7 @@ pub struct RenderOutput {
     pub screenshot: Option<Vec<u8>>,
     pub console: Vec<String>,
     pub axe: Vec<AxeViolation>,
+    pub vitals: Option<WebVitals>,
 }
 
 /// A multiplexed CDP connection: concurrent calls are correlated by id, events are broadcast.
@@ -343,6 +345,58 @@ impl Renderer {
         }
 
         let console = drain_console(events, &session);
+        if self.options.web_vitals {
+            // Force a paint so paint timing entries exist in headless mode.
+            let _ = self
+                .client
+                .call(
+                    "Page.captureScreenshot",
+                    json!({"format": "png", "clip": {"x": 0, "y": 0, "width": 1, "height": 1, "scale": 1}}),
+                    Some(&session),
+                )
+                .await;
+            // Paint entries arrive after load in headless Chrome; poll briefly so LCP/FCP exist.
+            for _ in 0..20 {
+                let probe = self
+                    .client
+                    .call(
+                        "Runtime.evaluate",
+                        json!({"expression": "performance.getEntriesByType('paint').length", "returnByValue": true}),
+                        Some(&session),
+                    )
+                    .await?;
+                let count = probe
+                    .get("result")
+                    .and_then(|value| value.get("value"))
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0);
+                if count > 0 {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        }
+        let vitals = if self.options.web_vitals {
+            let value = self
+                .client
+                .call(
+                    "Runtime.evaluate",
+                    json!({
+                        "expression": "(async () => new Promise((resolve) => { let lcp = 0, cls = 0, tbt = 0; try { new PerformanceObserver((list) => { for (const entry of list.getEntries()) lcp = entry.startTime; }).observe({ type: 'largest-contentful-paint', buffered: true }); } catch (error) {} try { new PerformanceObserver((list) => { for (const entry of list.getEntries()) { if (!entry.hadRecentInput) cls += entry.value; } }).observe({ type: 'layout-shift', buffered: true }); } catch (error) {} try { new PerformanceObserver((list) => { for (const entry of list.getEntries()) tbt += Math.max(0, entry.duration - 50); }).observe({ type: 'longtask', buffered: true }); } catch (error) {} setTimeout(() => { const nav = performance.getEntriesByType('navigation')[0]; const paint = performance.getEntriesByName('first-contentful-paint')[0]; resolve(JSON.stringify({ lcpMs: Math.round(lcp), cls: Number(cls.toFixed(3)), tbtMs: Math.round(tbt), ttfbMs: nav ? Math.round(nav.responseStart) : 0, fcpMs: paint ? Math.round(paint.startTime) : 0 })); }, 300); }))()",
+                        "awaitPromise": true,
+                        "returnByValue": true
+                    }),
+                    Some(&session),
+                )
+                .await?;
+            value
+                .get("result")
+                .and_then(|value| value.get("value"))
+                .and_then(Value::as_str)
+                .and_then(|value| serde_json::from_str::<WebVitals>(value).ok())
+        } else {
+            None
+        };
         let axe = if self.options.accessibility {
             self.client
                 .call(
@@ -410,6 +464,7 @@ impl Renderer {
             screenshot,
             console,
             axe,
+            vitals,
         })
     }
 }
@@ -542,6 +597,10 @@ async fn launch(browser_path: Option<&str>) -> Result<(String, Option<Child>), R
         .arg("--no-default-browser-check")
         .arg("--disable-gpu")
         .arg("--disable-dev-shm-usage")
+        .arg("--disable-background-timer-throttling")
+        .arg("--disable-backgrounding-occluded-windows")
+        .arg("--disable-renderer-backgrounding")
+        .arg("--disable-features=CalculateNativeWinOcclusion")
         .arg("about:blank")
         .stdin(Stdio::null())
         .stdout(Stdio::null())

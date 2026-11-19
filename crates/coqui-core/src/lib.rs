@@ -70,6 +70,9 @@ pub struct CrawlConfig {
     /// Run the axe-core accessibility audit on rendered pages.
     #[serde(default)]
     pub accessibility: bool,
+    /// Capture Web Vitals (LCP, CLS, TBT, TTFB, FCP) from rendered pages.
+    #[serde(default)]
+    pub web_vitals: bool,
     /// Only crawl discovered URLs matching at least one pattern (empty = all).
     #[serde(default)]
     pub include_patterns: Vec<String>,
@@ -121,6 +124,7 @@ impl Default for CrawlConfig {
             render_early: false,
             render_block_patterns: Vec::new(),
             accessibility: false,
+            web_vitals: false,
             include_patterns: Vec::new(),
             exclude_patterns: Vec::new(),
             auth_user: None,
@@ -211,6 +215,7 @@ pub struct UrlRecord {
     pub structured_data: StructuredData,
     pub console_errors: Vec<String>,
     pub axe: Vec<AxeViolation>,
+    pub vitals: Option<WebVitals>,
     pub redirect_target: Option<String>,
     pub redirect_chain: Vec<String>,
     pub word_count: Option<u32>,
@@ -261,6 +266,7 @@ pub struct NewUrl {
     pub structured_data: StructuredData,
     pub console_errors: Vec<String>,
     pub axe: Vec<AxeViolation>,
+    pub vitals: Option<WebVitals>,
     pub redirect_target: Option<String>,
     pub redirect_chain: Vec<String>,
     pub word_count: Option<u32>,
@@ -323,6 +329,17 @@ pub struct CrawlCheckpoint {
     pub blocked_by_robots: u64,
     #[serde(default)]
     pub blocked: u64,
+}
+
+/// Web Vitals captured from a rendered page.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebVitals {
+    pub lcp_ms: u64,
+    pub cls: f64,
+    pub tbt_ms: u64,
+    pub ttfb_ms: u64,
+    pub fcp_ms: u64,
 }
 
 /// One axe-core accessibility violation.
