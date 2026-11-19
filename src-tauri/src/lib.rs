@@ -99,7 +99,7 @@ fn list_urls(
 ) -> Result<UrlPage, String> {
     state
         .store
-        .list_urls(
+        .list_urls_filtered(
             &crawl_id,
             page,
             page_size,
