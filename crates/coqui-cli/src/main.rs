@@ -830,7 +830,7 @@ fn call_tool(
         }
         "get_crawl" => {
             let crawl = store
-                .get_crawl(&crawl_id()?)
+                .get_crawl(crawl_id()?)
                 .map_err(|error| error.to_string())?;
             Ok(serde_json::json!({
                 "id": crawl.id,
@@ -884,7 +884,7 @@ fn call_tool(
                 .map(str::to_string);
             let result = store
                 .list_urls_filtered(
-                    &crawl_id()?,
+                    crawl_id()?,
                     page,
                     limit,
                     None,
@@ -915,7 +915,7 @@ fn call_tool(
         }
         "issue_counts" => {
             let counts = store
-                .issue_counts(&crawl_id()?)
+                .issue_counts(crawl_id()?)
                 .map_err(|error| error.to_string())?;
             let values: Vec<_> = counts
                 .iter()
@@ -927,7 +927,7 @@ fn call_tool(
             let crawl_id_value = crawl_id()?;
             let path = out.join(format!("export-{crawl_id_value}.csv"));
             let rows = store
-                .export_urls_csv(&crawl_id_value, &path, &[], None)
+                .export_urls_csv(crawl_id_value, &path, &[], None)
                 .map_err(|error| error.to_string())?;
             Ok(serde_json::json!({"path": path.to_string_lossy(), "rows": rows}))
         }
@@ -946,7 +946,7 @@ fn call_tool(
                 let mut results = Vec::new();
                 for name in EXPORT_FAMILIES {
                     let path = out.join(format!("{name}-{}.csv", now_ms()));
-                    let rows = export_one(&store, &crawl_id_value, name, &path)?;
+                    let rows = export_one(store, crawl_id_value, name, &path)?;
                     results.push(serde_json::json!({
                         "family": name,
                         "path": path.to_string_lossy(),
@@ -955,7 +955,7 @@ fn call_tool(
                 }
                 return Ok(serde_json::json!({"families": results}));
             }
-            let rows = export_one(&store, &crawl_id_value, family, &path)?;
+            let rows = export_one(store, crawl_id_value, family, &path)?;
             Ok(serde_json::json!({
                 "path": path.to_string_lossy(),
                 "rows": rows,
@@ -1497,7 +1497,7 @@ async fn main() {
         Arc::new(AtomicBool::new(false)),
         checkpoint,
         Arc::new(|progress: CrawlProgress| {
-            if progress.crawled % 250 == 0 {
+            if progress.crawled.is_multiple_of(250) {
                 println!(
                     "  crawled {} / discovered {}",
                     progress.crawled, progress.discovered

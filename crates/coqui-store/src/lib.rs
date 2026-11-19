@@ -284,10 +284,9 @@ impl Store {
         let ids: Vec<String> = {
             let conn = self.lock()?;
             let mut stmt = conn.prepare("SELECT id FROM crawls ORDER BY rowid DESC LIMIT 100")?;
-            let rows = stmt
-                .query_map([], |row| row.get::<_, String>(0))?
-                .collect::<std::result::Result<Vec<_>, _>>()?;
-            rows
+
+            stmt.query_map([], |row| row.get::<_, String>(0))?
+                .collect::<std::result::Result<Vec<_>, _>>()?
         };
         ids.into_iter().map(|id| self.get_crawl(&id)).collect()
     }
@@ -1117,12 +1116,11 @@ impl Store {
                  JOIN urls u ON u.id = s.url_id AND u.crawl_id = s.crawl_id
                  WHERE s.crawl_id = ?1 ORDER BY s.url_id",
             )?;
-            let rows = stmt
-                .query_map(params![crawl_id], |row| {
-                    Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-                })?
-                .collect::<std::result::Result<Vec<_>, _>>()?;
-            rows
+
+            stmt.query_map(params![crawl_id], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?
         };
         let mut manifest = csv::Writer::from_path(directory.join("screenshots.csv"))?;
         manifest.write_record(["url", "file"])?;
@@ -1514,10 +1512,10 @@ impl Store {
         }
         let mut row = 1u32;
         for url in &urls {
-            if let Some(filter) = &issue_urls {
-                if !filter.contains(&url.url) {
-                    continue;
-                }
+            if let Some(filter) = &issue_urls
+                && !filter.contains(&url.url)
+            {
+                continue;
             }
             for (column, key) in allowed.iter().enumerate() {
                 sheet.write_string(row, column as u16, url_csv_value(url, key))?;
@@ -2204,10 +2202,9 @@ impl Store {
         conn.execute("DELETE FROM checkpoints WHERE crawl_id = ?1", params![id])?;
         let paths: Vec<String> = {
             let mut stmt = conn.prepare("SELECT path FROM screenshot_files WHERE crawl_id = ?1")?;
-            let rows = stmt
-                .query_map(params![id], |row| row.get::<_, String>(0))?
-                .collect::<std::result::Result<Vec<_>, _>>()?;
-            rows
+
+            stmt.query_map(params![id], |row| row.get::<_, String>(0))?
+                .collect::<std::result::Result<Vec<_>, _>>()?
         };
         for relative in paths {
             let _ = std::fs::remove_file(self.root.join(relative));

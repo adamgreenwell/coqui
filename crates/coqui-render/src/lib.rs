@@ -576,10 +576,10 @@ fn drain_console(events: &mut broadcast::Receiver<Value>, session: &str) -> Vec<
 
 impl Drop for Renderer {
     fn drop(&mut self) {
-        if let Ok(mut child) = self.child.lock() {
-            if let Some(child) = child.as_mut() {
-                let _ = child.start_kill();
-            }
+        if let Ok(mut child) = self.child.lock()
+            && let Some(child) = child.as_mut()
+        {
+            let _ = child.start_kill();
         }
     }
 }
@@ -674,10 +674,10 @@ fn find_browser(configured: Option<&str>) -> Option<PathBuf> {
             return Some(path);
         }
     }
-    if let Some(path) = configured.map(PathBuf::from) {
-        if path.exists() {
-            return Some(path);
-        }
+    if let Some(path) = configured.map(PathBuf::from)
+        && path.exists()
+    {
+        return Some(path);
     }
     let candidates = if cfg!(windows) {
         [

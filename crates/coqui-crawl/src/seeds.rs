@@ -50,10 +50,10 @@ fn resolve_list(path: &str) -> Result<Vec<String>, SeedError> {
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        if let Ok(url) = normalize_url(line) {
-            if seen.insert(url.clone()) {
-                seeds.push(url);
-            }
+        if let Ok(url) = normalize_url(line)
+            && seen.insert(url.clone())
+        {
+            seeds.push(url);
         }
         if seeds.len() >= MAX_SEEDS {
             break;
