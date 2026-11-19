@@ -111,6 +111,11 @@ pub const RULES: &[RuleDef] = &[
         severity: IssueSeverity::Warning,
     },
     RuleDef {
+        id: "nofollow_internal_link",
+        label: "Nofollow internal link",
+        severity: IssueSeverity::Warning,
+    },
+    RuleDef {
         id: "misspelling",
         label: "Possible misspelling",
         severity: IssueSeverity::Opportunity,
@@ -277,6 +282,27 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
     let mut status_by_url: HashMap<&str, &UrlRecord> = HashMap::new();
     for url in &urls {
         status_by_url.insert(url.url.as_str(), url);
+    }
+
+    let mut nofollow_links: HashMap<String, i64> = HashMap::new();
+    for link in &links {
+        let nofollow = link
+            .rel
+            .as_deref()
+            .map(|rel| rel.to_ascii_lowercase().contains("nofollow"))
+            .unwrap_or(false);
+        if link.internal && nofollow {
+            *nofollow_links.entry(link.from_url.clone()).or_default() += 1;
+        }
+    }
+    for (url, count) in &nofollow_links {
+        issue(
+            store,
+            crawl_id,
+            url,
+            "nofollow_internal_link",
+            Some(format!("{count} links")),
+        )?;
     }
 
     let mut inbound: HashMap<String, i64> = HashMap::new();
@@ -1457,6 +1483,31 @@ mod tests {
         let counts = analyze_crawl(&store, id).unwrap();
         let by_rule: HashMap<_, _> = counts.iter().map(|c| (c.rule.as_str(), c.count)).collect();
         assert_eq!(by_rule.get("duplicate_h1"), Some(&2));
+    }
+
+    #[test]
+    fn flags_nofollow_internal_links() {
+        let store = Store::open_in_memory().unwrap();
+        let id = "nofollow";
+        store
+            .create_crawl(
+                id,
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        add_url(&store, id, "https://example.com/a", Some("A"), 1, 600);
+        add_url(&store, id, "https://example.com/b", Some("B"), 1, 600);
+        let from = store.url_id(id, "https://example.com/a").unwrap().unwrap();
+        let to = store.url_id(id, "https://example.com/b").unwrap().unwrap();
+        store
+            .insert_link(id, from, to, Some("b"), Some("nofollow"), true)
+            .unwrap();
+        let counts = analyze_crawl(&store, id).unwrap();
+        let by_rule: HashMap<_, _> = counts.iter().map(|c| (c.rule.as_str(), c.count)).collect();
+        assert_eq!(by_rule.get("nofollow_internal_link"), Some(&1));
     }
 
     #[test]
