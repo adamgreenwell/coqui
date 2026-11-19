@@ -1026,6 +1026,22 @@ fn status_counts(
 }
 
 #[tauri::command]
+fn issues_for_rule(
+    state: State<'_, AppState>,
+    crawl_id: String,
+    rule: String,
+) -> Result<Vec<serde_json::Value>, String> {
+    let rows = state
+        .store
+        .issues_for_rule(&crawl_id, &rule)
+        .map_err(|error| error.to_string())?;
+    Ok(rows
+        .into_iter()
+        .map(|(url, detail)| serde_json::json!({"url": url, "detail": detail}))
+        .collect())
+}
+
+#[tauri::command]
 fn list_views(state: State<'_, AppState>) -> Result<Vec<serde_json::Value>, String> {
     let views = state
         .store
@@ -1278,6 +1294,7 @@ pub fn run() {
             list_extractors,
             delete_extractor,
             list_views,
+            issues_for_rule,
             save_view,
             delete_view,
             save_profile,

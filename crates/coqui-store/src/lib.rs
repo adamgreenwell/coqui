@@ -513,6 +513,25 @@ impl Store {
         Ok(rows)
     }
 
+    /// URLs and details for one issue rule.
+    pub fn issues_for_rule(
+        &self,
+        crawl_id: &str,
+        rule: &str,
+    ) -> Result<Vec<(String, Option<String>)>> {
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT url, detail FROM issues WHERE crawl_id = ?1 AND rule = ?2
+             ORDER BY url LIMIT 500",
+        )?;
+        let rows = stmt
+            .query_map(params![crawl_id, rule], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     pub fn issue_counts(&self, crawl_id: &str) -> Result<Vec<IssueCount>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
@@ -3155,6 +3174,36 @@ mod tests {
         assert_eq!(store.images_for_url("c1", id).unwrap().len(), 1);
         assert_eq!(store.inbound_links("c1", id).unwrap().len(), 1);
         assert_eq!(store.outbound_links("c1", id).unwrap().len(), 1);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn issues_for_rule_lists_rows() {
+        let dir = std::env::temp_dir().join(format!("coqui-rule-rows-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        store
+            .create_crawl(
+                "c1",
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        store
+            .insert_issue(&Issue {
+                crawl_id: "c1".into(),
+                url: "https://example.com/".into(),
+                rule: "missing_title".into(),
+                severity: IssueSeverity::Error,
+                detail: Some("no title tag".into()),
+            })
+            .unwrap();
+        let rows = store.issues_for_rule("c1", "missing_title").unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "https://example.com/");
+        assert_eq!(rows[0].1.as_deref(), Some("no title tag"));
         std::fs::remove_dir_all(dir).ok();
     }
 

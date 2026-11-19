@@ -1090,3 +1090,20 @@ tbody tr:hover {
 .compare-table td:first-child {
   text-align: left;
 }
+
+.issue-details {
+  margin-top: 12px;
+}
+
+.issue-details h4 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7c78;
+}
+
+.issue-details code {
+  font-size: 11px;
+  word-break: break-all;
+}

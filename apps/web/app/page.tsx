@@ -392,6 +392,7 @@ export default function Home() {
   const [progress, setProgress] = useState<CrawlProgress | null>(null);
   const [issues, setIssues] = useState<IssueCount[]>([]);
   const [suppressed, setSuppressed] = useState<string[]>([]);
+  const [issueDetails, setIssueDetails] = useState<{ url: string; detail: string | null }[]>([]);
   const [statusCounts, setStatusCounts] = useState<{ status: number | null; count: number }[]>([]);
   const [responseStats, setResponseStats] = useState<{ averageMs: number; p95Ms: number } | null>(
     null,
@@ -670,6 +671,25 @@ export default function Home() {
       }
     })();
   }, [isTauri, crawl?.id, phase]);
+
+  useEffect(() => {
+    if (!isTauri || !crawl || !activeIssue) {
+      setIssueDetails([]);
+      return;
+    }
+    void (async () => {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const rows = await invoke<{ url: string; detail: string | null }[]>('issues_for_rule', {
+          crawlId: crawl.id,
+          rule: activeIssue,
+        });
+        setIssueDetails(rows);
+      } catch {
+        setIssueDetails([]);
+      }
+    })();
+  }, [isTauri, crawl?.id, activeIssue]);
 
   const ignoreIssue = async (rule: string) => {
     if (!crawl) return;
@@ -2510,6 +2530,21 @@ export default function Home() {
                       {ISSUE_LABELS[rule] ?? rule} ×
                     </button>
                   ))}
+                </div>
+              )}
+              {activeIssue && issueDetails.length > 0 && (
+                <div className="issue-details">
+                  <h4>
+                    {ISSUE_LABELS[activeIssue] ?? activeIssue} ({issueDetails.length})
+                  </h4>
+                  <ul className="settings-reference">
+                    {issueDetails.slice(0, 50).map((row) => (
+                      <li key={row.url}>
+                        <code>{row.url}</code>
+                        {row.detail ? ` — ${row.detail}` : ''}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               )}
             </section>
