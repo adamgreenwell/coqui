@@ -770,6 +770,34 @@ fn remove_schedule(state: State<'_, AppState>, id: i64) -> Result<usize, String>
 }
 
 #[tauri::command]
+fn suppressed_rules(state: State<'_, AppState>, crawl_id: String) -> Result<Vec<String>, String> {
+    state
+        .store
+        .suppressed_rules(&crawl_id)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn suppress_rule(state: State<'_, AppState>, crawl_id: String, rule: String) -> Result<(), String> {
+    state
+        .store
+        .suppress_rule(&crawl_id, &rule)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn restore_rule(
+    state: State<'_, AppState>,
+    crawl_id: String,
+    rule: String,
+) -> Result<usize, String> {
+    state
+        .store
+        .restore_rule(&crawl_id, &rule)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn get_url_detail(
     state: State<'_, AppState>,
     crawl_id: String,
@@ -1069,6 +1097,9 @@ pub fn run() {
             run_lighthouse_sample,
             test_connection,
             status_counts,
+            suppressed_rules,
+            suppress_rule,
+            restore_rule,
             get_url_detail,
             export_pdf_report,
             run_due_schedules,
