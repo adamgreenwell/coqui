@@ -774,6 +774,31 @@ fn remove_schedule(state: State<'_, AppState>, id: i64) -> Result<usize, String>
 }
 
 #[tauri::command]
+fn list_crawls(state: State<'_, AppState>) -> Result<Vec<serde_json::Value>, String> {
+    let crawls = state
+        .store
+        .list_crawls()
+        .map_err(|error| error.to_string())?;
+    Ok(crawls
+        .into_iter()
+        .map(|crawl| {
+            serde_json::json!({
+                "id": crawl.id,
+                "seed": crawl.seed,
+                "seedKind": crawl.seed_kind,
+                "status": crawl.status,
+                "config": crawl.config,
+                "createdAt": crawl.created_at,
+                "startedAt": crawl.started_at,
+                "finishedAt": crawl.finished_at,
+                "totalUrls": crawl.total_urls,
+                "blockedUrls": crawl.blocked_urls,
+            })
+        })
+        .collect())
+}
+
+#[tauri::command]
 fn app_info(state: State<'_, AppState>, app: tauri::AppHandle) -> serde_json::Value {
     let node = sidecar_path(&app, "node.exe").or_else(|| sidecar_path(&app, "node"));
     let lighthouse = sidecar_path(&app, "lighthouse/node_modules/lighthouse/cli/index.js")
@@ -1215,6 +1240,7 @@ pub fn run() {
             suppress_rule,
             restore_rule,
             app_info,
+            list_crawls,
             response_stats,
             indexability_stats,
             depth_counts,

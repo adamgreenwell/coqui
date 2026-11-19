@@ -968,3 +968,56 @@ tbody tr:hover {
 .bar-row strong {
   text-align: right;
 }
+
+.history {
+  margin-top: 16px;
+}
+
+.history h3 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7c78;
+  margin: 0 0 8px;
+}
+
+.history-list {
+  display: grid;
+  gap: 4px;
+}
+
+.history-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.history-item span {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-item small {
+  font-size: 11px;
+  color: #6b7c78;
+}
+
+.history-item:hover {
+  background: #f2f7f5;
+}
+
+.history-item.active {
+  border-color: #2f8f6b;
+  background: #e8f5ef;
+}

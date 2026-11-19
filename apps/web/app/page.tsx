@@ -329,6 +329,7 @@ export default function Home() {
   const [probeBusy, setProbeBusy] = useState(false);
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
+  const [history, setHistory] = useState<CrawlSummary[]>([]);
   const [detail, setDetail] = useState<UrlDetail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [lighthouse, setLighthouse] = useState<LighthouseSummary | null>(null);
@@ -679,6 +680,26 @@ export default function Home() {
     setActiveIssue(null);
     setPage(1);
     if (crawl) void loadPage(crawl.id, 1, null);
+  };
+
+  useEffect(() => {
+    if (!isTauri) return;
+    void (async () => {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        setHistory(await invoke<CrawlSummary[]>('list_crawls'));
+      } catch {
+        // history is optional
+      }
+    })();
+  }, [isTauri, phase]);
+
+  const openCrawl = async (summary: CrawlSummary) => {
+    setCrawl(summary);
+    setPhase(summary.status);
+    setPage(1);
+    setActiveIssue(null);
+    await Promise.all([loadPage(summary.id, 1, null), loadIssues(summary.id)]);
   };
 
   const openDetail = async (row: UrlRow) => {
@@ -1804,6 +1825,27 @@ export default function Home() {
               </div>
             )}
           </form>
+
+          {history.length > 0 && (
+            <div className="history">
+              <h3>Recent crawls</h3>
+              <div className="history-list">
+                {history.slice(0, 8).map((entry) => (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    className={`history-item${crawl?.id === entry.id ? ' active' : ''}`}
+                    onClick={() => void openCrawl(entry)}
+                  >
+                    <span>{seedLabel(entry)}</span>
+                    <small>
+                      {entry.totalUrls} URLs · {entry.status}
+                    </small>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <p className="footer-note" style={{ marginTop: 18, marginBottom: 0 }}>
             Coqui {appInfo?.version ?? ''} · Node {appInfo?.node ? 'bundled' : 'missing'} ·
