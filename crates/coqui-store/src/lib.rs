@@ -2062,7 +2062,7 @@ mod tests {
                 .unwrap()
         );
 
-        let page = store.list_urls(id, 1, 1, None).unwrap();
+        let page = store.list_urls(id, 1, 1, None, None, None).unwrap();
         assert_eq!(page.total, 2);
         assert_eq!(page.rows.len(), 1);
         assert_eq!(page.rows[0].url, "https://example.com/");
@@ -2071,7 +2071,7 @@ mod tests {
             Some("https://example.com/")
         );
 
-        let page2 = store.list_urls(id, 2, 1, None).unwrap();
+        let page2 = store.list_urls(id, 2, 1, None, None, None).unwrap();
         assert_eq!(page2.rows[0].url, "https://example.com/about");
 
         let summary = store.get_crawl(id).unwrap();
@@ -2144,7 +2144,7 @@ mod tests {
         assert_eq!(counts[0].count, 1);
 
         let filtered = store
-            .list_urls(id, 1, 10, Some("missing_meta_description"))
+            .list_urls(id, 1, 10, Some("missing_meta_description"), None, None)
             .unwrap();
         assert_eq!(filtered.total, 1);
         assert_eq!(filtered.rows[0].url, "https://example.com/");
@@ -2627,7 +2627,7 @@ mod tests {
         store
             .insert_url(&sample_record("v1", "https://example.com/"))
             .unwrap();
-        let row = &store.list_urls("v1", 1, 10, None).unwrap().rows[0];
+        let row = &store.list_urls("v1", 1, 10, None, None, None).unwrap().rows[0];
         assert_eq!(row.h1_count, 1);
         std::fs::remove_file(path).ok();
     }
