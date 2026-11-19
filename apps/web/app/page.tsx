@@ -52,6 +52,8 @@ interface CrawlConfig {
   renderBlockAssets: boolean;
   accessibility: boolean;
   webVitals: boolean;
+  storeText?: boolean;
+  customJs?: string[];
 }
 
 interface LighthouseAudit {
@@ -260,6 +262,7 @@ export default function Home() {
   const [accessibility, setAccessibility] = useState(false);
   const [webVitals, setWebVitals] = useState(false);
   const [storeText, setStoreText] = useState(false);
+  const [customJs, setCustomJs] = useState('');
   const [extractors, setExtractors] = useState<{ name: string; selector: string }[]>([]);
   const [extractorName, setExtractorName] = useState('');
   const [extractorSelector, setExtractorSelector] = useState('');
@@ -409,6 +412,8 @@ export default function Home() {
         renderBlockAssets,
         accessibility,
         webVitals,
+        storeText,
+        customJs: splitLines(customJs),
       };
       const summary = await invoke<CrawlSummary>('create_crawl', {
         seedKind,
@@ -544,6 +549,7 @@ export default function Home() {
     accessibility,
     webVitals,
     storeText,
+    customJs,
   });
   const applySettings = (value: Record<string, unknown>) => {
     if (typeof value.seed === 'string') setSeed(value.seed);
@@ -569,6 +575,7 @@ export default function Home() {
     if (typeof value.accessibility === 'boolean') setAccessibility(value.accessibility);
     if (typeof value.webVitals === 'boolean') setWebVitals(value.webVitals);
     if (typeof value.storeText === 'boolean') setStoreText(value.storeText);
+    if (typeof value.customJs === 'string') setCustomJs(value.customJs);
   };
   const loadProfiles = async () => {
     try {
@@ -1300,6 +1307,17 @@ export default function Home() {
                     />
                     Store page text + Markdown
                   </label>
+                  <div className="field">
+                    <label htmlFor="customJs">Custom JavaScript (one expression per line)</label>
+                    <textarea
+                      id="customJs"
+                      rows={3}
+                      value={customJs}
+                      onChange={(event) => setCustomJs(event.target.value)}
+                      placeholder="document.title"
+                      disabled={isRunning || !render}
+                    />
+                  </div>
                 </>
               )}
             </details>
