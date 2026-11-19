@@ -737,6 +737,30 @@ export default function Home() {
     }
   };
 
+  useEffect(() => {
+    if (!isTauri) return;
+    const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const crawlId = params.get('crawl');
+    const urlId = params.get('url');
+    if (!crawlId) return;
+    void (async () => {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const summary = await invoke<CrawlSummary>('get_crawl', { crawlId });
+        await openCrawl(summary);
+        if (urlId) {
+          const data = await invoke<UrlDetail>('get_url_detail', {
+            crawlId,
+            urlId: Number(urlId),
+          });
+          setDetail(data);
+        }
+      } catch {
+        // stale or invalid link
+      }
+    })();
+  }, [isTauri]);
+
   const openDetail = async (row: UrlRow) => {
     try {
       const { invoke } = await import('@tauri-apps/api/core');
@@ -1982,6 +2006,20 @@ export default function Home() {
                     onClick={() => void copyValue('title', String(detail.url.title ?? ''))}
                   >
                     {copied === 'title' ? 'Copied title' : 'Copy title'}
+                  </button>
+                  <button
+                    className="secondary"
+                    type="button"
+                    onClick={() =>
+                      void copyValue(
+                        'link',
+                        `${window.location.origin}${window.location.pathname}#crawl=${String(
+                          detail.url.crawlId,
+                        )}&url=${String(detail.url.id)}`,
+                      )
+                    }
+                  >
+                    {copied === 'link' ? 'Copied link' : 'Copy link'}
                   </button>
                 </div>
                 <ul className="settings-reference">
