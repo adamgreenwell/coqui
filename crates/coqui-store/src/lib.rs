@@ -4,8 +4,8 @@
 //! `PRAGMA user_version`; migrations are additive and run on open.
 
 use coqui_core::{
-    CrawlCheckpoint, CrawlConfig, CrawlStatus, CrawlSummary, Issue, IssueCount, IssueSeverity,
-    LinkRecord, NewUrl, UrlPage, UrlRecord, now_ms,
+    AxeViolation, CrawlCheckpoint, CrawlConfig, CrawlStatus, CrawlSummary, Issue, IssueCount,
+    IssueSeverity, LinkRecord, NewUrl, StructuredData, UrlPage, UrlRecord, WebVitals, now_ms,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
@@ -783,6 +783,122 @@ impl Store {
         }
         workbook.save(path)?;
         Ok(links.len() as u64)
+    }
+
+    pub fn export_accessibility_csv(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT url, axe_json FROM urls WHERE crawl_id = ?1 AND axe_json IS NOT NULL AND axe_json <> '[]'",
+        )?;
+        let mut writer = csv::Writer::from_path(path)?;
+        writer.write_record(["url", "rule", "impact", "help", "help_url", "nodes"])?;
+        let mut rows = 0u64;
+        let mut records = stmt.query(params![crawl_id])?;
+        while let Some(row) = records.next()? {
+            let url: String = row.get(0)?;
+            let json: String = row.get(1)?;
+            let violations: Vec<AxeViolation> = serde_json::from_str(&json).unwrap_or_default();
+            for violation in violations {
+                writer.write_record([
+                    url.clone(),
+                    violation.id,
+                    violation.impact.unwrap_or_default(),
+                    violation.help,
+                    violation.help_url,
+                    violation.nodes.to_string(),
+                ])?;
+                rows += 1;
+            }
+        }
+        writer.flush()?;
+        Ok(rows)
+    }
+
+    pub fn export_structured_data_csv(
+        &self,
+        crawl_id: &str,
+        path: impl AsRef<Path>,
+    ) -> Result<u64> {
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT url, structured_data_json FROM urls WHERE crawl_id = ?1 AND structured_data_json IS NOT NULL",
+        )?;
+        let mut writer = csv::Writer::from_path(path)?;
+        writer.write_record(["url", "types", "errors"])?;
+        let mut rows = 0u64;
+        let mut records = stmt.query(params![crawl_id])?;
+        while let Some(row) = records.next()? {
+            let url: String = row.get(0)?;
+            let json: String = row.get(1)?;
+            let data: StructuredData = serde_json::from_str(&json).unwrap_or_default();
+            writer.write_record([url, data.types.join("; "), data.errors.join("; ")])?;
+            rows += 1;
+        }
+        writer.flush()?;
+        Ok(rows)
+    }
+
+    pub fn export_vitals_csv(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT url, vitals_json FROM urls WHERE crawl_id = ?1 AND vitals_json IS NOT NULL",
+        )?;
+        let mut writer = csv::Writer::from_path(path)?;
+        writer.write_record(["url", "lcp_ms", "cls", "tbt_ms", "ttfb_ms", "fcp_ms"])?;
+        let mut rows = 0u64;
+        let mut records = stmt.query(params![crawl_id])?;
+        while let Some(row) = records.next()? {
+            let url: String = row.get(0)?;
+            let json: String = row.get(1)?;
+            let Some(vitals) = serde_json::from_str::<WebVitals>(&json).ok() else {
+                continue;
+            };
+            writer.write_record([
+                url,
+                vitals.lcp_ms.to_string(),
+                vitals.cls.to_string(),
+                vitals.tbt_ms.to_string(),
+                vitals.ttfb_ms.to_string(),
+                vitals.fcp_ms.to_string(),
+            ])?;
+            rows += 1;
+        }
+        writer.flush()?;
+        Ok(rows)
+    }
+
+    pub fn export_console_csv(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT url, console_json FROM urls WHERE crawl_id = ?1 AND console_json IS NOT NULL AND console_json <> '[]'",
+        )?;
+        let mut writer = csv::Writer::from_path(path)?;
+        writer.write_record(["url", "message"])?;
+        let mut rows = 0u64;
+        let mut records = stmt.query(params![crawl_id])?;
+        while let Some(row) = records.next()? {
+            let url: String = row.get(0)?;
+            let json: String = row.get(1)?;
+            let messages: Vec<String> = serde_json::from_str(&json).unwrap_or_default();
+            for message in messages {
+                writer.write_record([url.clone(), message])?;
+                rows += 1;
+            }
+        }
+        writer.flush()?;
+        Ok(rows)
     }
 
     pub fn export_issues_csv(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {

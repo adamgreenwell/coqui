@@ -275,6 +275,7 @@ export default function Home() {
   const [activeIssue, setActiveIssue] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [exportPath, setExportPath] = useState<string | null>(null);
+  const [bulkView, setBulkView] = useState('accessibility');
   const [busy, setBusy] = useState(false);
   const [columns, setColumns] = useState<Record<ColumnKey, boolean>>(DEFAULT_COLUMNS);
   const [columnsOpen, setColumnsOpen] = useState(false);
@@ -1237,6 +1238,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 
