@@ -859,3 +859,27 @@ tbody tr:hover {
   border-color: #2f8f6b;
   box-shadow: inset 0 0 0 1px #2f8f6b;
 }
+
+.result-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 14px 0 0;
+}
+
+.result-tabs .tab {
+  padding: 6px 12px;
+  border: 1px solid var(--border, #d8e2df);
+  border-radius: 999px;
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  color: inherit;
+}
+
+.result-tabs .tab.active {
+  border-color: #2f8f6b;
+  background: #e8f5ef;
+  color: #1f6b4f;
+}
