@@ -14,7 +14,12 @@ Examples:
 coqui crawl url https://example.com/
 coqui crawl sitemap https://example.com/sitemap.xml --max-urls 2000 --out crawls/example
 coqui crawl list ./urls.txt --depth 1 --concurrency 4 --ignore-robots
+coqui crawl url https://example.com/ --render --screenshots --a11y --vitals --out crawls/rendered
 ```
+
+## Rendered output
+
+With `--render`, pages are rendered in headless Chrome/Edge before extraction. `--screenshots` writes JPEGs to `DIR/screenshots/<crawl-id>/`, `--a11y` stores axe violations, and `--vitals` stores LCP/CLS/TBT/TTFB/FCP. Verified against the local fixture: rendered title/H1, one screenshot, console errors, axe violations and vitals all captured.
 
 ## Output
 
@@ -33,4 +38,5 @@ coqui crawl list ./urls.txt --depth 1 --concurrency 4 --ignore-robots
 ## Current limits
 
 Supports URL/sitemap/list seeds, crawl limits, user agent, custom headers, basic auth, timeout, and rendering with screenshots/axe/Web Vitals. Export formats, config files, profiles and checkpoint/resume flags are next.
+
 
