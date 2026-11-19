@@ -696,6 +696,14 @@ fn call_tool(
                 .get("indexability")
                 .and_then(|value| value.as_str())
                 .map(str::to_string);
+            let sort = arguments
+                .get("sort")
+                .and_then(|value| value.as_str())
+                .map(str::to_string);
+            let descending = arguments
+                .get("descending")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
             let query = arguments
                 .get("query")
                 .and_then(|value| value.as_str())
@@ -712,6 +720,8 @@ fn call_tool(
                     content_class.as_deref(),
                     max_depth,
                     indexability.as_deref(),
+                    sort.as_deref(),
+                    descending,
                 )
                 .map_err(|error| error.to_string())?;
             let rows: Vec<_> = result

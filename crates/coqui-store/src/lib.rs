@@ -608,6 +608,8 @@ impl Store {
         content_class: Option<&str>,
         max_depth: Option<u32>,
         indexability: Option<&str>,
+        sort: Option<&str>,
+        descending: bool,
     ) -> Result<UrlPage> {
         let page = page.max(1);
         let page_size = page_size.clamp(1, 500);
@@ -660,7 +662,17 @@ impl Store {
             ],
             |row| row.get(0),
         )?;
-        let mut stmt = conn.prepare(
+        let order_column = match sort {
+            Some("url") => "url",
+            Some("status") => "status",
+            Some("depth") => "depth",
+            Some("words") => "word_count",
+            Some("time") => "response_time_ms",
+            Some("size") => "size_bytes",
+            _ => "id",
+        };
+        let direction = if descending { "DESC" } else { "ASC" };
+        let sql = format!(
             "SELECT id, crawl_id, url, status, content_type, title, meta_description, h1, h1_count,
                     canonical, meta_robots, redirect_target, redirect_chain, word_count, depth,
                     response_time_ms, size_bytes, error, discovered_at, blocked, hreflang_json,
@@ -687,8 +699,9 @@ impl Store {
                     (?9 = 'blocked' AND urls.blocked = 1) OR
                     (?9 = 'indexable' AND urls.blocked = 0 AND
                         (urls.meta_robots IS NULL OR urls.meta_robots NOT LIKE '%noindex%')))
-             ORDER BY id LIMIT ?2 OFFSET ?10",
-        )?;
+             ORDER BY {order_column} {direction}, id LIMIT ?2 OFFSET ?10"
+        );
+        let mut stmt = conn.prepare(&sql)?;
         let rows = stmt
             .query_map(
                 params![
@@ -723,7 +736,7 @@ impl Store {
         issue_rule: Option<&str>,
     ) -> Result<UrlPage> {
         self.list_urls_filtered(
-            crawl_id, page, page_size, issue_rule, None, None, None, None, None, None,
+            crawl_id, page, page_size, issue_rule, None, None, None, None, None, None, None, false,
         )
     }
 
@@ -2838,7 +2851,9 @@ mod tests {
                     None,
                     None,
                     None,
-                    None
+                    None,
+                    None,
+                    false
                 )
                 .unwrap()
                 .total,
@@ -2846,18 +2861,50 @@ mod tests {
         );
         assert_eq!(
             store
-                .list_urls_filtered("c1", 1, 10, None, None, Some(404), None, None, None, None)
+                .list_urls_filtered(
+                    "c1",
+                    1,
+                    10,
+                    None,
+                    None,
+                    Some(404),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    false
+                )
                 .unwrap()
                 .total,
             1
         );
         assert_eq!(
             store
-                .list_urls_filtered("c1", 1, 10, None, None, None, None, None, None, None)
+                .list_urls_filtered(
+                    "c1", 1, 10, None, None, None, None, None, None, None, None, false
+                )
                 .unwrap()
                 .total,
             2
         );
+        let sorted = store
+            .list_urls_filtered(
+                "c1",
+                1,
+                10,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some("status"),
+                true,
+            )
+            .unwrap();
+        assert_eq!(sorted.rows[0].status, Some(404));
         std::fs::remove_dir_all(dir).ok();
     }
 

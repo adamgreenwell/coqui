@@ -100,6 +100,8 @@ fn list_urls(
     content_class: Option<String>,
     max_depth: Option<u32>,
     indexability: Option<String>,
+    sort: Option<String>,
+    descending: Option<bool>,
 ) -> Result<UrlPage, String> {
     state
         .store
@@ -114,6 +116,8 @@ fn list_urls(
             content_class.as_deref(),
             max_depth,
             indexability.as_deref(),
+            sort.as_deref(),
+            descending.unwrap_or(false),
         )
         .map_err(|error| error.to_string())
 }
