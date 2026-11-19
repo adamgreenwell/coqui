@@ -1,0 +1,18 @@
+[package]
+name = "coqui-cli"
+description = "Headless command-line crawler for Coqui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "coqui"
+path = "src/main.rs"
+
+[dependencies]
+coqui-core.workspace = true
+coqui-store.workspace = true
+coqui-crawl.workspace = true
+coqui-audit.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true

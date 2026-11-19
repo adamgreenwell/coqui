@@ -499,6 +499,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "coqui-cli"
+version = "0.1.0"
+dependencies = [
+ "coqui-audit",
+ "coqui-core",
+ "coqui-crawl",
+ "coqui-store",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "coqui-core"
 version = "0.1.0"
 dependencies = [

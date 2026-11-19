@@ -7,6 +7,7 @@ members = [
   "crates/coqui-audit",
   "crates/coqui-render",
   "crates/coqui-lighthouse",
+  "crates/coqui-cli",
   "src-tauri",
 ]
 
@@ -48,6 +49,8 @@ base64 = "0.22"
 opt-level = 0
 [profile.dev.package."*"]
 opt-level = 2
+
+
 
 
 
