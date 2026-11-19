@@ -329,7 +329,8 @@ export default function Home() {
         pageSize: PAGE_SIZE,
         issue,
         query: queryInput.trim() || null,
-        status: statusFilter ? Number(statusFilter) : null,
+        status: /^\d{3}$/.test(statusFilter) ? Number(statusFilter) : null,
+        statusClass: /^[2-5]xx$/.test(statusFilter) ? Number(statusFilter[0]) : null,
       });
       setRows(data.rows);
       setTotal(data.total);
@@ -1719,6 +1720,10 @@ export default function Home() {
                   disabled={!isTauri || !crawl}
                 >
                   <option value="">All statuses</option>
+                  <option value="2xx">2xx</option>
+                  <option value="3xx">3xx</option>
+                  <option value="4xx">4xx</option>
+                  <option value="5xx">5xx</option>
                   <option value="200">200</option>
                   <option value="301">301</option>
                   <option value="302">302</option>

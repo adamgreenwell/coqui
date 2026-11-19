@@ -680,12 +680,24 @@ fn call_tool(
                 .get("status")
                 .and_then(|value| value.as_u64())
                 .map(|value| value as u16);
+            let status_class = arguments
+                .get("statusClass")
+                .and_then(|value| value.as_u64())
+                .map(|value| value as u16);
             let query = arguments
                 .get("query")
                 .and_then(|value| value.as_str())
                 .map(str::to_string);
             let result = store
-                .list_urls_filtered(&crawl_id()?, page, limit, None, query.as_deref(), status)
+                .list_urls_filtered(
+                    &crawl_id()?,
+                    page,
+                    limit,
+                    None,
+                    query.as_deref(),
+                    status,
+                    status_class,
+                )
                 .map_err(|error| error.to_string())?;
             let rows: Vec<_> = result
                 .rows

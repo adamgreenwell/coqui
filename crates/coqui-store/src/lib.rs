@@ -498,6 +498,7 @@ impl Store {
         issue_rule: Option<&str>,
         search: Option<&str>,
         status: Option<u16>,
+        status_class: Option<u16>,
     ) -> Result<UrlPage> {
         let page = page.max(1);
         let page_size = page_size.clamp(1, 500);
@@ -522,8 +523,9 @@ impl Store {
                     SELECT 1 FROM issues
                     WHERE issues.crawl_id = urls.crawl_id AND issues.url = urls.url AND issues.rule = ?2))
                AND (?3 IS NULL OR urls.url LIKE ?3 ESCAPE '\\' OR urls.title LIKE ?3 ESCAPE '\\')
-               AND (?4 IS NULL OR urls.status = ?4)",
-            params![crawl_id, filter, search_like, status],
+               AND (?4 IS NULL OR urls.status = ?4)
+               AND (?5 IS NULL OR urls.status BETWEEN ?5 * 100 AND ?5 * 100 + 99)",
+            params![crawl_id, filter, search_like, status, status_class],
             |row| row.get(0),
         )?;
         let mut stmt = conn.prepare(
@@ -538,7 +540,8 @@ impl Store {
                     WHERE issues.crawl_id = urls.crawl_id AND issues.url = urls.url AND issues.rule = ?3))
                AND (?4 IS NULL OR urls.url LIKE ?4 ESCAPE '\\' OR urls.title LIKE ?4 ESCAPE '\\')
                AND (?5 IS NULL OR urls.status = ?5)
-             ORDER BY id LIMIT ?2 OFFSET ?6",
+               AND (?6 IS NULL OR urls.status BETWEEN ?6 * 100 AND ?6 * 100 + 99)
+             ORDER BY id LIMIT ?2 OFFSET ?7",
         )?;
         let rows = stmt
             .query_map(
@@ -548,6 +551,7 @@ impl Store {
                     filter,
                     search_like,
                     status,
+                    status_class,
                     offset
                 ],
                 map_url_row,
@@ -569,7 +573,7 @@ impl Store {
         page_size: u32,
         issue_rule: Option<&str>,
     ) -> Result<UrlPage> {
-        self.list_urls_filtered(crawl_id, page, page_size, issue_rule, None, None)
+        self.list_urls_filtered(crawl_id, page, page_size, issue_rule, None, None, None)
     }
 
     /// Every URL of a crawl, used by post-crawl analysis. Callers should not use this for UI paging.
@@ -2624,21 +2628,21 @@ mod tests {
         store.insert_url(&missing).unwrap();
         assert_eq!(
             store
-                .list_urls_filtered("c1", 1, 10, None, Some("Missing"), None)
+                .list_urls_filtered("c1", 1, 10, None, Some("Missing"), None, None)
                 .unwrap()
                 .total,
             1
         );
         assert_eq!(
             store
-                .list_urls_filtered("c1", 1, 10, None, None, Some(404))
+                .list_urls_filtered("c1", 1, 10, None, None, Some(404), None)
                 .unwrap()
                 .total,
             1
         );
         assert_eq!(
             store
-                .list_urls_filtered("c1", 1, 10, None, None, None)
+                .list_urls_filtered("c1", 1, 10, None, None, None, None)
                 .unwrap()
                 .total,
             2
