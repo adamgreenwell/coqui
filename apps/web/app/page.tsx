@@ -64,6 +64,14 @@ interface UrlDetail {
   screenshot: string | null;
 }
 
+interface AppInfo {
+  version: string;
+  dataDir: string;
+  node: string | null;
+  lighthouse: string | null;
+  browser: string | null;
+}
+
 interface LighthouseAudit {
   id: string;
   title: string;
@@ -291,6 +299,7 @@ export default function Home() {
   const [probeError, setProbeError] = useState<string | null>(null);
   const [probeBusy, setProbeBusy] = useState(false);
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
+  const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [detail, setDetail] = useState<UrlDetail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [lighthouse, setLighthouse] = useState<LighthouseSummary | null>(null);
@@ -366,6 +375,18 @@ export default function Home() {
   useEffect(() => {
     setIsTauri(typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window);
   }, []);
+
+  useEffect(() => {
+    if (!isTauri) return;
+    void (async () => {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        setAppInfo(await invoke<AppInfo>('app_info'));
+      } catch {
+        // info is optional
+      }
+    })();
+  }, [isTauri]);
 
   const loadPage = useCallback(
     async (
@@ -1707,7 +1728,8 @@ export default function Home() {
           </form>
 
           <p className="footer-note" style={{ marginTop: 18, marginBottom: 0 }}>
-            Next up: bundled Node + Lighthouse for offline audits.
+            Coqui {appInfo?.version ?? ''} · Node {appInfo?.node ? 'bundled' : 'missing'} ·
+            Lighthouse {appInfo?.lighthouse ? 'bundled' : 'missing'}
           </p>
         </aside>
 
@@ -2549,15 +2571,14 @@ export default function Home() {
           </section>
 
           <p className="footer-note">
-            M4 scope: URL/sitemap/list seeds, regex scope, auth, robots.txt, redirects, Chromium
-            rendering with screenshots and console capture, structured data, axe accessibility, Web Vitals, 24 audit rules and
-            pause/resume. Next: bundled Node + Lighthouse for offline audits.
+            Data: {appInfo?.dataDir ?? '—'} · Browser: {appInfo?.browser ?? 'not found'}
           </p>
         </main>
       </div>
     </div>
   );
 }
+
 
 
 

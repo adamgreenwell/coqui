@@ -774,6 +774,21 @@ fn remove_schedule(state: State<'_, AppState>, id: i64) -> Result<usize, String>
 }
 
 #[tauri::command]
+fn app_info(state: State<'_, AppState>, app: tauri::AppHandle) -> serde_json::Value {
+    let node = sidecar_path(&app, "node.exe").or_else(|| sidecar_path(&app, "node"));
+    let lighthouse = sidecar_path(&app, "lighthouse/node_modules/lighthouse/cli/index.js")
+        .or_else(|| sidecar_path(&app, "lighthouse/lighthouse-cli/index.js"));
+    let browser = browser_path();
+    serde_json::json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "dataDir": state.store.root().display().to_string(),
+        "node": node.map(|path| path.display().to_string()),
+        "lighthouse": lighthouse.map(|path| path.display().to_string()),
+        "browser": browser.map(|path| path.display().to_string()),
+    })
+}
+
+#[tauri::command]
 fn suppressed_rules(state: State<'_, AppState>, crawl_id: String) -> Result<Vec<String>, String> {
     state
         .store
@@ -1104,6 +1119,7 @@ pub fn run() {
             suppressed_rules,
             suppress_rule,
             restore_rule,
+            app_info,
             get_url_detail,
             export_pdf_report,
             run_due_schedules,
