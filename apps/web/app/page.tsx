@@ -346,6 +346,11 @@ export default function Home() {
   const [responseStats, setResponseStats] = useState<{ averageMs: number; p95Ms: number } | null>(
     null,
   );
+  const [indexStats, setIndexStats] = useState<{
+    indexable: number;
+    noindex: number;
+    blocked: number;
+  } | null>(null);
   const [activeIssue, setActiveIssue] = useState<string | null>(null);
   const [queryInput, setQueryInput] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -582,6 +587,11 @@ export default function Home() {
           crawlId: crawl.id,
         });
         setResponseStats(stats);
+        const index = await invoke<{ indexable: number; noindex: number; blocked: number }>(
+          'indexability_stats',
+          { crawlId: crawl.id },
+        );
+        setIndexStats(index);
       } catch {
         // overview is best-effort
       }
@@ -2156,6 +2166,29 @@ export default function Home() {
               <span>p95 response</span>
               <strong>{responseStats ? `${responseStats.p95Ms} ms` : '—'}</strong>
             </div>
+            {indexStats &&
+              (
+                [
+                  ['indexable', 'Indexable'],
+                  ['noindex', 'Noindex'],
+                  ['blocked', 'Blocked'],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={`overview-card${indexFilter === key ? ' active' : ''}`}
+                  onClick={() => {
+                    const next = indexFilter === key ? '' : key;
+                    setIndexFilter(next);
+                    setPage(1);
+                    if (crawl) void loadPage(crawl.id, 1, activeIssue);
+                  }}
+                >
+                  <span>{label}</span>
+                  <strong>{indexStats[key]}</strong>
+                </button>
+              ))}
           </section>
 
           <section className="panel results">
