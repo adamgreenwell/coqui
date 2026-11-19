@@ -481,24 +481,40 @@ impl Store {
         Ok(count)
     }
 
-    pub fn list_urls(
+    pub fn list_urls_filtered(
         &self,
         crawl_id: &str,
         page: u32,
         page_size: u32,
         issue_rule: Option<&str>,
+        search: Option<&str>,
+        status: Option<u16>,
     ) -> Result<UrlPage> {
         let page = page.max(1);
         let page_size = page_size.clamp(1, 500);
         let offset = (page - 1) as i64 * page_size as i64;
         let filter = issue_rule.map(str::to_string);
+        let search_like = search
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| {
+                format!(
+                    "%{}%",
+                    value
+                        .replace('\\', "\\\\")
+                        .replace('%', "\\%")
+                        .replace('_', "\\_")
+                )
+            });
         let conn = self.lock()?;
         let total = conn.query_row(
             "SELECT COUNT(*) FROM urls WHERE crawl_id = ?1
                AND (?2 IS NULL OR EXISTS (
                     SELECT 1 FROM issues
-                    WHERE issues.crawl_id = urls.crawl_id AND issues.url = urls.url AND issues.rule = ?2))",
-            params![crawl_id, filter],
+                    WHERE issues.crawl_id = urls.crawl_id AND issues.url = urls.url AND issues.rule = ?2))
+               AND (?3 IS NULL OR urls.url LIKE ?3 ESCAPE '\\' OR urls.title LIKE ?3 ESCAPE '\\')
+               AND (?4 IS NULL OR urls.status = ?4)",
+            params![crawl_id, filter, search_like, status],
             |row| row.get(0),
         )?;
         let mut stmt = conn.prepare(
@@ -511,11 +527,20 @@ impl Store {
                AND (?3 IS NULL OR EXISTS (
                     SELECT 1 FROM issues
                     WHERE issues.crawl_id = urls.crawl_id AND issues.url = urls.url AND issues.rule = ?3))
-             ORDER BY id LIMIT ?2 OFFSET ?4",
+               AND (?4 IS NULL OR urls.url LIKE ?4 ESCAPE '\\' OR urls.title LIKE ?4 ESCAPE '\\')
+               AND (?5 IS NULL OR urls.status = ?5)
+             ORDER BY id LIMIT ?2 OFFSET ?6",
         )?;
         let rows = stmt
             .query_map(
-                params![crawl_id, page_size as i64, filter, offset],
+                params![
+                    crawl_id,
+                    page_size as i64,
+                    filter,
+                    search_like,
+                    status,
+                    offset
+                ],
                 map_url_row,
             )?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -525,6 +550,17 @@ impl Store {
             page,
             page_size,
         })
+    }
+
+    /// Page a crawl's URLs without search or status filters.
+    pub fn list_urls(
+        &self,
+        crawl_id: &str,
+        page: u32,
+        page_size: u32,
+        issue_rule: Option<&str>,
+    ) -> Result<UrlPage> {
+        self.list_urls_filtered(crawl_id, page, page_size, issue_rule, None, None)
     }
 
     /// Every URL of a crawl, used by post-crawl analysis. Callers should not use this for UI paging.
@@ -2483,6 +2519,51 @@ mod tests {
         );
         assert_eq!(store.delete_profile("fast").unwrap(), 1);
         assert!(store.get_profile("fast").unwrap().is_none());
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn list_urls_searches_and_filters_status() {
+        let dir = std::env::temp_dir().join(format!("coqui-search-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        store
+            .create_crawl(
+                "c1",
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        store
+            .insert_url(&sample_record("c1", "https://example.com/"))
+            .unwrap();
+        let mut missing = sample_record("c1", "https://example.com/missing");
+        missing.status = Some(404);
+        missing.title = Some("Missing page".into());
+        store.insert_url(&missing).unwrap();
+        assert_eq!(
+            store
+                .list_urls_filtered("c1", 1, 10, None, Some("Missing"), None)
+                .unwrap()
+                .total,
+            1
+        );
+        assert_eq!(
+            store
+                .list_urls_filtered("c1", 1, 10, None, None, Some(404))
+                .unwrap()
+                .total,
+            1
+        );
+        assert_eq!(
+            store
+                .list_urls_filtered("c1", 1, 10, None, None, None)
+                .unwrap()
+                .total,
+            2
+        );
         std::fs::remove_dir_all(dir).ok();
     }
 

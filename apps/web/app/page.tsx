@@ -296,6 +296,8 @@ export default function Home() {
   const [progress, setProgress] = useState<CrawlProgress | null>(null);
   const [issues, setIssues] = useState<IssueCount[]>([]);
   const [activeIssue, setActiveIssue] = useState<string | null>(null);
+  const [queryInput, setQueryInput] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [exportPath, setExportPath] = useState<string | null>(null);
   const [bulkView, setBulkView] = useState('accessibility');
@@ -321,11 +323,13 @@ export default function Home() {
         page: pageNumber,
         pageSize: PAGE_SIZE,
         issue,
+        query: queryInput.trim() || null,
+        status: statusFilter ? Number(statusFilter) : null,
       });
       setRows(data.rows);
       setTotal(data.total);
     },
-    [],
+    [queryInput, statusFilter],
   );
 
   const loadIssues = useCallback(async (crawlId: string) => {
@@ -1633,6 +1637,37 @@ export default function Home() {
               </h2>
               <div className="results-actions">
                 {exportPath && <span className="export-path">{exportPath}</span>}
+                <input
+                  type="search"
+                  value={queryInput}
+                  onChange={(event) => setQueryInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && crawl) {
+                      setPage(1);
+                      void loadPage(crawl.id, 1, activeIssue);
+                    }
+                  }}
+                  placeholder="Search URL or title"
+                  aria-label="Search URLs"
+                  disabled={!isTauri || !crawl}
+                />
+                <select
+                  value={statusFilter}
+                  onChange={(event) => {
+                    setStatusFilter(event.target.value);
+                    setPage(1);
+                    if (crawl) void loadPage(crawl.id, 1, activeIssue);
+                  }}
+                  aria-label="Status filter"
+                  disabled={!isTauri || !crawl}
+                >
+                  <option value="">All statuses</option>
+                  <option value="200">200</option>
+                  <option value="301">301</option>
+                  <option value="302">302</option>
+                  <option value="404">404</option>
+                  <option value="500">500</option>
+                </select>
                 <div className="columns-wrap">
                   <button
                     className="secondary"
