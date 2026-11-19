@@ -187,6 +187,7 @@ const ISSUE_LABELS: Record<string, string> = {
   non_https: 'Non-HTTPS URL',
   blocked_by_robots: 'Blocked by robots.txt',
   long_redirect_chain: 'Long redirect chain',
+  canonical_to_non_200: 'Canonical to non-200',
   hreflang_missing_return: 'Hreflang missing return link',
   hreflang_invalid_target: 'Hreflang target not reachable',
   pagination_broken: 'Broken pagination link',
@@ -213,6 +214,7 @@ const ISSUE_DESCRIPTIONS: Record<string, string> = {
   non_https: 'The URL uses HTTP rather than HTTPS.',
   blocked_by_robots: 'robots.txt blocked this URL from being crawled.',
   long_redirect_chain: 'The redirect chain has more than two hops.',
+  canonical_to_non_200: 'The canonical target is missing, uncrawled or not 2xx.',
   multiple_h1: 'More than one H1 heading was found.',
   missing_h1: 'No H1 heading was found.',
   thin_content: 'The page has very little body text.',
@@ -3091,6 +3093,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 
