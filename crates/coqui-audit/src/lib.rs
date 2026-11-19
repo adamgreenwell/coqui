@@ -131,6 +131,11 @@ pub const RULES: &[RuleDef] = &[
         severity: IssueSeverity::Opportunity,
     },
     RuleDef {
+        id: "image_missing_alt",
+        label: "Image missing alt text",
+        severity: IssueSeverity::Warning,
+    },
+    RuleDef {
         id: "hreflang_missing_return",
         label: "Hreflang missing return link",
         severity: IssueSeverity::Warning,
@@ -213,6 +218,9 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
     for url in &urls {
         status_by_url.insert(url.url.as_str(), url);
     }
+
+    let missing_alt: HashMap<String, i64> =
+        store.images_missing_alt(crawl_id)?.into_iter().collect();
 
     let mut duplicate_content: HashMap<String, Vec<String>> = HashMap::new();
     let mut content_hash_by_url: HashMap<String, String> = HashMap::new();
@@ -399,6 +407,16 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
                     )?;
                 }
             }
+        }
+
+        if let Some(count) = missing_alt.get(&url.url) {
+            issue(
+                store,
+                crawl_id,
+                &url.url,
+                "image_missing_alt",
+                Some(format!("{count} images")),
+            )?;
         }
 
         if url.url.chars().count() > 115 {
@@ -917,6 +935,46 @@ mod tests {
         let counts = analyze_crawl(&store, id).unwrap();
         let by_rule: HashMap<_, _> = counts.iter().map(|c| (c.rule.as_str(), c.count)).collect();
         assert_eq!(by_rule.get("url_too_long"), Some(&1));
+    }
+
+    #[test]
+    fn flags_images_missing_alt() {
+        let store = Store::open_in_memory().unwrap();
+        let id = "alt";
+        store
+            .create_crawl(
+                id,
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        add_url(&store, id, "https://example.com/", Some("Home"), 1, 600);
+        let url_id = store.url_id(id, "https://example.com/").unwrap().unwrap();
+        store
+            .replace_images(
+                id,
+                url_id,
+                &[
+                    coqui_core::ImageRef {
+                        src: "https://example.com/a.png".into(),
+                        alt: None,
+                        width: Some(10),
+                        height: Some(10),
+                    },
+                    coqui_core::ImageRef {
+                        src: "https://example.com/b.png".into(),
+                        alt: Some("B".into()),
+                        width: Some(10),
+                        height: Some(10),
+                    },
+                ],
+            )
+            .unwrap();
+        let counts = analyze_crawl(&store, id).unwrap();
+        let by_rule: HashMap<_, _> = counts.iter().map(|c| (c.rule.as_str(), c.count)).collect();
+        assert_eq!(by_rule.get("image_missing_alt"), Some(&1));
     }
 }
 
