@@ -13,6 +13,7 @@ const option = (name, fallback) => {
 
 const urls = Number(option('urls', '2000'));
 const port = Number(option('port', '4190'));
+const render = args.includes('--render');
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const out = path.join('bench', stamp);
 
@@ -48,17 +49,21 @@ try {
   await waitForFixture();
   const binary = path.join('target', 'debug', process.platform === 'win32' ? 'coqui.exe' : 'coqui');
   const started = process.hrtime.bigint();
+  const crawlArgs = [
+    'crawl',
+    'sitemap',
+    `${origin}/sitemap.xml`,
+    '--max-urls',
+    String(urls),
+    '--out',
+    out,
+  ];
+  if (render) {
+    crawlArgs.push('--render', '--screenshots', '--a11y', '--vitals');
+  }
   const crawl = spawnSync(
     binary,
-    [
-      'crawl',
-      'sitemap',
-      `${origin}/sitemap.xml`,
-      '--max-urls',
-      String(urls),
-      '--out',
-      out,
-    ],
+    crawlArgs,
     { encoding: 'utf8', shell: false },
   );
   const seconds = Number(process.hrtime.bigint() - started) / 1e9;
@@ -72,7 +77,7 @@ try {
   const csvBytes = fs.existsSync(csvPath) ? fs.statSync(csvPath).size : 0;
   const result = {
     timestamp: new Date().toISOString(),
-    fixture: { urls, port },
+    fixture: { urls, port, render },
     seconds: Number(seconds.toFixed(3)),
     urlsPerSecond: Number((urls / seconds).toFixed(1)),
     crawled: parse ? Number(parse[1]) : null,
@@ -92,3 +97,4 @@ try {
 } finally {
   fixture.kill();
 }
+
