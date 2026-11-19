@@ -648,6 +648,29 @@ impl Store {
         Ok(counts)
     }
 
+    /// Response time histogram buckets (ms).
+    pub fn response_time_buckets(&self, crawl_id: &str) -> Result<Vec<(String, i64)>> {
+        let conn = self.lock()?;
+        let (fast, good, slow, very_slow): (i64, i64, i64, i64) = conn.query_row(
+            "SELECT
+                COALESCE(SUM(CASE WHEN response_time_ms < 100 THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN response_time_ms >= 100 AND response_time_ms < 300
+                    THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN response_time_ms >= 300 AND response_time_ms < 1000
+                    THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN response_time_ms >= 1000 THEN 1 ELSE 0 END), 0)
+             FROM urls WHERE crawl_id = ?1 AND response_time_ms IS NOT NULL",
+            params![crawl_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )?;
+        Ok(vec![
+            ("<100 ms".into(), fast),
+            ("100–299 ms".into(), good),
+            ("300–999 ms".into(), slow),
+            ("1000+ ms".into(), very_slow),
+        ])
+    }
+
     pub fn status_counts(&self, crawl_id: &str) -> Result<Vec<(Option<u16>, i64)>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
@@ -3048,6 +3071,35 @@ mod tests {
         assert!(store.issue_counts("c1").unwrap().is_empty());
         assert_eq!(store.restore_rule("c1", "missing_title").unwrap(), 1);
         assert_eq!(store.issue_counts("c1").unwrap().len(), 1);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn response_buckets_group_times() {
+        let dir = std::env::temp_dir().join(format!("coqui-buckets-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        store
+            .create_crawl(
+                "c1",
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        for (index, time) in [50, 200, 500, 1500].into_iter().enumerate() {
+            let mut record = sample_record("c1", &format!("https://example.com/{index}"));
+            record.response_time_ms = Some(time);
+            store.insert_url(&record).unwrap();
+        }
+        let counts: Vec<i64> = store
+            .response_time_buckets("c1")
+            .unwrap()
+            .into_iter()
+            .map(|(_, count)| count)
+            .collect();
+        assert_eq!(counts, vec![1, 1, 1, 1]);
         std::fs::remove_dir_all(dir).ok();
     }
 
