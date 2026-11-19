@@ -33,3 +33,4 @@ Node v26.13.1, debug build, concurrency 8, no rendering.
 - Rendering, Lighthouse and axe add their own costs and are measured separately.
 - The fixture is loopback-only, so network latency is not represented.
 - Port must be free; the harness fails fast if the fixture cannot start.
+
