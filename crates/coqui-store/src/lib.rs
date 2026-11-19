@@ -132,6 +132,8 @@ pub enum StoreError {
     Json(#[from] serde_json::Error),
     #[error("csv error: {0}")]
     Csv(#[from] csv::Error),
+    #[error("xlsx error: {0}")]
+    Xlsx(#[from] rust_xlsxwriter::XlsxError),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
     #[error("store lock poisoned")]
@@ -678,6 +680,111 @@ impl Store {
         Ok(rows)
     }
 
+    pub fn export_urls_xlsx(
+        &self,
+        crawl_id: &str,
+        path: impl AsRef<Path>,
+        columns: &[String],
+        issue: Option<&str>,
+    ) -> Result<u64> {
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let allowed: Vec<String> = if columns.is_empty() {
+            vec!["url".into(), "status".into(), "title".into()]
+        } else {
+            columns.to_vec()
+        };
+        let issue_urls: Option<std::collections::HashSet<String>> = match issue {
+            Some(rule) => {
+                let conn = self.lock()?;
+                let mut stmt =
+                    conn.prepare("SELECT url FROM issues WHERE crawl_id = ?1 AND rule = ?2")?;
+                let rows = stmt
+                    .query_map(params![crawl_id, rule], |row| row.get::<_, String>(0))?
+                    .collect::<std::result::Result<std::collections::HashSet<_>, _>>()?;
+                Some(rows)
+            }
+            None => None,
+        };
+        let urls = self.all_urls(crawl_id)?;
+        let mut workbook = rust_xlsxwriter::Workbook::new();
+        let sheet = workbook.add_worksheet();
+        for (column, key) in allowed.iter().enumerate() {
+            sheet.write_string(0, column as u16, csv_header(key))?;
+        }
+        let mut row = 1u32;
+        for url in &urls {
+            if let Some(filter) = &issue_urls {
+                if !filter.contains(&url.url) {
+                    continue;
+                }
+            }
+            for (column, key) in allowed.iter().enumerate() {
+                sheet.write_string(row, column as u16, url_csv_value(url, key))?;
+            }
+            row += 1;
+        }
+        workbook.save(path)?;
+        Ok(u64::from(row.saturating_sub(1)))
+    }
+
+    pub fn export_issues_xlsx(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT url, rule, severity, detail FROM issues WHERE crawl_id = ?1 ORDER BY rule, url",
+        )?;
+        let mut workbook = rust_xlsxwriter::Workbook::new();
+        let sheet = workbook.add_worksheet();
+        for (column, header) in ["url", "rule", "severity", "detail"].iter().enumerate() {
+            sheet.write_string(0, column as u16, *header)?;
+        }
+        let mut rows = 0u32;
+        let mut records = stmt.query(params![crawl_id])?;
+        while let Some(row) = records.next()? {
+            let values = [
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+            ];
+            for (column, value) in values.iter().enumerate() {
+                sheet.write_string(rows + 1, column as u16, value)?;
+            }
+            rows += 1;
+        }
+        workbook.save(path)?;
+        Ok(u64::from(rows))
+    }
+
+    pub fn export_links_xlsx(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let links = self.all_links(crawl_id)?;
+        let mut workbook = rust_xlsxwriter::Workbook::new();
+        let sheet = workbook.add_worksheet();
+        for (column, header) in ["from_url", "to_url", "anchor", "rel", "internal"]
+            .iter()
+            .enumerate()
+        {
+            sheet.write_string(0, column as u16, *header)?;
+        }
+        for (index, link) in links.iter().enumerate() {
+            let row = index as u32 + 1;
+            sheet.write_string(row, 0, &link.from_url)?;
+            sheet.write_string(row, 1, &link.to_url)?;
+            sheet.write_string(row, 2, link.anchor.clone().unwrap_or_default())?;
+            sheet.write_string(row, 3, link.rel.clone().unwrap_or_default())?;
+            sheet.write_string(row, 4, link.internal.to_string())?;
+        }
+        workbook.save(path)?;
+        Ok(links.len() as u64)
+    }
+
     pub fn export_issues_csv(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {
         if let Some(parent) = path.as_ref().parent() {
             std::fs::create_dir_all(parent)?;
@@ -1199,6 +1306,33 @@ mod tests {
         assert!(text.lines().next().unwrap().starts_with("url,status"));
         assert!(text.contains("redirect_target"));
         std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn exports_xlsx_workbook() {
+        let dir = std::env::temp_dir().join(format!("coqui-xlsx-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        store
+            .create_crawl(
+                "c1",
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        store
+            .insert_url(&sample_record("c1", "https://example.com/"))
+            .unwrap();
+        let path = dir.join("urls.xlsx");
+        let rows = store
+            .export_urls_xlsx("c1", &path, &["url".to_string(), "title".to_string()], None)
+            .unwrap();
+        assert_eq!(rows, 1);
+        let bytes = std::fs::read(&path).unwrap();
+        assert_eq!(&bytes[..2], b"PK");
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]
