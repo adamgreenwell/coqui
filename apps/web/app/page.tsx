@@ -343,6 +343,9 @@ export default function Home() {
   const [issues, setIssues] = useState<IssueCount[]>([]);
   const [suppressed, setSuppressed] = useState<string[]>([]);
   const [statusCounts, setStatusCounts] = useState<{ status: number | null; count: number }[]>([]);
+  const [responseStats, setResponseStats] = useState<{ averageMs: number; p95Ms: number } | null>(
+    null,
+  );
   const [activeIssue, setActiveIssue] = useState<string | null>(null);
   const [queryInput, setQueryInput] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -575,6 +578,10 @@ export default function Home() {
           { crawlId: crawl.id },
         );
         setStatusCounts(rows);
+        const stats = await invoke<{ averageMs: number; p95Ms: number }>('response_stats', {
+          crawlId: crawl.id,
+        });
+        setResponseStats(stats);
       } catch {
         // overview is best-effort
       }
@@ -2140,6 +2147,14 @@ export default function Home() {
             <div>
               <span>Opportunities</span>
               <strong>{severityTotals.opportunity}</strong>
+            </div>
+            <div>
+              <span>Avg response</span>
+              <strong>{responseStats ? `${responseStats.averageMs} ms` : '—'}</strong>
+            </div>
+            <div>
+              <span>p95 response</span>
+              <strong>{responseStats ? `${responseStats.p95Ms} ms` : '—'}</strong>
             </div>
           </section>
 

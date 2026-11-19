@@ -789,6 +789,22 @@ fn app_info(state: State<'_, AppState>, app: tauri::AppHandle) -> serde_json::Va
 }
 
 #[tauri::command]
+fn response_stats(
+    state: State<'_, AppState>,
+    crawl_id: String,
+) -> Result<serde_json::Value, String> {
+    let (count, average, p95) = state
+        .store
+        .response_time_stats(&crawl_id)
+        .map_err(|error| error.to_string())?;
+    Ok(serde_json::json!({
+        "count": count,
+        "averageMs": average,
+        "p95Ms": p95,
+    }))
+}
+
+#[tauri::command]
 fn suppressed_rules(state: State<'_, AppState>, crawl_id: String) -> Result<Vec<String>, String> {
     state
         .store
@@ -1120,6 +1136,7 @@ pub fn run() {
             suppress_rule,
             restore_rule,
             app_info,
+            response_stats,
             get_url_detail,
             export_pdf_report,
             run_due_schedules,
