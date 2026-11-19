@@ -1340,4 +1340,3 @@ mod tests {
         assert_eq!(parsed.max_urls, 25);
     }
 }
-
