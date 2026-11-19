@@ -417,16 +417,30 @@ fn export_view(
     view: String,
     issue: Option<String>,
     columns: Vec<String>,
+    format: Option<String>,
 ) -> Result<String, String> {
     let dir = state.data_dir.join("exports");
     std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
-    let path = dir.join(format!("{crawl_id}-{view}-{}.csv", now_ms()));
-    match view.as_str() {
-        "issues" => state
+    let format = format.unwrap_or_else(|| "csv".to_string());
+    let path = dir.join(format!("{crawl_id}-{view}-{}.{format}", now_ms()));
+    match (view.as_str(), format.as_str()) {
+        ("issues", "xlsx") => state
+            .store
+            .export_issues_xlsx(&crawl_id, &path)
+            .map_err(|error| error.to_string())?,
+        ("links", "xlsx") => state
+            .store
+            .export_links_xlsx(&crawl_id, &path)
+            .map_err(|error| error.to_string())?,
+        ("urls", "xlsx") => state
+            .store
+            .export_urls_xlsx(&crawl_id, &path, &columns, issue.as_deref())
+            .map_err(|error| error.to_string())?,
+        ("issues", _) => state
             .store
             .export_issues_csv(&crawl_id, &path)
             .map_err(|error| error.to_string())?,
-        "links" => state
+        ("links", _) => state
             .store
             .export_links_csv(&crawl_id, &path)
             .map_err(|error| error.to_string())?,
