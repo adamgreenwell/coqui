@@ -88,11 +88,11 @@ tools/plan/        Backlog source and generators
 tools/github/      Backlog publisher
 ```
 
-## Current slice (M3)
+## Current slice (M6)
 
-Implemented: one seed, same-host breadth-first discovery, depth/URL caps, bounded concurrency, robots.txt (allow/disallow, wildcards, `$`), manual redirect chains with target and hop list, HTML title/meta/H1 count/canonical/meta-robots/word count, link edges with anchor and rel, six audit rules (missing title, title too long, missing meta description, multiple H1, thin content, broken internal link), issue counts and issue-filtered rows, column chooser, SQLite schema v2 with migration from v1, live progress events, CSV export, persisted frontier with pause/resume and crash recovery, **URL/sitemap/list seeds (including sitemap indexes and gzip), regex include/exclude scope, HTTP basic auth and custom headers**.
+Implemented: BFS crawling with robots handling and redirect chains, auth/custom headers, regex scope, URL/sitemap/list seeds, Chromium rendering (screenshots, console, axe, vitals, custom JS), custom extraction, 39 audit rules with saved views and issue filtering, Lighthouse, exports/reports, scheduler and MCP server, SQLite schema v22.
 
-Not yet implemented: rendering, forms-based auth, the full column registry, the remaining ~340 issue rules. See the [backlog](https://github.com/adamgreenwell/coqui/issues) for the phase plan.
+Not yet implemented: cloud/team sync, third-party integrations (Search Console, GA4, Ahrefs, Majestic, Moz), AI features, code-signed installers for every platform, and virtualised 1M-row UI.
 
 ## Troubleshooting
 
@@ -100,6 +100,9 @@ Not yet implemented: rendering, forms-based auth, the full column registry, the 
 - **Blank window in `npm run dev`** — the Next dev server must be reachable at `http://localhost:3000`; check the Tauri terminal output.
 - **Port 3000 in use** — stop the other process or run the web app on another port and update `devUrl` in `src-tauri/tauri.conf.json`.
 - **Linux WebKit errors** — install the GTK/WebKit packages listed above; WebKitGTK is the most version-sensitive target.
+
+
+
 
 
 
