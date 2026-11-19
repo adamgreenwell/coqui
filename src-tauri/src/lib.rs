@@ -270,6 +270,24 @@ fn lighthouse_command(url: &str, output_path: &std::path::Path) -> tokio::proces
             .and_then(|exe| exe.parent().map(|dir| dir.join(name)))
             .filter(|path| path.exists())
     };
+    let chrome = std::env::var_os("CHROME_PATH")
+        .map(std::path::PathBuf::from)
+        .filter(|path| path.exists())
+        .or_else(|| {
+            [
+                r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+                r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+                r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+                "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+                "/usr/bin/google-chrome",
+                "/usr/bin/chromium",
+            ]
+            .iter()
+            .map(std::path::PathBuf::from)
+            .find(|path| path.exists())
+        });
     let node = std::env::var_os("COQUI_NODE")
         .map(std::path::PathBuf::from)
         .filter(|path| path.exists())
@@ -291,6 +309,9 @@ fn lighthouse_command(url: &str, output_path: &std::path::Path) -> tokio::proces
             command
         }
     };
+    if let Some(chrome) = chrome {
+        command.env("CHROME_PATH", chrome);
+    }
     command
         .arg(url)
         .arg("--quiet")
@@ -461,3 +482,4 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running Coqui");
 }
+
