@@ -123,6 +123,15 @@ fn escape(value: &str) -> String {
         .replace('"', "&quot;")
 }
 
+/// Options applied when rendering a report.
+#[derive(Debug, Clone, Default)]
+pub struct ReportOptions {
+    /// Maximum rows in list-based reports (performance, issues).
+    pub top: Option<usize>,
+    /// Restrict to a single HTTP status code.
+    pub status: Option<u16>,
+}
+
 /// Named reports available from the report engine.
 pub const REPORTS: &[(&str, &str, &str)] = &[
     (
@@ -145,12 +154,41 @@ pub const REPORTS: &[(&str, &str, &str)] = &[
 
 /// Render a named report.
 pub fn render_report(store: &Store, crawl_id: &str, kind: &str) -> Result<String, String> {
+    render_report_with(store, crawl_id, kind, &ReportOptions::default())
+}
+
+/// Render a named report with options.
+pub fn render_report_with(
+    store: &Store,
+    crawl_id: &str,
+    kind: &str,
+    options: &ReportOptions,
+) -> Result<String, String> {
     match kind {
-        "issues" => render_issues(store, crawl_id),
-        "status" => render_status(store, crawl_id),
-        "performance" => render_performance(store, crawl_id),
+        "issues" => render_issues(store, crawl_id, options.top),
+        "status" => render_status(store, crawl_id, options.status),
+        "performance" => render_performance(store, crawl_id, options.top, options.status),
         _ => render_html(store, crawl_id),
     }
+}
+
+/// Write a named report with options and return the number of URLs covered.
+pub fn write_report_with(
+    store: &Store,
+    crawl_id: &str,
+    path: impl AsRef<Path>,
+    kind: &str,
+    options: &ReportOptions,
+) -> Result<u64, String> {
+    if let Some(parent) = path.as_ref().parent() {
+        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let html = render_report_with(store, crawl_id, kind, options)?;
+    std::fs::write(path, html).map_err(|error| error.to_string())?;
+    let urls = store
+        .all_urls(crawl_id)
+        .map_err(|error| error.to_string())?;
+    Ok(urls.len() as u64)
 }
 
 /// Write a named report and return the number of URLs covered.
@@ -183,13 +221,16 @@ fn shell(crawl: &str, title: &str, body: &str) -> String {
     )
 }
 
-fn render_issues(store: &Store, crawl_id: &str) -> Result<String, String> {
+fn render_issues(store: &Store, crawl_id: &str, top: Option<usize>) -> Result<String, String> {
     let crawl = store
         .get_crawl(crawl_id)
         .map_err(|error| error.to_string())?;
-    let issues = store
+    let mut issues = store
         .issue_counts(crawl_id)
         .map_err(|error| error.to_string())?;
+    if let Some(top) = top {
+        issues.truncate(top);
+    }
     let mut body = String::from("<table><tr><th>Rule</th><th>URLs</th></tr>");
     for issue in &issues {
         body.push_str(&format!(
@@ -202,13 +243,20 @@ fn render_issues(store: &Store, crawl_id: &str) -> Result<String, String> {
     Ok(shell(&crawl.seed, "Issue breakdown", &body))
 }
 
-fn render_status(store: &Store, crawl_id: &str) -> Result<String, String> {
+fn render_status(
+    store: &Store,
+    crawl_id: &str,
+    status_filter: Option<u16>,
+) -> Result<String, String> {
     let crawl = store
         .get_crawl(crawl_id)
         .map_err(|error| error.to_string())?;
-    let urls = store
+    let urls: Vec<_> = store
         .all_urls(crawl_id)
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .filter(|url| status_filter.is_none_or(|status| url.status == Some(status)))
+        .collect();
     let mut statuses: BTreeMap<u16, usize> = BTreeMap::new();
     for url in &urls {
         *statuses.entry(url.status.unwrap_or(0)).or_default() += 1;
@@ -226,19 +274,27 @@ fn render_status(store: &Store, crawl_id: &str) -> Result<String, String> {
     Ok(shell(&crawl.seed, "Status codes", &body))
 }
 
-fn render_performance(store: &Store, crawl_id: &str) -> Result<String, String> {
+fn render_performance(
+    store: &Store,
+    crawl_id: &str,
+    top: Option<usize>,
+    status_filter: Option<u16>,
+) -> Result<String, String> {
     let crawl = store
         .get_crawl(crawl_id)
         .map_err(|error| error.to_string())?;
-    let urls = store
+    let urls: Vec<_> = store
         .all_urls(crawl_id)
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .filter(|url| status_filter.is_none_or(|status| url.status == Some(status)))
+        .collect();
     let mut slowest: Vec<_> = urls
         .iter()
         .filter_map(|url| url.response_time_ms.map(|ms| (ms, url.url.clone())))
         .collect();
     slowest.sort_by(|left, right| right.0.cmp(&left.0));
-    slowest.truncate(25);
+    slowest.truncate(top.unwrap_or(25));
     let mut body = String::from("<table><tr><th>URL</th><th>ms</th></tr>");
     for (ms, url) in &slowest {
         body.push_str(&format!("<tr><td>{}</td><td>{ms}</td></tr>", escape(url)));

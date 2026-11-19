@@ -7,7 +7,7 @@ Headless crawler using the same engine, store and audit rules as the desktop app
 ```bash
 coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots] [--user-agent UA] [--header "Name: value"] [--auth user:pass] [--timeout-ms N] [--render] [--screenshots] [--a11y] [--vitals] [--render-workers N]
 coqui resume [--out DIR] [--max-urls N] [--concurrency N]
-coqui report [summary|issues|status|performance] [--out DIR]
+coqui report [summary|issues|status|performance] [--out DIR] [--top N] [--status CODE]
 coqui reports
 ```
 
@@ -51,7 +51,7 @@ render_workers = 2
 
 ## Reports
 
-`coqui reports` lists report types; `coqui report issues --out DIR` renders an HTML report from the latest crawl in `DIR/coqui.db` to `DIR/report-issues.html`. Verified end-to-end (3 URLs).
+`coqui reports` lists report types; `coqui report issues --out DIR` renders an HTML report from the latest crawl in `DIR/coqui.db` to `DIR/report-issues.html`. `--top N` limits list rows and `--status CODE` filters by HTTP status. Verified end-to-end (`report performance --top 1 --status 200`).
 
 ## Output
 
@@ -70,6 +70,7 @@ render_workers = 2
 ## Current limits
 
 Supports URL/sitemap/list seeds, crawl limits, user agent, custom headers, basic auth, timeout, and rendering with screenshots/axe/Web Vitals. Export formats, config files, profiles and checkpoint/resume flags are next.
+
 
 
 
