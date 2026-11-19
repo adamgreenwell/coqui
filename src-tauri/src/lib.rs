@@ -789,6 +789,21 @@ fn app_info(state: State<'_, AppState>, app: tauri::AppHandle) -> serde_json::Va
 }
 
 #[tauri::command]
+fn depth_counts(
+    state: State<'_, AppState>,
+    crawl_id: String,
+) -> Result<Vec<serde_json::Value>, String> {
+    let counts = state
+        .store
+        .depth_counts(&crawl_id)
+        .map_err(|error| error.to_string())?;
+    Ok(counts
+        .into_iter()
+        .map(|(depth, count)| serde_json::json!({"depth": depth, "count": count}))
+        .collect())
+}
+
+#[tauri::command]
 fn indexability_stats(
     state: State<'_, AppState>,
     crawl_id: String,
@@ -1154,6 +1169,7 @@ pub fn run() {
             app_info,
             response_stats,
             indexability_stats,
+            depth_counts,
             get_url_detail,
             export_pdf_report,
             run_due_schedules,
