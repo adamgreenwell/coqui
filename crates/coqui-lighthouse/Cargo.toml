@@ -1,0 +1,10 @@
+[package]
+name = "coqui-lighthouse"
+description = "Parse Lighthouse JSON reports into compact summaries"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true

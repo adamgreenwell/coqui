@@ -18,6 +18,7 @@ coqui-core.workspace = true
 coqui-store.workspace = true
 coqui-crawl.workspace = true
 coqui-audit.workspace = true
+coqui-lighthouse.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

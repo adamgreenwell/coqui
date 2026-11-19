@@ -11,7 +11,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const SCHEMA_VERSION: i32 = 11;
+pub const SCHEMA_VERSION: i32 = 12;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -92,6 +92,14 @@ CREATE TABLE IF NOT EXISTS issues (
 );
 
 CREATE INDEX IF NOT EXISTS idx_issues_crawl_rule ON issues (crawl_id, rule);
+
+CREATE TABLE IF NOT EXISTS lighthouse_reports (
+    crawl_id   TEXT NOT NULL,
+    url_id     INTEGER NOT NULL,
+    summary_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (crawl_id, url_id)
+);
 
 CREATE TABLE IF NOT EXISTS screenshot_files (
     crawl_id   TEXT NOT NULL,
@@ -540,6 +548,33 @@ impl Store {
         Ok(legacy)
     }
 
+    pub fn get_url(&self, crawl_id: &str, url_id: i64) -> Result<Option<UrlRecord>> {
+        Ok(self
+            .all_urls(crawl_id)?
+            .into_iter()
+            .find(|record| record.id == url_id))
+    }
+    pub fn save_lighthouse(&self, crawl_id: &str, url_id: i64, summary_json: &str) -> Result<()> {
+        self.lock()?.execute(
+            "INSERT OR REPLACE INTO lighthouse_reports (crawl_id, url_id, summary_json, created_at)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![crawl_id, url_id, summary_json, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_lighthouse(&self, crawl_id: &str, url_id: i64) -> Result<Option<String>> {
+        let summary = self
+            .lock()?
+            .query_row(
+                "SELECT summary_json FROM lighthouse_reports WHERE crawl_id = ?1 AND url_id = ?2",
+                params![crawl_id, url_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(summary)
+    }
+
     pub fn all_links(&self, crawl_id: &str) -> Result<Vec<LinkRecord>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
@@ -774,6 +809,17 @@ fn migrate(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_links_crawl_from ON links (crawl_id, from_id);
          CREATE INDEX IF NOT EXISTS idx_links_crawl_to ON links (crawl_id, to_id);",
     )?;
+    if version < 12 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS lighthouse_reports (
+                crawl_id     TEXT NOT NULL,
+                url_id       INTEGER NOT NULL,
+                summary_json TEXT NOT NULL,
+                created_at   INTEGER NOT NULL,
+                PRIMARY KEY (crawl_id, url_id)
+            );",
+        )?;
+    }
     if version < 11 {
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS screenshot_files (
@@ -1052,6 +1098,18 @@ mod tests {
         );
         assert!(dir.join("screenshots/c1/7.jpg").exists());
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn lighthouse_reports_round_trip() {
+        let store = Store::open_in_memory().unwrap();
+        let summary = r#"{"performance":0.72,"accessibility":0.95,"bestPractices":0.57,"seo":0.42,"audits":[],"finalUrl":null,"fetchTime":null}"#;
+        store.save_lighthouse("c1", 3, summary).unwrap();
+        assert_eq!(
+            store.get_lighthouse("c1", 3).unwrap().as_deref(),
+            Some(summary)
+        );
+        assert!(store.get_lighthouse("c1", 4).unwrap().is_none());
     }
 
     #[test]

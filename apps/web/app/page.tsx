@@ -54,6 +54,23 @@ interface CrawlConfig {
   webVitals: boolean;
 }
 
+interface LighthouseAudit {
+  id: string;
+  title: string;
+  score: number | null;
+  displayValue: string | null;
+}
+
+interface LighthouseSummary {
+  performance: number | null;
+  accessibility: number | null;
+  bestPractices: number | null;
+  seo: number | null;
+  audits: LighthouseAudit[];
+  finalUrl: string | null;
+  fetchTime: string | null;
+}
+
 interface CrawlSummary {
   id: string;
   seed: string;
@@ -243,6 +260,9 @@ export default function Home() {
   const [accessibility, setAccessibility] = useState(false);
   const [webVitals, setWebVitals] = useState(false);
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
+  const [lighthouse, setLighthouse] = useState<LighthouseSummary | null>(null);
+  const [lighthouseBusy, setLighthouseBusy] = useState(false);
+  const [lighthouseError, setLighthouseError] = useState<string | null>(null);
 
   const [crawl, setCrawl] = useState<CrawlSummary | null>(null);
   const [phase, setPhase] = useState<CrawlStatus | 'idle'>('idle');
@@ -487,6 +507,29 @@ export default function Home() {
                 Shot
               </button>
             )}
+            <button
+              className="link"
+              type="button"
+              disabled={lighthouseBusy}
+              onClick={async () => {
+                setLighthouseBusy(true);
+                setLighthouseError(null);
+                try {
+                  const { invoke } = await import('@tauri-apps/api/core');
+                  const report = await invoke<LighthouseSummary>('run_lighthouse', {
+                    crawlId: row.crawlId,
+                    urlId: row.id,
+                  });
+                  setLighthouse(report);
+                } catch (cause) {
+                  setLighthouseError(cause instanceof Error ? cause.message : String(cause));
+                } finally {
+                  setLighthouseBusy(false);
+                }
+              }}
+            >
+              {lighthouseBusy ? 'LH…' : 'LH'}
+            </button>
           </div>
         );
       case 'lcp':
@@ -842,7 +885,7 @@ export default function Home() {
           </form>
 
           <p className="footer-note" style={{ marginTop: 18, marginBottom: 0 }}>
-            Next up: Lighthouse and axe audits on rendered pages.
+            Next up: bundled Node + Lighthouse for offline audits.
           </p>
         </aside>
 
@@ -855,6 +898,47 @@ export default function Home() {
           )}
 
           {error && <div className="error">{error}</div>}
+
+          {lighthouseError && <div className="error">{lighthouseError}</div>}
+
+          {lighthouse && (
+            <div
+              className="modal-backdrop"
+              role="presentation"
+              onClick={() => setLighthouse(null)}
+            >
+              <div className="modal" role="dialog" aria-label="Lighthouse report">
+                <h3>Lighthouse</h3>
+                <div className="lh-scores">
+                  {(
+                    [
+                      ['Performance', lighthouse.performance],
+                      ['Accessibility', lighthouse.accessibility],
+                      ['Best practices', lighthouse.bestPractices],
+                      ['SEO', lighthouse.seo],
+                    ] as const
+                  ).map(([label, score]) => (
+                    <div key={label} className="lh-score">
+                      <span>{label}</span>
+                      <strong>{score == null ? '—' : Math.round(score * 100)}</strong>
+                    </div>
+                  ))}
+                </div>
+                <ul className="lh-audits">
+                  {lighthouse.audits.map((audit) => (
+                    <li key={audit.id}>
+                      <strong>{audit.title}</strong>
+                      {audit.displayValue ? ` — ${audit.displayValue}` : ''}
+                      <span> ({audit.score == null ? '—' : Math.round(audit.score * 100)})</span>
+                    </li>
+                  ))}
+                </ul>
+                <button className="secondary" type="button" onClick={() => setLighthouse(null)}>
+                  Close
+                </button>
+              </div>
+            </div>
+          )}
 
           {screenshotUrl && (
             <div
@@ -1083,7 +1167,7 @@ export default function Home() {
           <p className="footer-note">
             M4 scope: URL/sitemap/list seeds, regex scope, auth, robots.txt, redirects, Chromium
             rendering with screenshots and console capture, structured data, axe accessibility, Web Vitals, 24 audit rules and
-            pause/resume. Next: Lighthouse and axe audits.
+            pause/resume. Next: bundled Node + Lighthouse for offline audits.
           </p>
         </main>
       </div>

@@ -6,6 +6,7 @@ members = [
   "crates/coqui-crawl",
   "crates/coqui-audit",
   "crates/coqui-render",
+  "crates/coqui-lighthouse",
   "src-tauri",
 ]
 
@@ -20,6 +21,7 @@ coqui-store = { path = "crates/coqui-store" }
 coqui-crawl = { path = "crates/coqui-crawl" }
 coqui-audit = { path = "crates/coqui-audit" }
 coqui-render = { path = "crates/coqui-render" }
+coqui-lighthouse = { path = "crates/coqui-lighthouse" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

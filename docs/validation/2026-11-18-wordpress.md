@@ -147,6 +147,19 @@ Console errors are dominated by `ERR_BLOCKED_BY_CLIENT` resource failures and a 
 
 The pool launched four separate browsers, which spawned ~144 OS processes. A follow-up benchmark on 50 pages showed four separate browsers at 85–93 s / ~144 processes; one browser with four tabs at 64.1 s / 34 processes; eight tabs at 63.1 s. Blocking fonts/media or third-party scripts gave no further gain. A single stage homepage took 14.6 s to reach full load, so remaining throughput is site-bound.
 
+### Lighthouse (staging homepage)
+
+Lighthouse 12.8.2 via system npx, Edge headless:
+
+| Category | Score |
+| --- | --- |
+| Performance | 72 |
+| Accessibility | 95 |
+| Best practices | 57 |
+| SEO | 42 |
+
+Top failing audits: back/forward cache, colour contrast, crawlable anchors, deprecated APIs, forced reflow. The SEO score reflects staging's missing canonical/noindex config.
+
 ### Web Vitals (staging)
 
 Fifty rendered staging pages with vitals enabled:

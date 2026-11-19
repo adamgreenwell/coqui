@@ -466,6 +466,7 @@ dependencies = [
  "coqui-audit",
  "coqui-core",
  "coqui-crawl",
+ "coqui-lighthouse",
  "coqui-store",
  "serde",
  "serde_json",
@@ -519,6 +520,14 @@ dependencies = [
  "tracing",
  "url",
  "uuid",
+]
+
+[[package]]
+name = "coqui-lighthouse"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
