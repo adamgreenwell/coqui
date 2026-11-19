@@ -336,7 +336,18 @@ export default function Home() {
   const [exportPattern, setExportPattern] = useState('');
   const [skipEmpty, setSkipEmpty] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [columns, setColumns] = useState<Record<ColumnKey, boolean>>(DEFAULT_COLUMNS);
+  const [columns, setColumns] = useState<Record<ColumnKey, boolean>>(() => {
+    const fallback = { ...DEFAULT_COLUMNS };
+    if (typeof window === 'undefined') return fallback;
+    try {
+      const raw = window.localStorage.getItem('coqui.columns');
+      if (!raw) return fallback;
+      const parsed = JSON.parse(raw) as Partial<Record<ColumnKey, boolean>>;
+      return { ...fallback, ...parsed };
+    } catch {
+      return fallback;
+    }
+  });
   const [columnsOpen, setColumnsOpen] = useState(false);
 
   useEffect(() => {
@@ -521,6 +532,15 @@ export default function Home() {
     setPage(1);
     if (crawl) void loadPage(crawl.id, 1, activeIssue);
   };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem('coqui.columns', JSON.stringify(columns));
+    } catch {
+      // storage may be unavailable
+    }
+  }, [columns]);
 
   const clearFilters = () => {
     setQueryInput('');
