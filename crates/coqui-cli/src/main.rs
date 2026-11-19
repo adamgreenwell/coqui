@@ -245,8 +245,34 @@ fn run_report(values: &[String]) -> Result<(), String> {
                 index += 1;
                 out = PathBuf::from(values.get(index).ok_or("missing --out value")?);
             }
+            "--top" | "--status" => {
+                index += 1;
+            }
             other if !other.starts_with("--") => kind = other.to_string(),
             other => return Err(format!("unknown option '{other}'")),
+        }
+        index += 1;
+    }
+    let mut options = coqui_report::ReportOptions::default();
+    let mut index = 0;
+    while index < values.len() {
+        match values[index].as_str() {
+            "--out" => {
+                index += 1;
+            }
+            "--top" => {
+                index += 1;
+                options.top = values.get(index).ok_or("missing --top value")?.parse().ok();
+            }
+            "--status" => {
+                index += 1;
+                options.status = values
+                    .get(index)
+                    .ok_or("missing --status value")?
+                    .parse()
+                    .ok();
+            }
+            _ => {}
         }
         index += 1;
     }
@@ -259,7 +285,7 @@ fn run_report(values: &[String]) -> Result<(), String> {
         .map_err(|error| error.to_string())?
         .ok_or_else(|| "no crawl found".to_string())?;
     let path = out.join(format!("report-{kind}.html"));
-    let urls = coqui_report::write_report(&store, &crawl.id, &path, &kind)?;
+    let urls = coqui_report::write_report_with(&store, &crawl.id, &path, &kind, &options)?;
     println!("report: {} ({} urls)", path.display(), urls);
     Ok(())
 }

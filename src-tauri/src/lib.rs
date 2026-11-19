@@ -453,6 +453,8 @@ fn export_html_report(
     crawl_id: String,
     pattern: Option<String>,
     report: Option<String>,
+    top: Option<u32>,
+    status: Option<u16>,
 ) -> Result<String, String> {
     let dir = state.data_dir.join("exports");
     std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
@@ -469,11 +471,16 @@ fn export_html_report(
         "html",
     );
     let path = dir.join(filename);
-    coqui_report::write_report(
+    let options = coqui_report::ReportOptions {
+        top: top.map(|value| value as usize),
+        status,
+    };
+    coqui_report::write_report_with(
         &state.store,
         &crawl_id,
         &path,
         report.as_deref().unwrap_or("summary"),
+        &options,
     )?;
     Ok(path.to_string_lossy().to_string())
 }
