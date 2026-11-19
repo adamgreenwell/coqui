@@ -103,6 +103,7 @@ pub async fn run_crawl(
     checkpoint: Option<CrawlCheckpoint>,
     on_progress: Arc<dyn Fn(CrawlProgress) + Send + Sync>,
 ) -> Result<CrawlResult, CrawlError> {
+    let extractors = store.list_extractors(&crawl_id).unwrap_or_default();
     let mut headers = HeaderMap::new();
     for line in &config.custom_headers {
         let Some((name, value)) = line.split_once(':') else {
@@ -421,6 +422,12 @@ pub async fn run_crawl(
                     }
                 }
 
+                if !extractors.is_empty() {
+                    let body = outcome.body.as_deref().unwrap_or_default();
+                    for (name, value) in extract::apply_extractors(body, &extractors) {
+                        store.save_extraction(&crawl_id, page_id, &name, &value)?;
+                    }
+                }
                 if let Some(page) = extracted {
                     store.replace_images(&crawl_id, page_id, &page.images)?;
                     if config.store_text {

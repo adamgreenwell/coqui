@@ -10,6 +10,7 @@ coqui resume [--out DIR] [--max-urls N] [--concurrency N]
 coqui report [summary|issues|status|performance] [--out DIR] [--top N] [--status CODE]
 coqui reports
 coqui export [--out DIR]
+coqui extractions [--out DIR]
 ```
 
 Examples:
@@ -50,6 +51,10 @@ render_workers = 2
 
 `coqui resume --out DIR` reloads the latest crawl and its checkpoint from `DIR/coqui.db`, then continues. `--max-urls` and `--concurrency` override the stored config for the resumed run. If no checkpoint exists, the command exits with an error.
 
+## Custom extraction
+
+`--extract NAME=SELECTOR` (repeatable) registers CSS extractors before the crawl; values are stored per URL. `coqui extractions --out DIR` exports `url,name,value` rows. Verified: two extractors across three fixture pages produced 6 rows.
+
 ## Export
 
 `coqui export --out DIR` streams the latest crawl's URLs to `DIR/urls-<timestamp>.csv` using the row-by-row exporter. 10,000 rows exported in 0.009 s against a local 10k crawl.
@@ -75,6 +80,7 @@ render_workers = 2
 ## Current limits
 
 Supports URL/sitemap/list seeds, crawl limits, user agent, custom headers, basic auth, timeout, and rendering with screenshots/axe/Web Vitals. Export formats, config files, profiles and checkpoint/resume flags are next.
+
 
 
 

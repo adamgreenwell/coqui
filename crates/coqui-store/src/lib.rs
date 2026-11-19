@@ -690,6 +690,73 @@ impl Store {
         Ok(rows)
     }
 
+    pub fn add_extractor(&self, crawl_id: &str, name: &str, selector: &str) -> Result<()> {
+        self.lock()?.execute(
+            "INSERT INTO extractors (crawl_id, name, selector) VALUES (?1, ?2, ?3)
+             ON CONFLICT(crawl_id, name) DO UPDATE SET selector = excluded.selector",
+            params![crawl_id, name, selector],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_extractors(&self, crawl_id: &str) -> Result<Vec<(String, String)>> {
+        let conn = self.lock()?;
+        let mut stmt = conn
+            .prepare("SELECT name, selector FROM extractors WHERE crawl_id = ?1 ORDER BY name")?;
+        let rows = stmt
+            .query_map(params![crawl_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn delete_extractor(&self, crawl_id: &str, name: &str) -> Result<usize> {
+        let changed = self.lock()?.execute(
+            "DELETE FROM extractors WHERE crawl_id = ?1 AND name = ?2",
+            params![crawl_id, name],
+        )?;
+        Ok(changed)
+    }
+
+    pub fn save_extraction(
+        &self,
+        crawl_id: &str,
+        url_id: i64,
+        name: &str,
+        value: &str,
+    ) -> Result<()> {
+        self.lock()?.execute(
+            "INSERT INTO extractions (crawl_id, url_id, name, value) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(crawl_id, url_id, name) DO UPDATE SET value = excluded.value",
+            params![crawl_id, url_id, name, value],
+        )?;
+        Ok(())
+    }
+
+    pub fn export_extractions_csv(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT u.url, e.name, e.value FROM extractions e
+             JOIN urls u ON u.id = e.url_id AND u.crawl_id = e.crawl_id
+             WHERE e.crawl_id = ?1 ORDER BY u.url, e.name",
+        )?;
+        let mut writer = csv::Writer::from_path(path)?;
+        writer.write_record(["url", "name", "value"])?;
+        let mut rows = 0u64;
+        let mut records = stmt.query(params![crawl_id])?;
+        while let Some(row) = records.next()? {
+            let url: String = row.get(0)?;
+            let name: String = row.get(1)?;
+            let value: String = row.get(2)?;
+            writer.write_record([url, name, value])?;
+            rows += 1;
+        }
+        writer.flush()?;
+        Ok(rows)
+    }
+
     pub fn save_page_text(
         &self,
         crawl_id: &str,
@@ -1434,6 +1501,8 @@ impl Store {
         conn.execute("DELETE FROM screenshots WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM images WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM page_text WHERE crawl_id = ?1", params![id])?;
+        conn.execute("DELETE FROM extractions WHERE crawl_id = ?1", params![id])?;
+        conn.execute("DELETE FROM extractors WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM links WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM url_map WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM urls WHERE crawl_id = ?1", params![id])?;
@@ -1537,9 +1606,41 @@ fn migrate(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_links_crawl_from ON links (crawl_id, from_id);
          CREATE INDEX IF NOT EXISTS idx_links_crawl_to ON links (crawl_id, to_id);",
     )?;
+    if version < 17 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS extractors (
+                crawl_id TEXT NOT NULL,
+                name     TEXT NOT NULL,
+                selector TEXT NOT NULL,
+                PRIMARY KEY (crawl_id, name)
+            );
+            CREATE TABLE IF NOT EXISTS extractions (
+                crawl_id TEXT NOT NULL,
+                url_id   INTEGER NOT NULL,
+                name     TEXT NOT NULL,
+                value    TEXT NOT NULL,
+                PRIMARY KEY (crawl_id, url_id, name)
+            );",
+        )?;
+    }
     if version < 16 {
         conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS page_text (
+            "CREATE TABLE IF NOT EXISTS extractors (
+    crawl_id TEXT NOT NULL,
+    name     TEXT NOT NULL,
+    selector TEXT NOT NULL,
+    PRIMARY KEY (crawl_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS extractions (
+    crawl_id TEXT NOT NULL,
+    url_id   INTEGER NOT NULL,
+    name     TEXT NOT NULL,
+    value    TEXT NOT NULL,
+    PRIMARY KEY (crawl_id, url_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS page_text (
                 crawl_id TEXT NOT NULL,
                 url_id   INTEGER NOT NULL,
                 text     TEXT NOT NULL,
@@ -2079,6 +2180,33 @@ mod tests {
         assert_eq!(store.export_sitemap_bundle("c1", &gz, true).unwrap(), 2);
         let bytes = std::fs::read(gz.join("sitemap-1.xml.gz")).unwrap();
         assert_eq!(&bytes[..2], &[0x1f, 0x8b]);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn custom_extractions_round_trip() {
+        let dir = std::env::temp_dir().join(format!("coqui-extract-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        store
+            .create_crawl(
+                "c1",
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        store
+            .insert_url(&sample_record("c1", "https://example.com/"))
+            .unwrap();
+        let id = store.url_id("c1", "https://example.com/").unwrap().unwrap();
+        store.add_extractor("c1", "h1", "h1").unwrap();
+        assert_eq!(store.list_extractors("c1").unwrap().len(), 1);
+        store.save_extraction("c1", id, "h1", "Hello").unwrap();
+        let path = dir.join("extractions.csv");
+        assert_eq!(store.export_extractions_csv("c1", &path).unwrap(), 1);
+        assert!(std::fs::read_to_string(&path).unwrap().contains("Hello"));
         std::fs::remove_dir_all(dir).ok();
     }
 
