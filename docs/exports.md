@@ -43,4 +43,5 @@ With **Skip empty** enabled, an export with zero rows is discarded and no path i
 
 ## Limits
 
-Exports currently load the crawl rows into memory before writing. Streaming for very large crawls (1M rows) is still pending.
+URL CSV exports stream row-by-row from SQLite, so they do not hold the crawl in memory. XLSX exports and the data exports (headers, images, a11y, structured, vitals, console) still materialise their rows.
+
