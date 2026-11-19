@@ -769,6 +769,27 @@ export default function Home() {
     return `${link.url} ${link.anchor}`.toLowerCase().includes(needle);
   };
 
+  const exportLinks = () => {
+    if (!detail) return;
+    const cell = (value: string) => `"${value.replace(/"/g, '""')}"`;
+    const page = String(detail.url.url ?? '');
+    const rows: string[][] = [['direction', 'url', 'anchor', 'page']];
+    for (const link of detail.inboundLinks.filter(matchesLink)) {
+      rows.push(['in', link.url, link.anchor, page]);
+    }
+    for (const link of detail.outboundLinks.filter(matchesLink)) {
+      rows.push(['out', link.url, link.anchor, page]);
+    }
+    const csv = rows.map((row) => row.map(cell).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `links-${String(detail.url.id)}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
   const openDetail = async (row: UrlRow) => {
     try {
       const { invoke } = await import('@tauri-apps/api/core');
@@ -2029,6 +2050,16 @@ export default function Home() {
                     }
                   >
                     {copied === 'link' ? 'Copied link' : 'Copy link'}
+                  </button>
+                  <button
+                    className="secondary"
+                    type="button"
+                    disabled={
+                      detail.inboundLinks.length + detail.outboundLinks.length === 0
+                    }
+                    onClick={exportLinks}
+                  >
+                    Export links CSV
                   </button>
                 </div>
                 <ul className="settings-reference">
