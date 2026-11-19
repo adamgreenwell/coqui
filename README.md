@@ -10,13 +10,26 @@ Named after the *coquí*, the tiny frog native to Puerto Rico whose call is ever
 
 ## Status
 
-**M3 seeds & scope.** The parity target has been reverse-engineered and inventoried; the Tauri 2 shell, Rust crawl engine, URL/sitemap/list seeds, regex scope, basic auth, robots.txt and redirect handling, six audit rules, pause/resume and the live Next.js results view are in place.
+**M6 — parity breadth.** The Tauri 2 shell, Rust crawl engine, rendered audits, Lighthouse, exports/reports, scheduling, CLI and MCP server are working end to end.
+
+**What ships today**
+
+- **Crawl:** URL/sitemap/list seeds, regex scope, auth/headers, robots.txt, redirect chains, pause/resume, checkpoints, crawl profiles.
+- **Render:** headless Chromium over CDP, screenshots, console capture, axe accessibility, Web Vitals, custom JavaScript.
+- **Audit:** 24 rules across SEO, hreflang/pagination, JSON-LD, accessibility and vitals.
+- **Exports and reports:** CSV/XLSX for URLs/issues/links, headers, images, a11y, structured data, vitals, console, text/Markdown, custom extraction, custom JS, screenshots, sitemaps, HTML/PDF reports.
+- **Workflow:** saved views, filters (search/status/class/content/depth/indexability), interval scheduler with run-due, CLI, stdio MCP server.
 
 - [Feature inventory](docs/feature-inventory.md) — what the reference product does, measured
 - [Development plan](docs/development-plan.md) — architecture, phases, estimates, risks
 - [Reverse-engineering notes](docs/reverse-engineering.md) — evidence and limitations
 - [WordPress validation](docs/validation/2026-11-18-wordpress.md) — first real-site crawl results and the Cloudflare finding
 - [Dev setup](docs/dev-setup.md) — run the desktop shell, tests and builds
+- [Exports reference](docs/exports.md) — export families, filename tokens, skip-empty
+- [CLI reference](docs/cli.md) — crawl, reports, exports, sitemaps, schedules, MCP
+- [Packaging](docs/packaging.md) — installers, sidecars, release jobs
+- [Benchmarks](docs/benchmarks.md) — 10k/50k/1M measurements
+- [Wiki](https://github.com/adamgreenwell/coqui/wiki) — architecture and feature notes
 - [Parity matrix](docs/reference/parity-matrix.csv) — every feature, phase, size, priority
 - [Backlog](https://github.com/adamgreenwell/coqui/issues) and [project board](https://github.com/users/adamgreenwell/projects/16/views/1?layout_template=board)
 
@@ -64,8 +77,8 @@ Tauri is the application shell. The Rust workspace runs in-process and owns craw
 ## Repository layout
 
 ```
-apps/web              Next.js workspace (planned)
-crates/               Rust workspace (planned)
+apps/web              Next.js workspace
+crates/               Rust workspace
 docs/                 inventory, plan, reverse-engineering notes, reference data
 tools/plan/           backlog data and generators (single source of truth)
 ```
@@ -87,6 +100,7 @@ The backlog is the roadmap. Pick an issue from the board, comment to claim it, a
 ## License
 
 To be decided by the project owner before the first code release (MIT or Apache-2.0 are the candidates). Until then, no license is granted for reuse.
+
 
 
 
