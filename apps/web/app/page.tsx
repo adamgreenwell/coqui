@@ -336,6 +336,14 @@ export default function Home() {
   const [exportPattern, setExportPattern] = useState('');
   const [skipEmpty, setSkipEmpty] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [sortKey, setSortKey] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return window.localStorage.getItem('coqui.sortKey');
+  });
+  const [sortDesc, setSortDesc] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem('coqui.sortDesc') === '1';
+  });
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [columns, setColumns] = useState<Record<ColumnKey, boolean>>(() => {
     const fallback = { ...DEFAULT_COLUMNS };
@@ -360,7 +368,13 @@ export default function Home() {
   }, []);
 
   const loadPage = useCallback(
-    async (crawlId: string, pageNumber: number, issue: string | null, size = pageSize) => {
+    async (
+      crawlId: string,
+      pageNumber: number,
+      issue: string | null,
+      size = pageSize,
+      order: { key: string | null; desc: boolean } = { key: sortKey, desc: sortDesc },
+    ) => {
       const { invoke } = await import('@tauri-apps/api/core');
       const data = await invoke<UrlPage>('list_urls', {
         crawlId,
@@ -373,11 +387,13 @@ export default function Home() {
         contentClass: contentFilter || null,
         maxDepth: maxDepthFilter.trim() ? Number(maxDepthFilter) : null,
         indexability: indexFilter || null,
+        sort: order.key,
+        descending: order.desc,
       });
       setRows(data.rows);
       setTotal(data.total);
     },
-    [queryInput, statusFilter, pageSize],
+    [queryInput, statusFilter, pageSize, sortKey, sortDesc],
   );
 
   const loadIssues = useCallback(async (crawlId: string) => {
@@ -554,6 +570,15 @@ export default function Home() {
       // storage may be unavailable
     }
   }, [pageSize]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('coqui.sortKey', sortKey ?? '');
+      window.localStorage.setItem('coqui.sortDesc', sortDesc ? '1' : '0');
+    } catch {
+      // storage may be unavailable
+    }
+  }, [sortKey, sortDesc]);
 
   const clearFilters = () => {
     setQueryInput('');
@@ -2433,8 +2458,28 @@ export default function Home() {
                           className={
                             ['words', 'depth', 'time'].includes(column.key) ? 'num' : undefined
                           }
+                          onClick={() => {
+                            if (
+                              !['url', 'status', 'depth', 'words', 'time', 'size'].includes(
+                                column.key,
+                              ) ||
+                              !crawl
+                            ) {
+                              return;
+                            }
+                            const nextDesc = sortKey === column.key ? !sortDesc : false;
+                            setSortKey(column.key);
+                            setSortDesc(nextDesc);
+                            setPage(1);
+                            void loadPage(crawl.id, 1, activeIssue, pageSize, {
+                              key: column.key,
+                              desc: nextDesc,
+                            });
+                          }}
+                          style={{ cursor: 'pointer' }}
                         >
                           {column.label}
+                          {sortKey === column.key ? (sortDesc ? ' ↓' : ' ↑') : ''}
                         </th>
                       ))}
                     </tr>
@@ -2513,6 +2558,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 
