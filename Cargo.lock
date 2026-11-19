@@ -477,6 +477,7 @@ dependencies = [
  "coqui-core",
  "coqui-crawl",
  "coqui-lighthouse",
+ "coqui-report",
  "coqui-store",
  "reqwest",
  "serde",
@@ -568,6 +569,14 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "uuid",
+]
+
+[[package]]
+name = "coqui-report"
+version = "0.1.0"
+dependencies = [
+ "coqui-core",
+ "coqui-store",
 ]
 
 [[package]]

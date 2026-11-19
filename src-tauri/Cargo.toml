@@ -19,6 +19,7 @@ coqui-store.workspace = true
 coqui-crawl.workspace = true
 coqui-audit.workspace = true
 coqui-lighthouse.workspace = true
+coqui-report.workspace = true
 base64.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -28,6 +29,7 @@ tokio-util.workspace = true
 uuid.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+
 
 
 
