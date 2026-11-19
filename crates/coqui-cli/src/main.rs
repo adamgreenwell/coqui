@@ -623,6 +623,11 @@ fn tool_definitions() -> serde_json::Value {
             "inputSchema": {"type": "object", "properties": {"crawl_id": {"type": "string"}}, "required": ["crawl_id"]}
         },
         {
+            "name": "export_family",
+            "description": "Export a crawl table family to CSV and return the path.",
+            "inputSchema": {"type": "object", "properties": {"crawl_id": {"type": "string"}, "family": {"type": "string"}, "path": {"type": "string"}}, "required": ["crawl_id", "family"]}
+        },
+        {
             "name": "start_crawl",
             "description": "Start a crawl in the background and return its id.",
             "inputSchema": {"type": "object", "properties": {"seed": {"type": "string"}, "seedKind": {"type": "string"}, "maxUrls": {"type": "integer"}}, "required": ["seed"]}
@@ -777,6 +782,40 @@ fn call_tool(
                 .export_urls_csv(&crawl_id_value, &path, &[], None)
                 .map_err(|error| error.to_string())?;
             Ok(serde_json::json!({"path": path.to_string_lossy(), "rows": rows}))
+        }
+        "export_family" => {
+            let crawl_id_value = crawl_id()?;
+            let family = arguments
+                .get("family")
+                .and_then(|value| value.as_str())
+                .ok_or_else(|| "family is required".to_string())?;
+            let path = arguments
+                .get("path")
+                .and_then(|value| value.as_str())
+                .map(PathBuf::from)
+                .unwrap_or_else(|| out.join(format!("{family}-{}.csv", now_ms())));
+            let rows = match family {
+                "urls" => store.export_urls_csv(&crawl_id_value, &path, &[], None),
+                "issues" => store.export_issues_csv(&crawl_id_value, &path),
+                "links" => store.export_links_csv(&crawl_id_value, &path),
+                "headers" => store.export_headers_csv(&crawl_id_value, &path),
+                "images" => store.export_images_csv(&crawl_id_value, &path),
+                "a11y" => store.export_accessibility_csv(&crawl_id_value, &path),
+                "structured" => store.export_structured_data_csv(&crawl_id_value, &path),
+                "vitals" => store.export_vitals_csv(&crawl_id_value, &path),
+                "console" => store.export_console_csv(&crawl_id_value, &path),
+                "text" => store.export_text_csv(&crawl_id_value, &path),
+                "markdown" => store.export_markdown_csv(&crawl_id_value, &path),
+                "extractions" => store.export_extractions_csv(&crawl_id_value, &path),
+                "custom-js" => store.export_custom_js_csv(&crawl_id_value, &path),
+                other => return Err(format!("unknown export family '{other}'")),
+            }
+            .map_err(|error| error.to_string())?;
+            Ok(serde_json::json!({
+                "path": path.to_string_lossy(),
+                "rows": rows,
+                "family": family,
+            }))
         }
         "start_crawl" => {
             let seed = arguments
