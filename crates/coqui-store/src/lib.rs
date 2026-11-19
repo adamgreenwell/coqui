@@ -617,6 +617,18 @@ impl Store {
         Ok(counts)
     }
 
+    /// URL counts grouped by crawl depth.
+    pub fn depth_counts(&self, crawl_id: &str) -> Result<Vec<(i64, i64)>> {
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT depth, COUNT(*) FROM urls WHERE crawl_id = ?1 GROUP BY depth ORDER BY depth",
+        )?;
+        let rows = stmt
+            .query_map(params![crawl_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     pub fn status_counts(&self, crawl_id: &str) -> Result<Vec<(Option<u16>, i64)>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
@@ -3017,6 +3029,29 @@ mod tests {
         assert!(store.issue_counts("c1").unwrap().is_empty());
         assert_eq!(store.restore_rule("c1", "missing_title").unwrap(), 1);
         assert_eq!(store.issue_counts("c1").unwrap().len(), 1);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn depth_counts_group_by_depth() {
+        let dir = std::env::temp_dir().join(format!("coqui-depth-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        store
+            .create_crawl(
+                "c1",
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        for (index, depth) in [0i64, 1, 1].into_iter().enumerate() {
+            let mut record = sample_record("c1", &format!("https://example.com/{index}"));
+            record.depth = depth;
+            store.insert_url(&record).unwrap();
+        }
+        assert_eq!(store.depth_counts("c1").unwrap(), vec![(0, 1), (1, 2)]);
         std::fs::remove_dir_all(dir).ok();
     }
 

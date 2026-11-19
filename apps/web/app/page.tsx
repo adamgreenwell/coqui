@@ -351,6 +351,7 @@ export default function Home() {
     noindex: number;
     blocked: number;
   } | null>(null);
+  const [depthCounts, setDepthCounts] = useState<{ depth: number; count: number }[]>([]);
   const [activeIssue, setActiveIssue] = useState<string | null>(null);
   const [queryInput, setQueryInput] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -592,6 +593,10 @@ export default function Home() {
           { crawlId: crawl.id },
         );
         setIndexStats(index);
+        const depths = await invoke<{ depth: number; count: number }[]>('depth_counts', {
+          crawlId: crawl.id,
+        });
+        setDepthCounts(depths);
       } catch {
         // overview is best-effort
       }
@@ -1088,6 +1093,15 @@ export default function Home() {
     }
     return totals;
   }, [issues]);
+
+  const depthBuckets = useMemo(() => {
+    const buckets = [0, 0, 0, 0];
+    for (const row of depthCounts) {
+      const index = Math.min(Math.max(row.depth, 0), 3);
+      buckets[index] += row.count;
+    }
+    return buckets;
+  }, [depthCounts]);
 
   const activeFilterCount = [
     queryInput.trim(),
@@ -2189,6 +2203,12 @@ export default function Home() {
                   <strong>{indexStats[key]}</strong>
                 </button>
               ))}
+            {(['0', '1', '2', '3+'] as const).map((label, index) => (
+              <div key={`depth-${label}`}>
+                <span>Depth {label}</span>
+                <strong>{depthBuckets[index] ?? 0}</strong>
+              </div>
+            ))}
           </section>
 
           <section className="panel results">
