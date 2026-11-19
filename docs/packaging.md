@@ -58,3 +58,7 @@ The release workflow builds the CLI for the three desktop platforms, publishes t
 
 
 
+
+
+Code signing and notarization: see [signing.md](signing.md). Artifacts are currently unsigned.
+

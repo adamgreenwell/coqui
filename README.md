@@ -28,6 +28,7 @@ Named after the *coquí*, the tiny frog native to Puerto Rico whose call is ever
 - [Exports reference](docs/exports.md) — export families, filename tokens, skip-empty
 - [CLI reference](docs/cli.md) — crawl, reports, exports, sitemaps, schedules, MCP
 - [Packaging](docs/packaging.md) — installers, sidecars, release jobs
+- [Code signing runbook](docs/signing.md) — Windows/macOS signing steps (pending certificates)
 - [Benchmarks](docs/benchmarks.md) — 10k/50k/1M measurements
 - [Wiki](https://github.com/adamgreenwell/coqui/wiki) — architecture and feature notes
 - [Parity matrix](docs/reference/parity-matrix.csv) — every feature, phase, size, priority
@@ -100,6 +101,7 @@ The backlog is the roadmap. Pick an issue from the board, comment to claim it, a
 ## License
 
 To be decided by the project owner before the first code release (MIT or Apache-2.0 are the candidates). Until then, no license is granted for reuse.
+
 
 
 
