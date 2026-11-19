@@ -1500,8 +1500,8 @@ mod tests {
             .unwrap();
         add_url(&store, id, "https://example.com/a", Some("A"), 1, 600);
         add_url(&store, id, "https://example.com/b", Some("B"), 1, 600);
-        let from = store.url_id(id, "https://example.com/a").unwrap().unwrap();
-        let to = store.url_id(id, "https://example.com/b").unwrap().unwrap();
+        let from = store.ensure_url_id(id, "https://example.com/a").unwrap();
+        let to = store.ensure_url_id(id, "https://example.com/b").unwrap();
         store
             .insert_link(id, from, to, Some("b"), Some("nofollow"), true)
             .unwrap();
