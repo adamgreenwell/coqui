@@ -152,6 +152,13 @@ CREATE TABLE IF NOT EXISTS issue_suppressions (
     rule     TEXT NOT NULL,
     PRIMARY KEY (crawl_id, rule)
 );
+
+CREATE TABLE IF NOT EXISTS issue_overrides (
+    crawl_id TEXT NOT NULL,
+    rule     TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    PRIMARY KEY (crawl_id, rule)
+);
 "#;
 
 #[derive(Debug, thiserror::Error)]
