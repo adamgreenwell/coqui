@@ -155,6 +155,15 @@ pub enum StoreError {
 pub type Result<T> = std::result::Result<T, StoreError>;
 
 /// A crawl store. Cheap to clone through `Arc`; writes are serialised by SQLite anyway.
+/// A saved grid view (name + filters).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SavedView {
+    pub name: String,
+    pub search: Option<String>,
+    pub status: Option<u16>,
+    pub issue: Option<String>,
+}
+
 /// A scheduled crawl.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScheduleRecord {
@@ -1548,6 +1557,49 @@ impl Store {
     }
 
     /// Delete a crawl and all of its rows.
+    pub fn save_view(
+        &self,
+        name: &str,
+        search: Option<&str>,
+        status: Option<u16>,
+        issue: Option<&str>,
+    ) -> Result<()> {
+        self.lock()?.execute(
+            "INSERT INTO saved_views (name, search, status, issue, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(name) DO UPDATE SET search = excluded.search,
+                                            status = excluded.status,
+                                            issue = excluded.issue,
+                                            created_at = excluded.created_at",
+            params![name, search, status, issue, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    pub fn saved_views(&self) -> Result<Vec<SavedView>> {
+        let conn = self.lock()?;
+        let mut stmt =
+            conn.prepare("SELECT name, search, status, issue FROM saved_views ORDER BY name")?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(SavedView {
+                    name: row.get(0)?,
+                    search: row.get(1)?,
+                    status: row.get::<_, Option<i64>>(2)?.map(|value| value as u16),
+                    issue: row.get(3)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn delete_view(&self, name: &str) -> Result<usize> {
+        let changed = self
+            .lock()?
+            .execute("DELETE FROM saved_views WHERE name = ?1", params![name])?;
+        Ok(changed)
+    }
+
     pub fn add_schedule(
         &self,
         seed_kind: &str,
@@ -1798,9 +1850,28 @@ fn migrate(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_links_crawl_from ON links (crawl_id, from_id);
          CREATE INDEX IF NOT EXISTS idx_links_crawl_to ON links (crawl_id, to_id);",
     )?;
+    if version < 20 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS saved_views (
+                name       TEXT PRIMARY KEY,
+                search     TEXT,
+                status     INTEGER,
+                issue      TEXT,
+                created_at INTEGER NOT NULL
+            );",
+        )?;
+    }
     if version < 19 {
         conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS custom_js (
+            "CREATE TABLE IF NOT EXISTS saved_views (
+    name       TEXT PRIMARY KEY,
+    search     TEXT,
+    status     INTEGER,
+    issue      TEXT,
+    created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS custom_js (
                 crawl_id     TEXT NOT NULL,
                 url_id       INTEGER NOT NULL,
                 script_index INTEGER NOT NULL,
@@ -1855,6 +1926,14 @@ CREATE TABLE IF NOT EXISTS extractions (
     name     TEXT NOT NULL,
     value    TEXT NOT NULL,
     PRIMARY KEY (crawl_id, url_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS saved_views (
+    name       TEXT PRIMARY KEY,
+    search     TEXT,
+    status     INTEGER,
+    issue      TEXT,
+    created_at INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS custom_js (
@@ -2564,6 +2643,27 @@ mod tests {
                 .total,
             2
         );
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn saved_views_round_trip() {
+        let dir = std::env::temp_dir().join(format!("coqui-views-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        store
+            .save_view("broken", Some("Missing"), Some(404), None)
+            .unwrap();
+        store
+            .save_view("broken", Some("Gone"), Some(410), Some("missing_title"))
+            .unwrap();
+        let views = store.saved_views().unwrap();
+        assert_eq!(views.len(), 1);
+        assert_eq!(views[0].search.as_deref(), Some("Gone"));
+        assert_eq!(views[0].status, Some(410));
+        assert_eq!(views[0].issue.as_deref(), Some("missing_title"));
+        assert_eq!(store.delete_view("broken").unwrap(), 1);
+        assert!(store.saved_views().unwrap().is_empty());
         std::fs::remove_dir_all(dir).ok();
     }
 
