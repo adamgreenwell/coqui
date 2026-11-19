@@ -391,7 +391,7 @@ export default function Home() {
   const [page, setPage] = useState(1);
   const [progress, setProgress] = useState<CrawlProgress | null>(null);
   const [issues, setIssues] = useState<IssueCount[]>([]);
-  const [suppressed, setSuppressed] = useState<string[]>([]);
+  const [suppressed, setSuppressed] = useState<{ rule: string; reason: string | null }[]>([]);
   const [overrides, setOverrides] = useState<Record<string, string>>({});
   const [issueDetails, setIssueDetails] = useState<
     { id: number; url: string; detail: string | null }[]
@@ -521,7 +521,10 @@ export default function Home() {
     const { invoke } = await import('@tauri-apps/api/core');
     const counts = await invoke<IssueCount[]>('get_issue_counts', { crawlId });
     setIssues(counts);
-    const ignored = await invoke<string[]>('suppressed_rules', { crawlId });
+    const ignored = await invoke<{ rule: string; reason: string | null }[]>(
+      'suppressed_rules',
+      { crawlId },
+    );
     setSuppressed(ignored);
     const rules = await invoke<{ rule: string; severity: string }[]>('overrides', { crawlId });
     setOverrides(Object.fromEntries(rules.map((row) => [row.rule, row.severity])));
@@ -707,8 +710,9 @@ export default function Home() {
 
   const ignoreIssue = async (rule: string) => {
     if (!crawl) return;
+    const reason = window.prompt('Reason for ignoring this rule?') ?? undefined;
     const { invoke } = await import('@tauri-apps/api/core');
-    await invoke('suppress_rule', { crawlId: crawl.id, rule });
+    await invoke('suppress_rule', { crawlId: crawl.id, rule, reason: reason || null });
     await loadIssues(crawl.id);
   };
 
@@ -2560,15 +2564,15 @@ export default function Home() {
               {suppressed.length > 0 && (
                 <div className="suppressed-rules">
                   <span className="muted">Ignored:</span>
-                  {suppressed.map((rule) => (
+                  {suppressed.map((entry) => (
                     <button
-                      key={rule}
+                      key={entry.rule}
                       type="button"
                       className="suppressed-rule"
-                      title="Restore this rule"
-                      onClick={() => void restoreIssue(rule)}
+                      title={entry.reason ? `Restore: ${entry.reason}` : 'Restore this rule'}
+                      onClick={() => void restoreIssue(entry.rule)}
                     >
-                      {ISSUE_LABELS[rule] ?? rule} ×
+                      {ISSUE_LABELS[entry.rule] ?? entry.rule} ×
                     </button>
                   ))}
                 </div>

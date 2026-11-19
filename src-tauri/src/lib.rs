@@ -901,18 +901,30 @@ fn response_stats(
 }
 
 #[tauri::command]
-fn suppressed_rules(state: State<'_, AppState>, crawl_id: String) -> Result<Vec<String>, String> {
-    state
+fn suppressed_rules(
+    state: State<'_, AppState>,
+    crawl_id: String,
+) -> Result<Vec<serde_json::Value>, String> {
+    let rows = state
         .store
         .suppressed_rules(&crawl_id)
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    Ok(rows
+        .into_iter()
+        .map(|(rule, reason)| serde_json::json!({"rule": rule, "reason": reason}))
+        .collect())
 }
 
 #[tauri::command]
-fn suppress_rule(state: State<'_, AppState>, crawl_id: String, rule: String) -> Result<(), String> {
+fn suppress_rule(
+    state: State<'_, AppState>,
+    crawl_id: String,
+    rule: String,
+    reason: Option<String>,
+) -> Result<(), String> {
     state
         .store
-        .suppress_rule(&crawl_id, &rule)
+        .suppress_rule(&crawl_id, &rule, reason.as_deref())
         .map_err(|error| error.to_string())
 }
 
