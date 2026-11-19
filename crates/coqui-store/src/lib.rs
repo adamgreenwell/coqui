@@ -599,6 +599,24 @@ impl Store {
         Ok((count, average.round() as i64, p95))
     }
 
+    /// Indexable, noindex and blocked URL counts.
+    pub fn indexability_counts(&self, crawl_id: &str) -> Result<(i64, i64, i64)> {
+        let conn = self.lock()?;
+        let counts = conn.query_row(
+            "SELECT
+                COALESCE(SUM(CASE WHEN blocked = 0 AND
+                    (meta_robots IS NULL OR meta_robots NOT LIKE '%noindex%')
+                    THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN blocked = 0 AND meta_robots LIKE '%noindex%'
+                    THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN blocked = 1 THEN 1 ELSE 0 END), 0)
+             FROM urls WHERE crawl_id = ?1",
+            params![crawl_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )?;
+        Ok(counts)
+    }
+
     pub fn status_counts(&self, crawl_id: &str) -> Result<Vec<(Option<u16>, i64)>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
@@ -2999,6 +3017,33 @@ mod tests {
         assert!(store.issue_counts("c1").unwrap().is_empty());
         assert_eq!(store.restore_rule("c1", "missing_title").unwrap(), 1);
         assert_eq!(store.issue_counts("c1").unwrap().len(), 1);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn indexability_counts_classify_urls() {
+        let dir = std::env::temp_dir().join(format!("coqui-index-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        store
+            .create_crawl(
+                "c1",
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        store
+            .insert_url(&sample_record("c1", "https://example.com/"))
+            .unwrap();
+        let mut noindex = sample_record("c1", "https://example.com/noindex");
+        noindex.meta_robots = Some("noindex,follow".into());
+        store.insert_url(&noindex).unwrap();
+        let mut blocked = sample_record("c1", "https://example.com/blocked");
+        blocked.blocked = true;
+        store.insert_url(&blocked).unwrap();
+        assert_eq!(store.indexability_counts("c1").unwrap(), (1, 1, 1));
         std::fs::remove_dir_all(dir).ok();
     }
 
