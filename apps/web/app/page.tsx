@@ -280,6 +280,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [exportPath, setExportPath] = useState<string | null>(null);
   const [bulkView, setBulkView] = useState('accessibility');
+  const [reportKind, setReportKind] = useState('summary');
   const [exportPattern, setExportPattern] = useState('');
   const [skipEmpty, setSkipEmpty] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -1434,6 +1435,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 
