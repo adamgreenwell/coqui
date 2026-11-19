@@ -8,6 +8,35 @@ use coqui_core::{Issue, IssueCount, IssueSeverity, LinkRecord, UrlRecord};
 use coqui_store::{Store, StoreError};
 use std::collections::HashMap;
 
+/// Common misspellings checked in stored page text.
+const MISSPELLINGS: &[&str] = &[
+    "recieve",
+    "seperate",
+    "occured",
+    "definately",
+    "enviroment",
+    "adress",
+    "wich",
+    "thier",
+    "accomodate",
+    "publically",
+    "refered",
+    "sucessful",
+    "calender",
+    "buisness",
+    "neccessary",
+    "untill",
+    "begining",
+    "comming",
+    "writting",
+    "maintenence",
+    "responsability",
+    "knowlege",
+    "guaruntee",
+    "tommorow",
+    "teh",
+];
+
 #[derive(Debug, Clone, Copy)]
 pub struct RuleDef {
     pub id: &'static str,
@@ -75,6 +104,11 @@ pub const RULES: &[RuleDef] = &[
         id: "duplicate_content",
         label: "Duplicate content",
         severity: IssueSeverity::Warning,
+    },
+    RuleDef {
+        id: "misspelling",
+        label: "Possible misspelling",
+        severity: IssueSeverity::Opportunity,
     },
     RuleDef {
         id: "title_too_short",
@@ -186,6 +220,23 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
             .or_default()
             .push(url.clone());
         content_hash_by_url.insert(url, key);
+    }
+
+    let mut misspellings_by_url: HashMap<String, Vec<&'static str>> = HashMap::new();
+    for (url, markdown) in store.all_page_texts(crawl_id)? {
+        let words: std::collections::HashSet<String> = markdown
+            .split(|character: char| !character.is_alphabetic())
+            .filter(|word| !word.is_empty())
+            .map(|word| word.to_ascii_lowercase())
+            .collect();
+        let found: Vec<&'static str> = MISSPELLINGS
+            .iter()
+            .copied()
+            .filter(|word| words.contains(*word))
+            .collect();
+        if !found.is_empty() {
+            misspellings_by_url.insert(url, found);
+        }
     }
 
     let mut duplicate_titles: HashMap<String, Vec<String>> = HashMap::new();
@@ -330,6 +381,16 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
                     )?;
                 }
             }
+        }
+
+        if let Some(found) = misspellings_by_url.get(&url.url) {
+            issue(
+                store,
+                crawl_id,
+                &url.url,
+                "misspelling",
+                Some(format!("{}: {}", found.len(), found.join(", "))),
+            )?;
         }
 
         if let Some(hash) = content_hash_by_url.get(&url.url) {
@@ -785,6 +846,29 @@ mod tests {
         let counts = analyze_crawl(&store, id).unwrap();
         let by_rule: HashMap<_, _> = counts.iter().map(|c| (c.rule.as_str(), c.count)).collect();
         assert_eq!(by_rule.get("duplicate_content"), Some(&2), "{:?}", by_rule);
+    }
+
+    #[test]
+    fn flags_misspellings() {
+        let store = Store::open_in_memory().unwrap();
+        let id = "spell";
+        store
+            .create_crawl(
+                id,
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        add_url(&store, id, "https://example.com/", Some("Home"), 1, 500);
+        let url_id = store.url_id(id, "https://example.com/").unwrap().unwrap();
+        store
+            .save_page_text(id, url_id, "We recieve teh data", "We recieve teh data")
+            .unwrap();
+        let counts = analyze_crawl(&store, id).unwrap();
+        let by_rule: HashMap<_, _> = counts.iter().map(|c| (c.rule.as_str(), c.count)).collect();
+        assert_eq!(by_rule.get("misspelling"), Some(&1));
     }
 }
 
