@@ -161,6 +161,16 @@ pub const RULES: &[RuleDef] = &[
         severity: IssueSeverity::Warning,
     },
     RuleDef {
+        id: "slow_response",
+        label: "Slow response",
+        severity: IssueSeverity::Warning,
+    },
+    RuleDef {
+        id: "large_page",
+        label: "Large page",
+        severity: IssueSeverity::Opportunity,
+    },
+    RuleDef {
         id: "hreflang_missing_return",
         label: "Hreflang missing return link",
         severity: IssueSeverity::Warning,
@@ -471,6 +481,29 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
                 "image_missing_alt",
                 Some(format!("{count} images")),
             )?;
+        }
+
+        if let Some(ms) = url.response_time_ms {
+            if ms > 1000 {
+                issue(
+                    store,
+                    crawl_id,
+                    &url.url,
+                    "slow_response",
+                    Some(format!("{ms} ms")),
+                )?;
+            }
+        }
+        if let Some(bytes) = url.size_bytes {
+            if bytes > 1_048_576 {
+                issue(
+                    store,
+                    crawl_id,
+                    &url.url,
+                    "large_page",
+                    Some(format!("{:.1} MB", bytes as f64 / 1_048_576.0)),
+                )?;
+            }
         }
 
         if url.url.chars().count() > 115 {
@@ -1136,6 +1169,56 @@ mod tests {
         let counts = analyze_crawl(&store, id).unwrap();
         let by_rule: HashMap<_, _> = counts.iter().map(|c| (c.rule.as_str(), c.count)).collect();
         assert_eq!(by_rule.get("canonical_to_non_200"), Some(&1));
+    }
+
+    #[test]
+    fn flags_slow_and_large_pages() {
+        let store = Store::open_in_memory().unwrap();
+        let id = "speed";
+        store
+            .create_crawl(
+                id,
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        store
+            .insert_url(&NewUrl {
+                crawl_id: id.to_string(),
+                url: "https://example.com/heavy".to_string(),
+                status: Some(200),
+                blocked: false,
+                hreflang: Vec::new(),
+                pagination_next: None,
+                pagination_prev: None,
+                structured_data: Default::default(),
+                console_errors: Vec::new(),
+                axe: Vec::new(),
+                vitals: None,
+                headers: Vec::new(),
+                content_type: Some("text/html".into()),
+                title: Some("A perfectly reasonable title".into()),
+                meta_description: None,
+                h1: Some("H1".into()),
+                h1_count: 1,
+                canonical: None,
+                meta_robots: None,
+                redirect_target: None,
+                redirect_chain: Vec::new(),
+                word_count: Some(600),
+                depth: 0,
+                response_time_ms: Some(1500),
+                size_bytes: Some(2_000_000),
+                error: None,
+                discovered_at: now_ms(),
+            })
+            .unwrap();
+        let counts = analyze_crawl(&store, id).unwrap();
+        let by_rule: HashMap<_, _> = counts.iter().map(|c| (c.rule.as_str(), c.count)).collect();
+        assert_eq!(by_rule.get("slow_response"), Some(&1));
+        assert_eq!(by_rule.get("large_page"), Some(&1));
     }
 
     #[test]
