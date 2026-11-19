@@ -255,6 +255,7 @@ pub async fn run_crawl(
             screenshot: config.screenshots,
             block_assets: config.render_block_assets,
             wait_dom: config.render_early,
+            block_patterns: config.render_block_patterns.clone(),
         };
         Some(
             RenderPool::connect(

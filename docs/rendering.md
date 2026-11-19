@@ -6,7 +6,7 @@ Coqui can render pages in an external headless Chrome/Edge before extraction. Th
 
 - `coqui-render` speaks the Chrome DevTools Protocol over a local WebSocket.
 - It launches a headless browser on a random debugging port with a throwaway profile, or connects to `COQUI_CDP_ENDPOINT` if set.
-- A `RenderPool` runs several browser workers in parallel (1–8, default 2); each worker renders one page at a time.
+- A `RenderPool` runs up to 1–8 tabs in parallel on a **single** browser (default 2 tabs). One multiplexed CDP connection correlates concurrent calls by id and broadcasts events to each tab.
 - For each page it creates a tab, navigates, polls `document.readyState` until `complete`, waits `render_wait_ms`, reads `document.documentElement.outerHTML`, and closes the tab.
 - Each worker is serialised; the pool renders `render_workers` pages concurrently. Raw fetches still run concurrently around it.
 - `coqui-crawl` fetches the page normally for status/headers/blocking, then replaces the HTML body with the rendered DOM when `render` is enabled.
@@ -21,6 +21,7 @@ Coqui can render pages in an external headless Chrome/Edge before extraction. Th
 | `renderWorkers` | Number of browser workers (1–8, default 2) |
 | `screenshots` | Capture a JPEG screenshot per rendered page |
 | `renderBlockAssets` | Block fonts/media (default off; no measured gain) |
+| `renderBlockPatterns` | Extra URL patterns blocked while rendering (JSON/harness) |
 | `renderEarly` | Continue at DOMContentLoaded instead of full load (default off) |
 
 Environment overrides for the CLI/harness: `COQUI_BROWSER_PATH`, `COQUI_CDP_ENDPOINT`, `COQUI_RENDER=1`, `COQUI_RENDER_WAIT`, `COQUI_RENDER_WORKERS`, `COQUI_SCREENSHOTS=1`.
@@ -48,14 +49,14 @@ Custom headers, cookies and the configured user agent are pushed into each brows
 
 Measured on `stage.landscapemanagement.net` (heavy third-party pages):
 
-| Scenario | 50 pages |
-| --- | --- |
-| 4 workers, full load | 85–93 s (~0.6 URLs/s) |
-| 4 workers, early DOM | 79.7 s (~0.63 URLs/s) |
-| 8 workers, early DOM | 115 s (~0.4 URLs/s) |
-| Blocking fonts/media | no gain (93 s vs 85 s) |
+| Scenario | 50 pages | Processes |
+| --- | --- | --- |
+| Four separate browsers (old) | 85–93 s | ~144 |
+| One browser, 4 tabs | 64.1 s (~0.8/s) | 34 |
+| One browser, 8 tabs | 63.1 s (~0.8/s) | 32 |
+| 8 tabs + third-party blocking | 65.0 s | ~32 |
 
-A single stage homepage took **14.6 s** to reach `readyState=complete`. Rendering throughput is dominated by the site's own page load, not Coqui overhead. More than four browsers hurts through CPU contention; a shared browser with multiple tabs is the next architectural lever, not more processes.
+A single stage homepage took **14.6 s** to reach `readyState=complete`. Sharing one browser cut render time by ~30% and OS processes by ~4×; adding tabs beyond four and blocking third-party scripts did not move the needle further. Remaining throughput is bounded by the site's own load time.
 
 ## Limits
 

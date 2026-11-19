@@ -1,21 +1,21 @@
-//! Minimal Chromium DevTools Protocol renderer.
+//! Chromium DevTools Protocol renderer.
 //!
-//! The renderer drives an external Chrome/Edge (headless by default), creates a tab per page,
-//! waits for `document.readyState === "complete"`, and returns the rendered outer HTML.
-//! Rendering is serialised: one page at a time per renderer instance.
+//! One headless browser is driven over a multiplexed CDP connection; each page renders in its own
+//! tab, with up to `render_workers` tabs in flight. Session cookies, headers and user agent are
+//! applied per tab before navigation.
 
 use futures::{SinkExt, StreamExt};
 use serde_json::{Value, json};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
-use tokio::net::TcpStream;
 use tokio::process::{Child, Command};
-use tokio::sync::Mutex;
+use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
 
 #[derive(Debug, thiserror::Error)]
 pub enum RenderError {
@@ -31,8 +31,6 @@ pub enum RenderError {
     Other(String),
 }
 
-type Ws = WebSocketStream<MaybeTlsStream<TcpStream>>;
-
 /// Session material applied to every rendered page.
 #[derive(Debug, Clone, Default)]
 pub struct RenderOptions {
@@ -42,6 +40,7 @@ pub struct RenderOptions {
     pub screenshot: bool,
     pub block_assets: bool,
     pub wait_dom: bool,
+    pub block_patterns: Vec<String>,
 }
 
 /// Rendered HTML plus page evidence.
@@ -51,13 +50,104 @@ pub struct RenderOutput {
     pub console: Vec<String>,
 }
 
-pub struct Renderer {
-    ws: Mutex<Ws>,
+/// A multiplexed CDP connection: concurrent calls are correlated by id, events are broadcast.
+struct CdpClient {
+    tx: mpsc::Sender<String>,
+    pending: Arc<tokio::sync::Mutex<HashMap<u64, oneshot::Sender<Result<Value, String>>>>>,
+    events: broadcast::Sender<Value>,
     next_id: AtomicU64,
+}
+
+impl CdpClient {
+    async fn connect(ws_url: &str) -> Result<Arc<Self>, RenderError> {
+        let (ws, _) = connect_async(ws_url)
+            .await
+            .map_err(|error| RenderError::Browser(error.to_string()))?;
+        let (mut sink, mut stream) = ws.split();
+        let (tx, mut rx) = mpsc::channel::<String>(256);
+        let (events, _) = broadcast::channel::<Value>(4096);
+        let pending: Arc<tokio::sync::Mutex<HashMap<u64, oneshot::Sender<Result<Value, String>>>>> =
+            Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+
+        tokio::spawn(async move {
+            while let Some(text) = rx.recv().await {
+                if sink.send(Message::Text(text.into())).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        let reader_pending = pending.clone();
+        let reader_events = events.clone();
+        tokio::spawn(async move {
+            while let Some(frame) = stream.next().await {
+                let Ok(Message::Text(text)) = frame else {
+                    continue;
+                };
+                let Ok(value) = serde_json::from_str::<Value>(&text) else {
+                    continue;
+                };
+                if let Some(id) = value.get("id").and_then(Value::as_u64) {
+                    if let Some(sender) = reader_pending.lock().await.remove(&id) {
+                        if let Some(error) = value.get("error") {
+                            let _ = sender.send(Err(error.to_string()));
+                        } else {
+                            let _ = sender
+                                .send(Ok(value.get("result").cloned().unwrap_or(Value::Null)));
+                        }
+                    }
+                    continue;
+                }
+                let _ = reader_events.send(value);
+            }
+            let mut waiting = reader_pending.lock().await;
+            for (_, sender) in waiting.drain() {
+                let _ = sender.send(Err("browser closed the connection".into()));
+            }
+        });
+
+        Ok(Arc::new(Self {
+            tx,
+            pending,
+            events,
+            next_id: AtomicU64::new(1),
+        }))
+    }
+
+    fn subscribe(&self) -> broadcast::Receiver<Value> {
+        self.events.subscribe()
+    }
+
+    async fn call(
+        &self,
+        method: &str,
+        params: Value,
+        session: Option<&str>,
+    ) -> Result<Value, RenderError> {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let mut message = json!({"id": id, "method": method, "params": params});
+        if let Some(session) = session {
+            message["sessionId"] = Value::String(session.to_string());
+        }
+        let (sender, receiver) = oneshot::channel();
+        self.pending.lock().await.insert(id, sender);
+        self.tx
+            .send(message.to_string())
+            .await
+            .map_err(|_| RenderError::Protocol("browser connection closed".into()))?;
+        let response = tokio::time::timeout(Duration::from_secs(30), receiver)
+            .await
+            .map_err(|_| RenderError::Timeout(30_000))?
+            .map_err(|_| RenderError::Protocol("browser did not answer".into()))?;
+        response.map_err(RenderError::Protocol)
+    }
+}
+
+pub struct Renderer {
+    client: Arc<CdpClient>,
     child: StdMutex<Option<Child>>,
     wait_ms: u64,
     options: RenderOptions,
-    events: StdMutex<Vec<Value>>,
 }
 
 impl Renderer {
@@ -85,16 +175,12 @@ impl Renderer {
             .ok_or_else(|| {
                 RenderError::Protocol("browser did not expose a websocket URL".into())
             })?;
-        let (ws, _) = connect_async(ws_url)
-            .await
-            .map_err(|error| RenderError::Browser(error.to_string()))?;
+        let client = CdpClient::connect(ws_url).await?;
         Ok(Arc::new(Self {
-            ws: Mutex::new(ws),
-            next_id: AtomicU64::new(1),
+            client,
             child: StdMutex::new(child),
             wait_ms,
             options,
-            events: StdMutex::new(Vec::new()),
         }))
     }
 
@@ -105,7 +191,9 @@ impl Renderer {
 
     /// Render one URL and return HTML, screenshot and console errors.
     pub async fn render_page(&self, url: &str) -> Result<RenderOutput, RenderError> {
+        let mut events = self.client.subscribe();
         let target = self
+            .client
             .call("Target.createTarget", json!({"url": "about:blank"}), None)
             .await?;
         let target_id = target
@@ -113,16 +201,22 @@ impl Renderer {
             .and_then(Value::as_str)
             .ok_or_else(|| RenderError::Protocol("no target id".into()))?
             .to_string();
-        let result = self.render_target(&target_id, url).await;
+        let result = self.render_target(&mut events, &target_id, url).await;
         let _ = self
+            .client
             .call("Target.closeTarget", json!({"targetId": target_id}), None)
             .await;
         result
     }
 
-    async fn render_target(&self, target_id: &str, url: &str) -> Result<RenderOutput, RenderError> {
-        let started = tokio::time::Instant::now();
+    async fn render_target(
+        &self,
+        events: &mut broadcast::Receiver<Value>,
+        target_id: &str,
+        url: &str,
+    ) -> Result<RenderOutput, RenderError> {
         let attached = self
+            .client
             .call(
                 "Target.attachToTarget",
                 json!({"targetId": target_id, "flatten": true}),
@@ -134,35 +228,55 @@ impl Renderer {
             .and_then(Value::as_str)
             .ok_or_else(|| RenderError::Protocol("no session id".into()))?
             .to_string();
-        self.call("Page.enable", json!({}), Some(&session)).await?;
-        self.call("Network.enable", json!({}), Some(&session))
+
+        self.client
+            .call("Page.enable", json!({}), Some(&session))
             .await?;
+        self.client
+            .call("Network.enable", json!({}), Some(&session))
+            .await?;
+        self.client
+            .call("Runtime.enable", json!({}), Some(&session))
+            .await?;
+        self.client
+            .call("Log.enable", json!({}), Some(&session))
+            .await?;
+
+        let mut blocked: Vec<String> = Vec::new();
         if self.options.block_assets {
-            self.call(
-                "Network.setBlockedURLs",
-                json!({
-                    "urls": [
-                        "*://*/*.woff",
-                        "*://*/*.woff2",
-                        "*://*/*.ttf",
-                        "*://*/*.otf",
-                        "*://*/*.mp4",
-                        "*://*/*.webm",
-                        "*://*/*.mp3",
-                        "*://*/*.ogg"
-                    ]
-                }),
-                Some(&session),
-            )
-            .await?;
+            blocked.extend(
+                [
+                    "*://*/*.woff",
+                    "*://*/*.woff2",
+                    "*://*/*.ttf",
+                    "*://*/*.otf",
+                    "*://*/*.mp4",
+                    "*://*/*.webm",
+                    "*://*/*.mp3",
+                    "*://*/*.ogg",
+                ]
+                .iter()
+                .map(|pattern| pattern.to_string()),
+            );
+        }
+        blocked.extend(self.options.block_patterns.iter().cloned());
+        if !blocked.is_empty() {
+            self.client
+                .call(
+                    "Network.setBlockedURLs",
+                    json!({"urls": blocked}),
+                    Some(&session),
+                )
+                .await?;
         }
         if let Some(user_agent) = &self.options.user_agent {
-            self.call(
-                "Emulation.setUserAgentOverride",
-                json!({"userAgent": user_agent}),
-                Some(&session),
-            )
-            .await?;
+            self.client
+                .call(
+                    "Emulation.setUserAgentOverride",
+                    json!({"userAgent": user_agent}),
+                    Some(&session),
+                )
+                .await?;
         }
         if !self.options.headers.is_empty() {
             let headers: serde_json::Map<String, Value> = self
@@ -171,33 +285,32 @@ impl Renderer {
                 .iter()
                 .map(|(name, value)| (name.clone(), Value::String(value.clone())))
                 .collect();
-            self.call(
-                "Network.setExtraHTTPHeaders",
-                json!({"headers": headers}),
-                Some(&session),
-            )
-            .await?;
+            self.client
+                .call(
+                    "Network.setExtraHTTPHeaders",
+                    json!({"headers": headers}),
+                    Some(&session),
+                )
+                .await?;
         }
         for (name, value) in &self.options.cookies {
-            self.call(
-                "Network.setCookie",
-                json!({"name": name, "value": value, "url": url}),
-                Some(&session),
-            )
-            .await?;
+            self.client
+                .call(
+                    "Network.setCookie",
+                    json!({"name": name, "value": value, "url": url}),
+                    Some(&session),
+                )
+                .await?;
         }
-        if let Ok(mut events) = self.events.lock() {
-            events.clear();
-        }
-        self.call("Runtime.enable", json!({}), Some(&session))
-            .await?;
-        self.call("Log.enable", json!({}), Some(&session)).await?;
-        self.call("Page.navigate", json!({"url": url}), Some(&session))
+
+        self.client
+            .call("Page.navigate", json!({"url": url}), Some(&session))
             .await?;
 
         let deadline = tokio::time::Instant::now() + Duration::from_millis(20_000);
         loop {
             let state = self
+                .client
                 .call(
                     "Runtime.evaluate",
                     json!({"expression": "document.readyState", "returnByValue": true}),
@@ -220,70 +333,16 @@ impl Renderer {
             if tokio::time::Instant::now() >= deadline {
                 return Err(RenderError::Timeout(20_000));
             }
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-        if std::env::var_os("COQUI_DEBUG_RENDER").is_some() {
-            eprintln!("render: ready for {url} in {:?}", started.elapsed());
+            tokio::time::sleep(Duration::from_millis(60)).await;
         }
         if self.wait_ms > 0 {
             tokio::time::sleep(Duration::from_millis(self.wait_ms)).await;
         }
-        let events = self
-            .events
-            .lock()
-            .map_err(|_| RenderError::Other("event log poisoned".into()))?
-            .clone();
-        let mut console = Vec::new();
-        for event in events {
-            if event.get("sessionId").and_then(Value::as_str) != Some(session.as_str()) {
-                continue;
-            }
-            match event.get("method").and_then(Value::as_str).unwrap_or("") {
-                "Runtime.exceptionThrown" => {
-                    if let Some(details) = event.pointer("/params/exceptionDetails") {
-                        let text = details
-                            .pointer("/exception/description")
-                            .and_then(Value::as_str)
-                            .or_else(|| details.get("text").and_then(Value::as_str))
-                            .unwrap_or("Uncaught exception");
-                        console.push(format!("js: {}", text.lines().next().unwrap_or(text)));
-                    }
-                }
-                "Runtime.consoleAPICalled"
-                    if event.pointer("/params/type").and_then(Value::as_str) == Some("error") =>
-                {
-                    let mut parts = Vec::new();
-                    if let Some(args) = event.pointer("/params/args").and_then(Value::as_array) {
-                        for arg in args {
-                            if let Some(value) = arg.get("value").and_then(Value::as_str) {
-                                parts.push(value.to_string());
-                            } else if let Some(description) =
-                                arg.get("description").and_then(Value::as_str)
-                            {
-                                parts.push(description.to_string());
-                            }
-                        }
-                    }
-                    if !parts.is_empty() {
-                        console.push(format!("console: {}", parts.join(" ")));
-                    }
-                }
-                "Log.entryAdded"
-                    if event.pointer("/params/entry/level").and_then(Value::as_str)
-                        == Some("error") =>
-                {
-                    if let Some(text) = event.pointer("/params/entry/text").and_then(Value::as_str)
-                    {
-                        console.push(format!("network: {text}"));
-                    }
-                }
-                _ => {}
-            }
-        }
-        console.truncate(20);
 
+        let console = drain_console(events, &session);
         let screenshot = if self.options.screenshot {
             let shot = self
+                .client
                 .call(
                     "Page.captureScreenshot",
                     json!({"format": "jpeg", "quality": 60}),
@@ -297,11 +356,8 @@ impl Renderer {
         } else {
             None
         };
-
-        if std::env::var_os("COQUI_DEBUG_RENDER").is_some() {
-            eprintln!("render: evidence for {url} in {:?}", started.elapsed());
-        }
         let html = self
+            .client
             .call(
                 "Runtime.evaluate",
                 json!({
@@ -323,49 +379,68 @@ impl Renderer {
             console,
         })
     }
+}
 
-    async fn call(
-        &self,
-        method: &str,
-        params: Value,
-        session: Option<&str>,
-    ) -> Result<Value, RenderError> {
-        let mut ws = self.ws.lock().await;
-        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let mut message = json!({"id": id, "method": method, "params": params});
-        if let Some(session) = session {
-            message["sessionId"] = Value::String(session.to_string());
-        }
-        ws.send(Message::Text(message.to_string().into()))
-            .await
-            .map_err(|error| RenderError::Protocol(error.to_string()))?;
-        loop {
-            let frame = ws
-                .next()
-                .await
-                .ok_or_else(|| RenderError::Protocol("browser closed the connection".into()))?
-                .map_err(|error| RenderError::Protocol(error.to_string()))?;
-            let Message::Text(text) = frame else {
-                continue;
-            };
-            let value: Value = serde_json::from_str(&text)
-                .map_err(|error| RenderError::Protocol(error.to_string()))?;
-            if value.get("id").and_then(Value::as_u64) != Some(id) {
-                if value.get("method").is_some() {
-                    if let Ok(mut events) = self.events.lock() {
-                        if events.len() < 500 {
-                            events.push(value);
+fn drain_console(events: &mut broadcast::Receiver<Value>, session: &str) -> Vec<String> {
+    let mut console = Vec::new();
+    loop {
+        match events.try_recv() {
+            Ok(event) => {
+                if event.get("sessionId").and_then(Value::as_str) != Some(session) {
+                    continue;
+                }
+                match event.get("method").and_then(Value::as_str).unwrap_or("") {
+                    "Runtime.exceptionThrown" => {
+                        if let Some(details) = event.pointer("/params/exceptionDetails") {
+                            let text = details
+                                .pointer("/exception/description")
+                                .and_then(Value::as_str)
+                                .or_else(|| details.get("text").and_then(Value::as_str))
+                                .unwrap_or("Uncaught exception");
+                            console.push(format!("js: {}", text.lines().next().unwrap_or(text)));
                         }
                     }
+                    "Runtime.consoleAPICalled"
+                        if event.pointer("/params/type").and_then(Value::as_str)
+                            == Some("error") =>
+                    {
+                        let mut parts = Vec::new();
+                        if let Some(args) = event.pointer("/params/args").and_then(Value::as_array)
+                        {
+                            for arg in args {
+                                if let Some(value) = arg.get("value").and_then(Value::as_str) {
+                                    parts.push(value.to_string());
+                                } else if let Some(description) =
+                                    arg.get("description").and_then(Value::as_str)
+                                {
+                                    parts.push(description.to_string());
+                                }
+                            }
+                        }
+                        if !parts.is_empty() {
+                            console.push(format!("console: {}", parts.join(" ")));
+                        }
+                    }
+                    "Log.entryAdded"
+                        if event.pointer("/params/entry/level").and_then(Value::as_str)
+                            == Some("error") =>
+                    {
+                        if let Some(text) =
+                            event.pointer("/params/entry/text").and_then(Value::as_str)
+                        {
+                            console.push(format!("network: {text}"));
+                        }
+                    }
+                    _ => {}
                 }
-                continue;
             }
-            if let Some(error) = value.get("error") {
-                return Err(RenderError::Protocol(error.to_string()));
-            }
-            return Ok(value.get("result").cloned().unwrap_or(Value::Null));
+            Err(broadcast::error::TryRecvError::Empty) => break,
+            Err(broadcast::error::TryRecvError::Lagged(_)) => continue,
+            Err(broadcast::error::TryRecvError::Closed) => break,
         }
     }
+    console.truncate(20);
+    console
 }
 
 impl Drop for Renderer {
@@ -375,6 +450,41 @@ impl Drop for Renderer {
                 let _ = child.start_kill();
             }
         }
+    }
+}
+
+/// A pool of tabs on a single browser. `workers` limits concurrent tabs.
+pub struct RenderPool {
+    renderer: Arc<Renderer>,
+    permits: tokio::sync::Semaphore,
+}
+
+impl RenderPool {
+    pub async fn connect(
+        workers: usize,
+        browser_path: Option<&str>,
+        wait_ms: u64,
+        options: RenderOptions,
+    ) -> Result<Arc<Self>, RenderError> {
+        let workers = workers.clamp(1, 8);
+        let renderer = Renderer::connect(browser_path, wait_ms, options).await?;
+        Ok(Arc::new(Self {
+            renderer,
+            permits: tokio::sync::Semaphore::new(workers),
+        }))
+    }
+
+    pub async fn render(&self, url: &str) -> Result<String, RenderError> {
+        Ok(self.render_page(url).await?.html)
+    }
+
+    pub async fn render_page(&self, url: &str) -> Result<RenderOutput, RenderError> {
+        let _permit = self
+            .permits
+            .acquire()
+            .await
+            .map_err(|_| RenderError::Other("render pool closed".into()))?;
+        self.renderer.render_page(url).await
     }
 }
 
@@ -461,52 +571,4 @@ fn find_browser(configured: Option<&str>) -> Option<PathBuf> {
         .iter()
         .map(PathBuf::from)
         .find(|path| path.exists())
-}
-
-/// A fixed-size pool of renderer browsers with session material applied to each.
-pub struct RenderPool {
-    workers: Vec<Arc<Renderer>>,
-    available: tokio::sync::mpsc::Sender<usize>,
-    slots: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<usize>>,
-}
-
-impl RenderPool {
-    pub async fn connect(
-        workers: usize,
-        browser_path: Option<&str>,
-        wait_ms: u64,
-        options: RenderOptions,
-    ) -> Result<Arc<Self>, RenderError> {
-        let workers = workers.clamp(1, 8);
-        let mut pool = Vec::with_capacity(workers);
-        for _ in 0..workers {
-            pool.push(Renderer::connect(browser_path, wait_ms, options.clone()).await?);
-        }
-        let (available, slots) = tokio::sync::mpsc::channel(workers);
-        for index in 0..workers {
-            let _ = available.try_send(index);
-        }
-        Ok(Arc::new(Self {
-            workers: pool,
-            available,
-            slots: tokio::sync::Mutex::new(slots),
-        }))
-    }
-
-    pub async fn render(&self, url: &str) -> Result<String, RenderError> {
-        Ok(self.render_page(url).await?.html)
-    }
-
-    pub async fn render_page(&self, url: &str) -> Result<RenderOutput, RenderError> {
-        let index = self
-            .slots
-            .lock()
-            .await
-            .recv()
-            .await
-            .ok_or_else(|| RenderError::Other("render pool closed".into()))?;
-        let result = self.workers[index].render_page(url).await;
-        let _ = self.available.send(index).await;
-        result
-    }
 }

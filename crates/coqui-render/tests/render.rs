@@ -77,6 +77,7 @@ async fn applies_session_headers_and_cookies() {
         screenshot: false,
         block_assets: false,
         wait_dom: false,
+        block_patterns: Vec::new(),
     };
     let renderer = Renderer::connect(None, 200, options)
         .await

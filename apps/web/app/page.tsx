@@ -798,7 +798,7 @@ export default function Home() {
           </form>
 
           <p className="footer-note" style={{ marginTop: 18, marginBottom: 0 }}>
-            Next up: single-browser multi-tab rendering with request interception.
+            Next up: Lighthouse and axe audits on rendered pages.
           </p>
         </aside>
 
@@ -1039,13 +1039,14 @@ export default function Home() {
           <p className="footer-note">
             M4 scope: URL/sitemap/list seeds, regex scope, auth, robots.txt, redirects, Chromium
             rendering with screenshots and console capture, structured data, 19 audit rules and
-            pause/resume. Next: single-browser multi-tab renderer and Lighthouse/axe.
+            pause/resume. Next: Lighthouse and axe audits.
           </p>
         </main>
       </div>
     </div>
   );
 }
+
 
 
 

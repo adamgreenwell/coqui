@@ -145,7 +145,7 @@ A live render of `https://www.landscapemanagement.net/` returned ~274 KB of rend
 
 Console errors are dominated by `ERR_BLOCKED_BY_CLIENT` resource failures and a recurring `TypeError: Cannot read properties of null (reading 'offsetWidth')` from third-party scripts. They are now prefixed `network:`, `js:` or `console:` so JS exceptions can be separated from resource-load failures.
 
-The pool launched four separate browsers, which spawned ~144 OS processes. A follow-up benchmark on 50 pages showed full load 85–93 s, early DOM 79.7 s, eight workers 115 s, and font/media blocking no gain. A single stage homepage took 14.6 s to reach full load, so rendering throughput is dominated by the site rather than Coqui. Next lever is one browser with multiple tabs, not more processes.
+The pool launched four separate browsers, which spawned ~144 OS processes. A follow-up benchmark on 50 pages showed four separate browsers at 85–93 s / ~144 processes; one browser with four tabs at 64.1 s / 34 processes; eight tabs at 63.1 s. Blocking fonts/media or third-party scripts gave no further gain. A single stage homepage took 14.6 s to reach full load, so remaining throughput is site-bound.
 
 ## Scale test (synthetic, local)
 

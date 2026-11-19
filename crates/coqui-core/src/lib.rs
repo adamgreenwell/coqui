@@ -64,6 +64,9 @@ pub struct CrawlConfig {
     /// Continue at DOMContentLoaded instead of waiting for full load.
     #[serde(default)]
     pub render_early: bool,
+    /// Extra URL patterns to block while rendering (for example third-party scripts).
+    #[serde(default)]
+    pub render_block_patterns: Vec<String>,
     /// Only crawl discovered URLs matching at least one pattern (empty = all).
     #[serde(default)]
     pub include_patterns: Vec<String>,
@@ -113,6 +116,7 @@ impl Default for CrawlConfig {
             screenshots: false,
             render_block_assets: false,
             render_early: false,
+            render_block_patterns: Vec::new(),
             include_patterns: Vec::new(),
             exclude_patterns: Vec::new(),
             auth_user: None,

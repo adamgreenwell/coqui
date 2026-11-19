@@ -110,6 +110,16 @@ async fn main() {
     config.render = std::env::var_os("COQUI_RENDER").is_some();
     config.screenshots = std::env::var_os("COQUI_SCREENSHOTS").is_some();
     config.render_early = std::env::var_os("COQUI_RENDER_EARLY").is_some();
+    config.render_block_patterns = std::env::var("COQUI_BLOCK_PATTERNS")
+        .map(|value| {
+            value
+                .split(',')
+                .map(str::trim)
+                .filter(|pattern| !pattern.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
     config.render_block_assets = std::env::var("COQUI_BLOCK_ASSETS")
         .map(|value| value != "0")
         .unwrap_or(true);
