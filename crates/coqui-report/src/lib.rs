@@ -152,6 +152,16 @@ pub const REPORTS: &[(&str, &str, &str)] = &[
         "Performance",
         "Slowest URLs by response time.",
     ),
+    (
+        "redirects",
+        "Redirects",
+        "3xx responses with their targets.",
+    ),
+    (
+        "broken-links",
+        "Broken links",
+        "4xx/5xx and failed responses.",
+    ),
 ];
 
 /// Render a named report.
@@ -170,6 +180,8 @@ pub fn render_report_with(
         "issues" => render_issues(store, crawl_id, options.top),
         "status" => render_status(store, crawl_id, options.status),
         "performance" => render_performance(store, crawl_id, options.top, options.status),
+        "redirects" => render_redirects(store, crawl_id),
+        "broken-links" => render_broken_links(store, crawl_id),
         _ => render_html(store, crawl_id),
     }
 }
@@ -274,6 +286,54 @@ fn render_status(
     }
     body.push_str("</table>");
     Ok(shell(&crawl.seed, "Status codes", &body))
+}
+
+fn render_redirects(store: &Store, crawl_id: &str) -> Result<String, String> {
+    let crawl = store
+        .get_crawl(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let urls = store
+        .all_urls(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let mut body = String::from("<table><tr><th>URL</th><th>Status</th><th>Location</th></tr>");
+    for url in urls
+        .iter()
+        .filter(|url| matches!(url.status, Some(301 | 302 | 303 | 307 | 308)))
+    {
+        body.push_str(&format!(
+            "<tr><td>{}</td><td>{}</td><td>{}</td></tr>",
+            escape(&url.url),
+            url.status.unwrap_or_default(),
+            escape(url.redirect_target.as_deref().unwrap_or(""))
+        ));
+    }
+    body.push_str("</table>");
+    Ok(shell(&crawl.seed, "Redirects", &body))
+}
+
+fn render_broken_links(store: &Store, crawl_id: &str) -> Result<String, String> {
+    let crawl = store
+        .get_crawl(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let urls = store
+        .all_urls(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let mut body = String::from("<table><tr><th>URL</th><th>Status</th><th>Error</th></tr>");
+    for url in urls
+        .iter()
+        .filter(|url| url.error.is_some() || url.status.map(|status| status >= 400).unwrap_or(true))
+    {
+        body.push_str(&format!(
+            "<tr><td>{}</td><td>{}</td><td>{}</td></tr>",
+            escape(&url.url),
+            url.status
+                .map(|status| status.to_string())
+                .unwrap_or_else(|| "-".into()),
+            escape(url.error.as_deref().unwrap_or(""))
+        ));
+    }
+    body.push_str("</table>");
+    Ok(shell(&crawl.seed, "Broken links", &body))
 }
 
 fn render_performance(

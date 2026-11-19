@@ -1726,6 +1726,8 @@ export default function Home() {
                   <option value="issues">Issue breakdown</option>
                   <option value="status">Status codes</option>
                   <option value="performance">Performance</option>
+                  <option value="redirects">Redirects</option>
+                  <option value="broken-links">Broken links</option>
                 </select>
                 <input
                   type="number"
@@ -1909,6 +1911,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 
