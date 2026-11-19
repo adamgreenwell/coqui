@@ -45,7 +45,7 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The release workflow builds the CLI for the three desktop platforms, publishes the binary plus `SHA256SUMS.txt`, and fails if an expected file is missing.
+The release workflow builds the CLI for the three desktop platforms, publishes the binary plus `SHA256SUMS.txt`, and fails if an expected file is missing. A Windows desktop job fetches sidecars, runs `tauri build`, asserts the NSIS installer stays within the 350 MB budget, and uploads the installers.
 
 ## Planned slices
 
@@ -54,5 +54,6 @@ The release workflow builds the CLI for the three desktop platforms, publishes t
 3. Bundle Chromium for rendering and Lighthouse.
 4. Signing/notarization and reproducible-build notes.
 5. Docker/Compose packaging for the headless server mode.
+
 
 
