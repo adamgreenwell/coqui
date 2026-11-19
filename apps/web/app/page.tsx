@@ -302,6 +302,7 @@ export default function Home() {
   const [reportKind, setReportKind] = useState('summary');
   const [reportTop, setReportTop] = useState('');
   const [reportStatus, setReportStatus] = useState('');
+  const [reportTitle, setReportTitle] = useState('');
   const [exportPattern, setExportPattern] = useState('');
   const [skipEmpty, setSkipEmpty] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -1749,6 +1750,14 @@ export default function Home() {
                   aria-label="Report status filter"
                   disabled={!isTauri || !crawl}
                 />
+                <input
+                  type="text"
+                  value={reportTitle}
+                  onChange={(event) => setReportTitle(event.target.value)}
+                  placeholder="Report title"
+                  aria-label="Report title"
+                  disabled={!isTauri || !crawl}
+                />
                 <button
                   className="secondary"
                   type="button"
@@ -1762,6 +1771,7 @@ export default function Home() {
                         report: reportKind,
                         top: reportTop.trim() ? Number(reportTop) : null,
                         status: reportStatus.trim() ? Number(reportStatus) : null,
+                        title: reportTitle.trim() || null,
                       });
                       setExportPath(path);
                     } catch (cause) {
@@ -1785,6 +1795,7 @@ export default function Home() {
                         report: reportKind,
                         top: reportTop.trim() ? Number(reportTop) : null,
                         status: reportStatus.trim() ? Number(reportStatus) : null,
+                        title: reportTitle.trim() || null,
                       });
                       setExportPath(path);
                     } catch (cause) {
@@ -1911,6 +1922,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 
