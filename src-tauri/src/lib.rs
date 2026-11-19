@@ -522,6 +522,42 @@ fn delete_profile(state: State<'_, AppState>, name: String) -> Result<usize, Str
 }
 
 #[tauri::command]
+fn add_extractor(
+    state: State<'_, AppState>,
+    crawl_id: String,
+    name: String,
+    selector: String,
+) -> Result<(), String> {
+    state
+        .store
+        .add_extractor(&crawl_id, &name, &selector)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn list_extractors(
+    state: State<'_, AppState>,
+    crawl_id: String,
+) -> Result<Vec<(String, String)>, String> {
+    state
+        .store
+        .list_extractors(&crawl_id)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn delete_extractor(
+    state: State<'_, AppState>,
+    crawl_id: String,
+    name: String,
+) -> Result<usize, String> {
+    state
+        .store
+        .delete_extractor(&crawl_id, &name)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn export_catalog() -> Vec<coqui_core::ExportDefinition> {
     coqui_core::export_catalog()
 }
@@ -590,6 +626,10 @@ fn export_view(
         ("text", _) => state
             .store
             .export_text_csv(&crawl_id, &path)
+            .map_err(|error| error.to_string())?,
+        ("extractions", _) => state
+            .store
+            .export_extractions_csv(&crawl_id, &path)
             .map_err(|error| error.to_string())?,
         ("markdown", _) => state
             .store
@@ -689,6 +729,9 @@ pub fn run() {
             run_lighthouse,
             run_lighthouse_sample,
             test_connection,
+            add_extractor,
+            list_extractors,
+            delete_extractor,
             save_profile,
             list_profiles,
             get_profile,
