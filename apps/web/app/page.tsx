@@ -520,7 +520,7 @@ export default function Home() {
           <span className="brand-name">
             coqu<em>í</em>
           </span>
-          <span className="badge">M3 · seeds &amp; scope</span>
+          <span className="badge">M4 · crawl, audit &amp; render</span>
         </div>
         <div className="topbar-right">
           <span className="badge">{isTauri ? 'Desktop' : 'Browser preview'}</span>
@@ -531,8 +531,9 @@ export default function Home() {
         <aside className="panel sidebar">
           <h2>New crawl</h2>
           <p className="hint">
-            Crawl from a URL, sitemap or URL list with regex scope, basic auth, robots.txt and the
-            first audit rules. Every row lands in a portable SQLite crawl file.
+            Crawl from a URL, sitemap or URL list with regex scope, basic auth, robots.txt,
+            optional Chromium rendering, screenshots and 19 audit rules. Every row lands in a
+            portable SQLite crawl file.
           </p>
           <form onSubmit={startCrawl}>
             <div className="field">
@@ -797,7 +798,7 @@ export default function Home() {
           </form>
 
           <p className="footer-note" style={{ marginTop: 18, marginBottom: 0 }}>
-            Next up: incremental frontier scaling, then rendering and form authentication.
+            Next up: single-browser multi-tab rendering with request interception.
           </p>
         </aside>
 
@@ -1036,14 +1037,16 @@ export default function Home() {
           </section>
 
           <p className="footer-note">
-            M3 scope: URL/sitemap/list seeds, regex scope, basic auth, robots.txt, redirect chains,
-            six audit rules and pause/resume. Next: incremental frontier scaling and rendering.
+            M4 scope: URL/sitemap/list seeds, regex scope, auth, robots.txt, redirects, Chromium
+            rendering with screenshots and console capture, structured data, 19 audit rules and
+            pause/resume. Next: single-browser multi-tab renderer and Lighthouse/axe.
           </p>
         </main>
       </div>
     </div>
   );
 }
+
 
 
 
