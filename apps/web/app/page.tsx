@@ -263,6 +263,7 @@ export default function Home() {
   const [lighthouse, setLighthouse] = useState<LighthouseSummary | null>(null);
   const [lighthouseBusy, setLighthouseBusy] = useState(false);
   const [lighthouseError, setLighthouseError] = useState<string | null>(null);
+  const [lighthouseSample, setLighthouseSample] = useState(0);
 
   const [crawl, setCrawl] = useState<CrawlSummary | null>(null);
   const [phase, setPhase] = useState<CrawlStatus | 'idle'>('idle');
@@ -908,7 +909,10 @@ export default function Home() {
               onClick={() => setLighthouse(null)}
             >
               <div className="modal" role="dialog" aria-label="Lighthouse report">
-                <h3>Lighthouse</h3>
+                <h3>
+                  Lighthouse
+                  {lighthouseSample > 1 ? ` (sampled ${lighthouseSample} pages)` : ''}
+                </h3>
                 <div className="lh-scores">
                   {(
                     [
@@ -1017,6 +1021,34 @@ export default function Home() {
                 >
                   All URLs
                 </button>
+                {crawl && (
+                  <button
+                    className="chip"
+                    type="button"
+                    disabled={lighthouseBusy}
+                    onClick={async () => {
+                      setLighthouseBusy(true);
+                      setLighthouseError(null);
+                      try {
+                        const { invoke } = await import('@tauri-apps/api/core');
+                        const reports = await invoke<LighthouseSummary[]>(
+                          'run_lighthouse_sample',
+                          { crawlId: crawl.id, sample: 3 },
+                        );
+                        setLighthouseSample(reports.length);
+                        setLighthouse(reports[0] ?? null);
+                      } catch (cause) {
+                        setLighthouseError(
+                          cause instanceof Error ? cause.message : String(cause),
+                        );
+                      } finally {
+                        setLighthouseBusy(false);
+                      }
+                    }}
+                  >
+                    {lighthouseBusy ? 'LH…' : 'LH ×3'}
+                  </button>
+                )}
               </div>
               <div className="issue-grid">
                 {issues.map((issue) => (

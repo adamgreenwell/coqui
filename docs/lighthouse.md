@@ -16,6 +16,10 @@ On-demand Lighthouse runs for a single crawled URL, using **system Node.js + npx
 - A modal shows Performance / Accessibility / Best practices / SEO scores and the failing audits.
 - Missing Node surfaces as “could not run npx … Install Node.js or add it to PATH”; a Lighthouse failure returns its stderr snippet.
 
+## Sampled audits
+
+The Audit header button runs Lighthouse sequentially on three evenly spaced 2xx HTML URLs, stores each summary, and opens the first report with a “sampled 3 pages” label. No new runtime, no crawl-engine changes.
+
 ## Storage
 
 Schema v12, `lighthouse_reports(crawl_id, url_id, summary_json, created_at)`. Full Lighthouse reports (~1.5 MB) are not stored; only the summary.
@@ -35,10 +39,11 @@ The SEO score reflects staging behaviour (no canonical/noindex), matching the cr
 
 ## Limits
 
-- One URL at a time, manually triggered; no crawl-wide Lighthouse run.
+- One URL at a time, or an evenly spaced **sample** of 3 from the crawl via the Audit header (`LH ×3`); no full-crawl Lighthouse run.
 - Lighthouse launches its own browser, so Coqui’s session cookies/headers are **not** applied — protected pages may be challenged.
 - First run downloads Lighthouse (~30–60 s).
 
 ## Path to 1.0
 
 Bundle Node + Lighthouse as a Tauri sidecar so the feature works offline and behind logins (with our session material). The command and storage contract stay the same.
+

@@ -554,6 +554,34 @@ impl Store {
             .into_iter()
             .find(|record| record.id == url_id))
     }
+    pub fn sample_urls(&self, crawl_id: &str, limit: u32) -> Result<Vec<UrlRecord>> {
+        let urls: Vec<UrlRecord> = self
+            .all_urls(crawl_id)?
+            .into_iter()
+            .filter(|record| {
+                !record.blocked
+                    && record
+                        .status
+                        .map(|status| (200..300).contains(&status))
+                        .unwrap_or(false)
+                    && record
+                        .content_type
+                        .as_deref()
+                        .map(|value| value.to_ascii_lowercase().contains("text/html"))
+                        .unwrap_or(false)
+            })
+            .collect();
+        if urls.is_empty() || limit == 0 {
+            return Ok(Vec::new());
+        }
+        let limit = limit as usize;
+        if urls.len() <= limit {
+            return Ok(urls);
+        }
+        let step = urls.len() / limit;
+        Ok((0..limit).map(|index| urls[index * step].clone()).collect())
+    }
+
     pub fn save_lighthouse(&self, crawl_id: &str, url_id: i64, summary_json: &str) -> Result<()> {
         self.lock()?.execute(
             "INSERT OR REPLACE INTO lighthouse_reports (crawl_id, url_id, summary_json, created_at)
