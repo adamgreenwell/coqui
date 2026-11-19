@@ -26,7 +26,7 @@ The Audit header button runs Lighthouse sequentially on three evenly spaced 2xx 
 
 ## Storage
 
-Schema v12, `lighthouse_reports(crawl_id, url_id, summary_json, created_at)`. Full Lighthouse reports (~1.5 MB) are not stored; only the summary.
+Schema v22 includes `lighthouse_reports(crawl_id, url_id, summary_json, created_at)`. Full Lighthouse reports (~1.5 MB) are not stored; only the summary.
 
 ## Validation
 
@@ -50,6 +50,7 @@ The SEO score reflects staging behaviour (no canonical/noindex), matching the cr
 ## Path to 1.0
 
 Bundle Node + Lighthouse as a Tauri sidecar so the feature works offline and behind logins (with our session material). The command and storage contract stay the same.
+
 
 
 
