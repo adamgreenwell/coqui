@@ -905,8 +905,7 @@ export default function Home() {
     [issues],
   );
 
-  const classCounts = useMemo(() => {
-    const totals: Record<string, number> = {
+  const classCounts = useMemo(() => {    const totals: Record<string, number> = {
       '2xx': 0,
       '3xx': 0,
       '4xx': 0,
@@ -923,6 +922,14 @@ export default function Home() {
     }
     return totals;
   }, [statusCounts]);
+
+  const severityTotals = useMemo(() => {
+    const totals = { error: 0, warning: 0, opportunity: 0 };
+    for (const issue of issues) {
+      totals[issue.severity] += issue.count;
+    }
+    return totals;
+  }, [issues]);
 
   function cell(row: UrlRow, key: ColumnKey) {
     switch (key) {
@@ -1903,6 +1910,18 @@ export default function Home() {
             <div>
               <span>Issues</span>
               <strong>{issueTotal}</strong>
+            </div>
+            <div>
+              <span>Errors</span>
+              <strong>{severityTotals.error}</strong>
+            </div>
+            <div>
+              <span>Warnings</span>
+              <strong>{severityTotals.warning}</strong>
+            </div>
+            <div>
+              <span>Opportunities</span>
+              <strong>{severityTotals.opportunity}</strong>
             </div>
           </section>
 
