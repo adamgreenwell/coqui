@@ -263,6 +263,10 @@ export default function Home() {
   const [extractors, setExtractors] = useState<{ name: string; selector: string }[]>([]);
   const [extractorName, setExtractorName] = useState('');
   const [extractorSelector, setExtractorSelector] = useState('');
+  const [profiles, setProfiles] = useState<{ name: string; updatedAt: number }[]>([]);
+  const [profileName, setProfileName] = useState('');
+  const [profileSelected, setProfileSelected] = useState('');
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [settingsQuery, setSettingsQuery] = useState('');
   const [probe, setProbe] = useState<{ status: number; ms: number; finalUrl: string } | null>(null);
   const [probeError, setProbeError] = useState<string | null>(null);
@@ -510,6 +514,106 @@ export default function Home() {
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const isRunning = phase === 'running' || phase === 'pending';
+  const settingsSnapshot = () => ({
+    seed,
+    seedKind,
+    maxDepth,
+    maxUrls,
+    concurrency,
+    sameHostOnly,
+    respectRobots,
+    includePatterns,
+    excludePatterns,
+    authUser,
+    authPassword,
+    customHeaders,
+    render,
+    browserPath,
+    renderWaitMs,
+    renderWorkers,
+    screenshots,
+    renderBlockAssets,
+    accessibility,
+    webVitals,
+    storeText,
+  });
+  const applySettings = (value: Record<string, unknown>) => {
+    if (typeof value.seed === 'string') setSeed(value.seed);
+    if (value.seedKind === 'url' || value.seedKind === 'sitemap' || value.seedKind === 'list') {
+      setSeedKind(value.seedKind);
+    }
+    if (typeof value.maxDepth === 'number') setMaxDepth(value.maxDepth);
+    if (typeof value.maxUrls === 'number') setMaxUrls(value.maxUrls);
+    if (typeof value.concurrency === 'number') setConcurrency(value.concurrency);
+    if (typeof value.sameHostOnly === 'boolean') setSameHostOnly(value.sameHostOnly);
+    if (typeof value.respectRobots === 'boolean') setRespectRobots(value.respectRobots);
+    if (typeof value.includePatterns === 'string') setIncludePatterns(value.includePatterns);
+    if (typeof value.excludePatterns === 'string') setExcludePatterns(value.excludePatterns);
+    if (typeof value.authUser === 'string') setAuthUser(value.authUser);
+    if (typeof value.authPassword === 'string') setAuthPassword(value.authPassword);
+    if (typeof value.customHeaders === 'string') setCustomHeaders(value.customHeaders);
+    if (typeof value.render === 'boolean') setRender(value.render);
+    if (typeof value.browserPath === 'string') setBrowserPath(value.browserPath);
+    if (typeof value.renderWaitMs === 'number') setRenderWaitMs(value.renderWaitMs);
+    if (typeof value.renderWorkers === 'number') setRenderWorkers(value.renderWorkers);
+    if (typeof value.screenshots === 'boolean') setScreenshots(value.screenshots);
+    if (typeof value.renderBlockAssets === 'boolean') setRenderBlockAssets(value.renderBlockAssets);
+    if (typeof value.accessibility === 'boolean') setAccessibility(value.accessibility);
+    if (typeof value.webVitals === 'boolean') setWebVitals(value.webVitals);
+    if (typeof value.storeText === 'boolean') setStoreText(value.storeText);
+  };
+  const loadProfiles = async () => {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const rows = await invoke<[string, number][]>('list_profiles');
+      setProfiles(rows.map(([name, updatedAt]) => ({ name, updatedAt })));
+    } catch (cause) {
+      setProfileError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+  const saveProfile = async () => {
+    if (!profileName.trim()) {
+      setProfileError('Profile name is required.');
+      return;
+    }
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('save_profile', {
+        name: profileName.trim(),
+        configJson: JSON.stringify(settingsSnapshot()),
+      });
+      setProfileError(null);
+      setProfileSelected(profileName.trim());
+      await loadProfiles();
+    } catch (cause) {
+      setProfileError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+  const loadProfile = async (name: string) => {
+    if (!name) return;
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const json = await invoke<string | null>('get_profile', { name });
+      if (json) applySettings(JSON.parse(json) as Record<string, unknown>);
+      setProfileError(null);
+    } catch (cause) {
+      setProfileError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+  const removeProfile = async () => {
+    if (!profileSelected) return;
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('delete_profile', { name: profileSelected });
+      setProfileSelected('');
+      await loadProfiles();
+    } catch (cause) {
+      setProfileError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+  useEffect(() => {
+    if (isTauri) void loadProfiles();
+  }, [isTauri]);
   const settingEntries = [
     { label: 'Max depth', help: 'How many link levels to follow from the seed.', value: String(maxDepth), changed: maxDepth !== 3 },
     { label: 'Max URLs', help: 'Hard cap on crawled URLs.', value: String(maxUrls), changed: maxUrls !== 250 },
@@ -853,6 +957,47 @@ export default function Home() {
                   ))}
                   {extractors.length === 0 && <li>No extractors yet.</li>}
                 </ul>
+              </div>
+              <div className="field">
+                <label htmlFor="profileName">Profiles</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    id="profileName"
+                    type="text"
+                    value={profileName}
+                    onChange={(event) => setProfileName(event.target.value)}
+                    placeholder="Profile name"
+                  />
+                  <button className="secondary" type="button" onClick={saveProfile}>
+                    Save
+                  </button>
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <select
+                    value={profileSelected}
+                    onChange={(event) => {
+                      setProfileSelected(event.target.value);
+                      void loadProfile(event.target.value);
+                    }}
+                    aria-label="Load profile"
+                  >
+                    <option value="">Load profile…</option>
+                    {profiles.map((profile) => (
+                      <option key={profile.name} value={profile.name}>
+                        {profile.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    className="secondary"
+                    type="button"
+                    onClick={removeProfile}
+                    disabled={!profileSelected}
+                  >
+                    Delete
+                  </button>
+                </div>
+                {profileError && <p className="settings-errors">{profileError}</p>}
               </div>
               <div className="field">
                 <label htmlFor="settingsSearch">Find a setting</label>
