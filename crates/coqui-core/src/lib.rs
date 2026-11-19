@@ -357,6 +357,16 @@ pub struct AxeViolation {
     pub nodes: u32,
 }
 
+/// An image referenced by a page.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageRef {
+    pub src: String,
+    pub alt: Option<String>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+}
+
 /// An hreflang alternate declared by a page.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

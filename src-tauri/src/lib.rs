@@ -436,6 +436,10 @@ fn export_view(
             .store
             .export_urls_xlsx(&crawl_id, &path, &columns, issue.as_deref())
             .map_err(|error| error.to_string())?,
+        ("images", _) => state
+            .store
+            .export_images_csv(&crawl_id, &path)
+            .map_err(|error| error.to_string())?,
         ("headers", _) => state
             .store
             .export_headers_csv(&crawl_id, &path)

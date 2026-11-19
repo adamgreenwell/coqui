@@ -422,6 +422,7 @@ pub async fn run_crawl(
                 }
 
                 if let Some(page) = extracted {
+                    store.replace_images(&crawl_id, page_id, &page.images)?;
                     for link in &page.links {
                         let to_id = store.ensure_url_id(&crawl_id, &link.url)?;
                         store.insert_link(
