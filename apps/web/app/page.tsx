@@ -1153,6 +1153,28 @@ export default function Home() {
                 >
                   Issues CSV
                 </button>
+                <button
+                  className="secondary"
+                  type="button"
+                  onClick={async () => {
+                    if (!crawl) return;
+                    try {
+                      const { invoke } = await import('@tauri-apps/api/core');
+                      const path = await invoke<string>('export_view', {
+                        crawlId: crawl.id,
+                        view: 'links',
+                        issue: null,
+                        columns: [],
+                      });
+                      setExportPath(path);
+                    } catch (cause) {
+                      setError(cause instanceof Error ? cause.message : String(cause));
+                    }
+                  }}
+                  disabled={!isTauri || !crawl}
+                >
+                  Links CSV
+                </button>
               </div>
             </div>
 
@@ -1237,6 +1259,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 
