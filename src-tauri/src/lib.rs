@@ -448,6 +448,31 @@ async fn test_connection(seed: String, headers: Vec<String>) -> Result<Connectio
 }
 
 #[tauri::command]
+fn export_html_report(
+    state: State<'_, AppState>,
+    crawl_id: String,
+    pattern: Option<String>,
+) -> Result<String, String> {
+    let dir = state.data_dir.join("exports");
+    std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+    let crawl = state
+        .store
+        .get_crawl(&crawl_id)
+        .map_err(|error| error.to_string())?;
+    let filename = coqui_core::export_filename(
+        pattern.as_deref().unwrap_or(""),
+        &seed_domain(&crawl.seed),
+        "report",
+        &crawl_id,
+        now_ms(),
+        "html",
+    );
+    let path = dir.join(filename);
+    coqui_report::write_html(&state.store, &crawl_id, &path)?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
 fn export_catalog() -> Vec<coqui_core::ExportDefinition> {
     coqui_core::export_catalog()
 }
@@ -608,6 +633,7 @@ pub fn run() {
             run_lighthouse_sample,
             test_connection,
             export_catalog,
+            export_html_report,
             export_view
         ])
         .run(tauri::generate_context!())

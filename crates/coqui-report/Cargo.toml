@@ -1,0 +1,10 @@
+[package]
+name = "coqui-report"
+description = "Static report rendering for Coqui crawls"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+coqui-core.workspace = true
+coqui-store.workspace = true

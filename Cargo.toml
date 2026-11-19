@@ -8,6 +8,7 @@ members = [
   "crates/coqui-render",
   "crates/coqui-lighthouse",
   "crates/coqui-cli",
+  "crates/coqui-report",
   "src-tauri",
 ]
 
@@ -23,6 +24,7 @@ coqui-crawl = { path = "crates/coqui-crawl" }
 coqui-audit = { path = "crates/coqui-audit" }
 coqui-render = { path = "crates/coqui-render" }
 coqui-lighthouse = { path = "crates/coqui-lighthouse" }
+coqui-report = { path = "crates/coqui-report" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -49,6 +51,7 @@ base64 = "0.22"
 opt-level = 0
 [profile.dev.package."*"]
 opt-level = 2
+
 
 
 

@@ -1301,6 +1301,26 @@ export default function Home() {
                 <button
                   className="secondary"
                   type="button"
+                  onClick={async () => {
+                    if (!crawl) return;
+                    try {
+                      const { invoke } = await import('@tauri-apps/api/core');
+                      const path = await invoke<string>('export_html_report', {
+                        crawlId: crawl.id,
+                        pattern: exportPattern.trim() || null,
+                      });
+                      setExportPath(path);
+                    } catch (cause) {
+                      setError(cause instanceof Error ? cause.message : String(cause));
+                    }
+                  }}
+                  disabled={!isTauri || !crawl}
+                >
+                  HTML report
+                </button>
+                <button
+                  className="secondary"
+                  type="button"
                   onClick={exportIssues}
                   disabled={!isTauri || !crawl || issueTotal === 0}
                 >
