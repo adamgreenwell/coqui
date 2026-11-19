@@ -263,14 +263,8 @@ fn export_csv(state: State<'_, AppState>, crawl_id: String) -> Result<String, St
     Ok(path.to_string_lossy().to_string())
 }
 
-fn lighthouse_command(url: &str, output_path: &std::path::Path) -> tokio::process::Command {
-    let sidecar = |name: &str| {
-        std::env::current_exe()
-            .ok()
-            .and_then(|exe| exe.parent().map(|dir| dir.join(name)))
-            .filter(|path| path.exists())
-    };
-    let chrome = std::env::var_os("CHROME_PATH")
+fn browser_path() -> Option<std::path::PathBuf> {
+    std::env::var_os("CHROME_PATH")
         .map(std::path::PathBuf::from)
         .filter(|path| path.exists())
         .or_else(|| {
@@ -287,7 +281,17 @@ fn lighthouse_command(url: &str, output_path: &std::path::Path) -> tokio::proces
             .iter()
             .map(std::path::PathBuf::from)
             .find(|path| path.exists())
-        });
+        })
+}
+
+fn lighthouse_command(url: &str, output_path: &std::path::Path) -> tokio::process::Command {
+    let sidecar = |name: &str| {
+        std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|dir| dir.join(name)))
+            .filter(|path| path.exists())
+    };
+    let chrome = browser_path();
     let node = std::env::var_os("COQUI_NODE")
         .map(std::path::PathBuf::from)
         .filter(|path| path.exists())
@@ -486,6 +490,63 @@ fn export_html_report(
 }
 
 #[tauri::command]
+async fn export_pdf_report(
+    state: State<'_, AppState>,
+    crawl_id: String,
+    pattern: Option<String>,
+    report: Option<String>,
+    top: Option<u32>,
+    status: Option<u16>,
+) -> Result<String, String> {
+    let browser =
+        browser_path().ok_or_else(|| "No Chrome or Edge found; set CHROME_PATH".to_string())?;
+    let dir = state.data_dir.join("exports");
+    std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+    let crawl = state
+        .store
+        .get_crawl(&crawl_id)
+        .map_err(|error| error.to_string())?;
+    let filename = coqui_core::export_filename(
+        pattern.as_deref().unwrap_or(""),
+        &seed_domain(&crawl.seed),
+        "report",
+        &crawl_id,
+        now_ms(),
+        "pdf",
+    );
+    let pdf = dir.join(filename);
+    let html = pdf.with_extension("html");
+    let options = coqui_report::ReportOptions {
+        top: top.map(|value| value as usize),
+        status,
+    };
+    coqui_report::write_report_with(
+        &state.store,
+        &crawl_id,
+        &html,
+        report.as_deref().unwrap_or("summary"),
+        &options,
+    )?;
+    let location = format!("file:///{}", html.to_string_lossy().replace('\\', "/"));
+    let mut command = tokio::process::Command::new(browser);
+    command
+        .arg("--headless=new")
+        .arg("--disable-gpu")
+        .arg("--no-pdf-header-footer")
+        .arg(format!("--print-to-pdf={}", pdf.display()))
+        .arg(location);
+    let status = tokio::time::timeout(std::time::Duration::from_secs(60), command.status())
+        .await
+        .map_err(|_| "PDF generation timed out after 60 seconds".to_string())?
+        .map_err(|error| format!("could not run Chrome/Edge: {error}"))?;
+    let _ = std::fs::remove_file(&html);
+    if !status.success() {
+        return Err("Chrome/Edge failed to print the report".to_string());
+    }
+    Ok(pdf.to_string_lossy().to_string())
+}
+
+#[tauri::command]
 fn export_catalog() -> Vec<coqui_core::ExportDefinition> {
     coqui_core::export_catalog()
 }
@@ -647,6 +708,7 @@ pub fn run() {
             test_connection,
             export_catalog,
             export_html_report,
+            export_pdf_report,
             export_view
         ])
         .run(tauri::generate_context!())
