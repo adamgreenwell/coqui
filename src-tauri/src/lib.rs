@@ -468,6 +468,10 @@ fn export_view(
             .store
             .export_headers_csv(&crawl_id, &path)
             .map_err(|error| error.to_string())?,
+        ("sitemap", _) => state
+            .store
+            .export_sitemap(&crawl_id, &path)
+            .map_err(|error| error.to_string())?,
         ("images", _) => state
             .store
             .export_images_csv(&crawl_id, &path)
