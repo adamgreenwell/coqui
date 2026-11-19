@@ -259,6 +259,7 @@ export default function Home() {
   const [renderBlockAssets, setRenderBlockAssets] = useState(false);
   const [accessibility, setAccessibility] = useState(false);
   const [webVitals, setWebVitals] = useState(false);
+  const [settingsQuery, setSettingsQuery] = useState('');
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
   const [lighthouse, setLighthouse] = useState<LighthouseSummary | null>(null);
   const [lighthouseBusy, setLighthouseBusy] = useState(false);
@@ -492,6 +493,29 @@ export default function Home() {
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const isRunning = phase === 'running' || phase === 'pending';
+  const settingEntries = [
+    { label: 'Max depth', help: 'How many link levels to follow from the seed.', value: String(maxDepth), changed: maxDepth !== 3 },
+    { label: 'Max URLs', help: 'Hard cap on crawled URLs.', value: String(maxUrls), changed: maxUrls !== 250 },
+    { label: 'Concurrency', help: 'Parallel requests.', value: String(concurrency), changed: concurrency !== 8 },
+    { label: 'Stay on seed host', help: 'Restrict the crawl to the seed host.', value: sameHostOnly ? 'on' : 'off', changed: !sameHostOnly },
+    { label: 'Respect robots.txt', help: 'Honour robots.txt directives.', value: respectRobots ? 'on' : 'off', changed: !respectRobots },
+    { label: 'Render with Chromium', help: 'Run JavaScript pages before extraction.', value: render ? 'on' : 'off', changed: render },
+    { label: 'Render wait', help: 'Milliseconds to wait after load.', value: `${renderWaitMs} ms`, changed: renderWaitMs !== 500 },
+    { label: 'Render workers', help: 'Concurrent rendering tabs.', value: String(renderWorkers), changed: renderWorkers !== 2 },
+    { label: 'Screenshots', help: 'Save a JPEG per rendered page.', value: screenshots ? 'on' : 'off', changed: screenshots },
+    { label: 'Block third-party assets', help: 'Skip third-party requests while rendering.', value: renderBlockAssets ? 'on' : 'off', changed: renderBlockAssets },
+    { label: 'Accessibility (axe)', help: 'Run axe-core on rendered pages.', value: accessibility ? 'on' : 'off', changed: accessibility },
+    { label: 'Web Vitals', help: 'Capture LCP, CLS, TBT, TTFB and FCP.', value: webVitals ? 'on' : 'off', changed: webVitals },
+    { label: 'Browser path', help: 'Chrome/Edge executable override.', value: browserPath || 'auto', changed: browserPath.length > 0 },
+    { label: 'Include patterns', help: 'One regex per line; only matching URLs are crawled.', value: includePatterns ? 'set' : 'none', changed: includePatterns.length > 0 },
+    { label: 'Exclude patterns', help: 'One regex per line; matching URLs are skipped.', value: excludePatterns ? 'set' : 'none', changed: excludePatterns.length > 0 },
+    { label: 'Basic auth user', help: 'HTTP basic authentication username.', value: authUser || 'none', changed: authUser.length > 0 },
+    { label: 'Custom headers', help: 'Header: value lines sent with every request.', value: customHeaders ? 'set' : 'none', changed: customHeaders.length > 0 },
+  ];
+  const changedSettings = settingEntries.filter((entry) => entry.changed);
+  const filteredSettings = settingEntries.filter((entry) =>
+    `${entry.label} ${entry.help}`.toLowerCase().includes(settingsQuery.trim().toLowerCase()),
+  );
   const cap = crawl?.config.maxUrls ?? maxUrls;
   const target = Math.max(1, Math.min(cap, progress?.discovered || cap));
   const percent = progress
@@ -716,6 +740,27 @@ export default function Home() {
             <details className="advanced">
               <summary>Scope, auth & headers</summary>
               <div className="field">
+                <label htmlFor="settingsSearch">Find a setting</label>
+                <input
+                  id="settingsSearch"
+                  type="search"
+                  value={settingsQuery}
+                  onChange={(event) => setSettingsQuery(event.target.value)}
+                  placeholder="depth, render, vitals, auth…"
+                />
+              </div>
+              {settingsQuery.trim().length > 0 && (
+                <ul className="settings-reference">
+                  {filteredSettings.map((entry) => (
+                    <li key={entry.label}>
+                      <strong>{entry.label}</strong> — {entry.help}{' '}
+                      <span className="muted">({entry.value})</span>
+                    </li>
+                  ))}
+                  {filteredSettings.length === 0 && <li>No settings match.</li>}
+                </ul>
+              )}
+              <div className="field">
                 <label htmlFor="include">Include patterns (one regex per line)</label>
                 <textarea
                   id="include"
@@ -879,6 +924,13 @@ export default function Home() {
               />
               Respect robots.txt
             </label>
+            <p className="settings-diff">
+              {changedSettings.length === 0
+                ? 'Default configuration.'
+                : `Diff from defaults: ${changedSettings
+                    .map((entry) => `${entry.label} ${entry.value}`)
+                    .join(' · ')}`}
+            </p>
             {phase === 'paused' ? (
               <button
                 className="primary"
