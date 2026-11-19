@@ -2327,6 +2327,14 @@ fn migrate(conn: &Connection) -> Result<()> {
          CREATE INDEX IF NOT EXISTS idx_links_crawl_to ON links (crawl_id, to_id);",
     )?;
     if version < 25 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS issue_suppressions (
+                crawl_id TEXT NOT NULL,
+                rule     TEXT NOT NULL,
+                reason   TEXT,
+                PRIMARY KEY (crawl_id, rule)
+            );",
+        )?;
         if !has_column(conn, "issue_suppressions", "reason")? {
             conn.execute("ALTER TABLE issue_suppressions ADD COLUMN reason TEXT", [])?;
         }
