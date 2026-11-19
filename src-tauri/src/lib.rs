@@ -389,6 +389,34 @@ async fn run_lighthouse_sample(
     Ok(summaries)
 }
 
+#[tauri::command]
+fn export_view(
+    state: State<'_, AppState>,
+    crawl_id: String,
+    view: String,
+    issue: Option<String>,
+    columns: Vec<String>,
+) -> Result<String, String> {
+    let dir = state.data_dir.join("exports");
+    std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+    let path = dir.join(format!("{crawl_id}-{view}-{}.csv", now_ms()));
+    match view.as_str() {
+        "issues" => state
+            .store
+            .export_issues_csv(&crawl_id, &path)
+            .map_err(|error| error.to_string())?,
+        "links" => state
+            .store
+            .export_links_csv(&crawl_id, &path)
+            .map_err(|error| error.to_string())?,
+        _ => state
+            .store
+            .export_urls_csv(&crawl_id, &path, &columns, issue.as_deref())
+            .map_err(|error| error.to_string())?,
+    };
+    Ok(path.to_string_lossy().to_string())
+}
+
 pub fn run() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
@@ -427,7 +455,8 @@ pub fn run() {
             export_csv,
             get_screenshot,
             run_lighthouse,
-            run_lighthouse_sample
+            run_lighthouse_sample,
+            export_view
         ])
         .run(tauri::generate_context!())
         .expect("error while running Coqui");

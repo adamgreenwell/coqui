@@ -634,6 +634,94 @@ impl Store {
     }
 
     /// Write every URL row of a crawl to `path` as CSV. Returns the row count written.
+    pub fn export_urls_csv(
+        &self,
+        crawl_id: &str,
+        path: impl AsRef<Path>,
+        columns: &[String],
+        issue: Option<&str>,
+    ) -> Result<u64> {
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let allowed: Vec<String> = if columns.is_empty() {
+            vec!["url".into(), "status".into(), "title".into()]
+        } else {
+            columns.to_vec()
+        };
+        let issue_urls: Option<std::collections::HashSet<String>> = match issue {
+            Some(rule) => {
+                let conn = self.lock()?;
+                let mut stmt =
+                    conn.prepare("SELECT url FROM issues WHERE crawl_id = ?1 AND rule = ?2")?;
+                let rows = stmt
+                    .query_map(params![crawl_id, rule], |row| row.get::<_, String>(0))?
+                    .collect::<std::result::Result<std::collections::HashSet<_>, _>>()?;
+                Some(rows)
+            }
+            None => None,
+        };
+        let urls = self.all_urls(crawl_id)?;
+        let mut writer = csv::Writer::from_path(path)?;
+        writer.write_record(allowed.iter().map(|key| csv_header(key)))?;
+        let mut rows = 0u64;
+        for url in &urls {
+            if let Some(filter) = &issue_urls {
+                if !filter.contains(&url.url) {
+                    continue;
+                }
+            }
+            writer.write_record(allowed.iter().map(|key| url_csv_value(url, key)))?;
+            rows += 1;
+        }
+        writer.flush()?;
+        Ok(rows)
+    }
+
+    pub fn export_issues_csv(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT url, rule, severity, detail FROM issues WHERE crawl_id = ?1 ORDER BY rule, url",
+        )?;
+        let mut writer = csv::Writer::from_path(path)?;
+        writer.write_record(["url", "rule", "severity", "detail"])?;
+        let mut rows = 0u64;
+        let mut records = stmt.query(params![crawl_id])?;
+        while let Some(row) = records.next()? {
+            let url: String = row.get(0)?;
+            let rule: String = row.get(1)?;
+            let severity: String = row.get(2)?;
+            let detail: Option<String> = row.get(3)?;
+            writer.write_record([url, rule, severity, detail.unwrap_or_default()])?;
+            rows += 1;
+        }
+        writer.flush()?;
+        Ok(rows)
+    }
+
+    pub fn export_links_csv(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let links = self.all_links(crawl_id)?;
+        let mut writer = csv::Writer::from_path(path)?;
+        writer.write_record(["from_url", "to_url", "anchor", "rel", "internal"])?;
+        for link in &links {
+            writer.write_record([
+                link.from_url.clone(),
+                link.to_url.clone(),
+                link.anchor.clone().unwrap_or_default(),
+                link.rel.clone().unwrap_or_default(),
+                link.internal.to_string(),
+            ])?;
+        }
+        writer.flush()?;
+        Ok(links.len() as u64)
+    }
+
     pub fn export_csv(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {
         if let Some(parent) = path.as_ref().parent() {
             std::fs::create_dir_all(parent)?;
@@ -1272,5 +1360,47 @@ mod migration_tests {
             .unwrap();
         assert_eq!(store.all_links("c1").unwrap().len(), 2);
         std::fs::remove_file(path).ok();
+    }
+}
+
+fn csv_header(key: &str) -> String {
+    match key {
+        "words" => "word_count".into(),
+        "lcp" => "lcp_ms".into(),
+        "cls" => "cls".into(),
+        other => other.to_string(),
+    }
+}
+
+fn url_csv_value(url: &UrlRecord, key: &str) -> String {
+    match key {
+        "url" => url.url.clone(),
+        "status" => url
+            .status
+            .map(|value| value.to_string())
+            .unwrap_or_default(),
+        "title" => url.title.clone().unwrap_or_default(),
+        "h1" => url.h1.clone().unwrap_or_default(),
+        "words" => url
+            .word_count
+            .map(|value| value.to_string())
+            .unwrap_or_default(),
+        "canonical" => url.canonical.clone().unwrap_or_default(),
+        "robots" => url.meta_robots.clone().unwrap_or_default(),
+        "redirect" => url.redirect_target.clone().unwrap_or_default(),
+        "depth" => url.depth.to_string(),
+        "time" => url
+            .response_time_ms
+            .map(|value| value.to_string())
+            .unwrap_or_default(),
+        "lcp" => url
+            .vitals
+            .map(|vitals| vitals.lcp_ms.to_string())
+            .unwrap_or_default(),
+        "cls" => url
+            .vitals
+            .map(|vitals| vitals.cls.to_string())
+            .unwrap_or_default(),
+        other => other.to_string(),
     }
 }

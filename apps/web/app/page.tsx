@@ -432,7 +432,30 @@ export default function Home() {
     if (!crawl) return;
     try {
       const { invoke } = await import('@tauri-apps/api/core');
-      const path = await invoke<string>('export_csv', { crawlId: crawl.id });
+      const path = await invoke<string>('export_view', {
+        crawlId: crawl.id,
+        view: 'urls',
+        issue: activeIssue,
+        columns: Object.entries(columns)
+          .filter(([, enabled]) => enabled)
+          .map(([key]) => key),
+      });
+      setExportPath(path);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }
+
+  async function exportIssues() {
+    if (!crawl) return;
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const path = await invoke<string>('export_view', {
+        crawlId: crawl.id,
+        view: 'issues',
+        issue: null,
+        columns: [],
+      });
       setExportPath(path);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -1121,6 +1144,14 @@ export default function Home() {
                   disabled={!isTauri || !crawl || total === 0}
                 >
                   Export CSV
+                </button>
+                <button
+                  className="secondary"
+                  type="button"
+                  onClick={exportIssues}
+                  disabled={!isTauri || !crawl || issueTotal === 0}
+                >
+                  Issues CSV
                 </button>
               </div>
             </div>
