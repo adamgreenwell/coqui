@@ -528,18 +528,17 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
             )?;
         }
 
-        if !title.is_empty() {
-            if let Some(group) = duplicate_titles.get(&title.to_ascii_lowercase()) {
-                if group.len() > 1 {
-                    issue(
-                        store,
-                        crawl_id,
-                        &url.url,
-                        "duplicate_title",
-                        Some(format!("{} pages share this title", group.len())),
-                    )?;
-                }
-            }
+        if !title.is_empty()
+            && let Some(group) = duplicate_titles.get(&title.to_ascii_lowercase())
+            && group.len() > 1
+        {
+            issue(
+                store,
+                crawl_id,
+                &url.url,
+                "duplicate_title",
+                Some(format!("{} pages share this title", group.len())),
+            )?;
         }
 
         let meta = url.meta_description.as_deref().unwrap_or("").trim();
@@ -563,16 +562,16 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
                     Some(format!("{} characters", meta.chars().count())),
                 )?;
             }
-            if let Some(group) = duplicate_meta.get(&meta.to_ascii_lowercase()) {
-                if group.len() > 1 {
-                    issue(
-                        store,
-                        crawl_id,
-                        &url.url,
-                        "duplicate_meta_description",
-                        Some(format!("{} pages share this description", group.len())),
-                    )?;
-                }
+            if let Some(group) = duplicate_meta.get(&meta.to_ascii_lowercase())
+                && group.len() > 1
+            {
+                issue(
+                    store,
+                    crawl_id,
+                    &url.url,
+                    "duplicate_meta_description",
+                    Some(format!("{} pages share this description", group.len())),
+                )?;
             }
         }
 
@@ -589,16 +588,16 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
         if url.url.starts_with("http://") {
             issue(store, crawl_id, &url.url, "non_https", None)?;
         }
-        if let Some(robots) = url.meta_robots.as_deref() {
-            if robots.to_ascii_lowercase().contains("noindex") {
-                issue(
-                    store,
-                    crawl_id,
-                    &url.url,
-                    "noindex_page",
-                    Some(robots.to_string()),
-                )?;
-            }
+        if let Some(robots) = url.meta_robots.as_deref()
+            && robots.to_ascii_lowercase().contains("noindex")
+        {
+            issue(
+                store,
+                crawl_id,
+                &url.url,
+                "noindex_page",
+                Some(robots.to_string()),
+            )?;
         }
 
         if let Some(count) = missing_alt.get(&url.url) {
@@ -611,27 +610,27 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
             )?;
         }
 
-        if let Some(ms) = url.response_time_ms {
-            if ms > 1000 {
-                issue(
-                    store,
-                    crawl_id,
-                    &url.url,
-                    "slow_response",
-                    Some(format!("{ms} ms")),
-                )?;
-            }
+        if let Some(ms) = url.response_time_ms
+            && ms > 1000
+        {
+            issue(
+                store,
+                crawl_id,
+                &url.url,
+                "slow_response",
+                Some(format!("{ms} ms")),
+            )?;
         }
-        if let Some(bytes) = url.size_bytes {
-            if bytes > 1_048_576 {
-                issue(
-                    store,
-                    crawl_id,
-                    &url.url,
-                    "large_page",
-                    Some(format!("{:.1} MB", bytes as f64 / 1_048_576.0)),
-                )?;
-            }
+        if let Some(bytes) = url.size_bytes
+            && bytes > 1_048_576
+        {
+            issue(
+                store,
+                crawl_id,
+                &url.url,
+                "large_page",
+                Some(format!("{:.1} MB", bytes as f64 / 1_048_576.0)),
+            )?;
         }
 
         if url.url.chars().count() > 115 {
@@ -654,18 +653,17 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
             )?;
         }
 
-        if let Some(hash) = content_hash_by_url.get(&url.url) {
-            if let Some(group) = duplicate_content.get(hash) {
-                if group.len() > 1 {
-                    issue(
-                        store,
-                        crawl_id,
-                        &url.url,
-                        "duplicate_content",
-                        Some(format!("{} pages share this content", group.len())),
-                    )?;
-                }
-            }
+        if let Some(hash) = content_hash_by_url.get(&url.url)
+            && let Some(group) = duplicate_content.get(hash)
+            && group.len() > 1
+        {
+            issue(
+                store,
+                crawl_id,
+                &url.url,
+                "duplicate_content",
+                Some(format!("{} pages share this content", group.len())),
+            )?;
         }
 
         if url.h1_count == 0 {
@@ -728,18 +726,16 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
             .as_deref()
             .map(str::trim)
             .filter(|text| !text.is_empty())
+            && let Some(group) = duplicate_h1.get(&h1.to_ascii_lowercase())
+            && group.len() > 1
         {
-            if let Some(group) = duplicate_h1.get(&h1.to_ascii_lowercase()) {
-                if group.len() > 1 {
-                    issue(
-                        store,
-                        crawl_id,
-                        &url.url,
-                        "duplicate_h1",
-                        Some(format!("{} pages share this H1", group.len())),
-                    )?;
-                }
-            }
+            issue(
+                store,
+                crawl_id,
+                &url.url,
+                "duplicate_h1",
+                Some(format!("{} pages share this H1", group.len())),
+            )?;
         }
 
         if url.h1_count > 1 {

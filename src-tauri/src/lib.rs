@@ -291,11 +291,11 @@ fn sidecar_path(app: &tauri::AppHandle, name: &str) -> Option<std::path::PathBuf
         bases.push(dir.join("sidecars"));
         bases.push(dir);
     }
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(parent) = exe.parent() {
-            bases.push(parent.to_path_buf());
-            bases.push(parent.join("sidecars"));
-        }
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(parent) = exe.parent()
+    {
+        bases.push(parent.to_path_buf());
+        bases.push(parent.join("sidecars"));
     }
     bases
         .into_iter()
@@ -1306,10 +1306,10 @@ pub fn run() {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
             let store = Store::open(data_dir.join("coqui.db"))?;
-            if let Ok(count) = store.pause_interrupted_crawls() {
-                if count > 0 {
-                    tracing::info!(count, "marked interrupted crawls as paused");
-                }
+            if let Ok(count) = store.pause_interrupted_crawls()
+                && count > 0
+            {
+                tracing::info!(count, "marked interrupted crawls as paused");
             }
             app.manage(AppState {
                 store: Arc::new(store),

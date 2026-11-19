@@ -418,10 +418,10 @@ pub async fn run_crawl(
                 }
                 store.insert_url(&record)?;
                 let page_id = store.url_id(&crawl_id, &url)?.unwrap_or_default();
-                if page_id > 0 {
-                    if let Some(data) = &outcome.screenshot {
-                        store.save_screenshot(&crawl_id, page_id, data)?;
-                    }
+                if page_id > 0
+                    && let Some(data) = &outcome.screenshot
+                {
+                    store.save_screenshot(&crawl_id, page_id, data)?;
                 }
 
                 if !extractors.is_empty() {
@@ -737,24 +737,24 @@ async fn fetch(
         let mut vitals = None;
         let blocked = looks_blocked(status, &response_headers, body.as_deref());
         let http_elapsed_ms = started.elapsed().as_millis() as u64;
-        if !blocked {
-            if let Some(renderer) = renderer {
-                if html && (200..300).contains(&status) {
-                    match renderer.render_page(&current).await {
-                        Ok(rendered) => {
-                            size_bytes = rendered.html.len() as u64;
-                            body = Some(rendered.html);
-                            console = rendered.console;
-                            screenshot = rendered.screenshot;
-                            axe = rendered.axe;
-                            custom_js = rendered.custom_js;
-                            vitals = rendered.vitals;
-                        }
-                        Err(error) => {
-                            if std::env::var_os("COQUI_DEBUG_CRAWL").is_some() {
-                                eprintln!("render: failed for {current}: {error}");
-                            }
-                        }
+        if !blocked
+            && let Some(renderer) = renderer
+            && html
+            && (200..300).contains(&status)
+        {
+            match renderer.render_page(&current).await {
+                Ok(rendered) => {
+                    size_bytes = rendered.html.len() as u64;
+                    body = Some(rendered.html);
+                    console = rendered.console;
+                    screenshot = rendered.screenshot;
+                    axe = rendered.axe;
+                    custom_js = rendered.custom_js;
+                    vitals = rendered.vitals;
+                }
+                Err(error) => {
+                    if std::env::var_os("COQUI_DEBUG_CRAWL").is_some() {
+                        eprintln!("render: failed for {current}: {error}");
                     }
                 }
             }
@@ -811,11 +811,11 @@ pub(crate) async fn get_following(
                 .get(LOCATION)
                 .and_then(|value| value.to_str().ok())
                 .map(str::to_string);
-            if let Some(location) = location {
-                if let Ok(next) = resolve_url(&current, &location) {
-                    current = next;
-                    continue;
-                }
+            if let Some(location) = location
+                && let Ok(next) = resolve_url(&current, &location)
+            {
+                current = next;
+                continue;
             }
         }
         return Ok(response);

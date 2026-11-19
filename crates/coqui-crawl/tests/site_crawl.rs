@@ -283,7 +283,7 @@ async fn crawls_a_small_site() {
         redirect.redirect_target.as_deref(),
         Some(redirect_target.as_str())
     );
-    assert!(redirect.redirect_chain.len() >= 1);
+    assert!(!redirect.redirect_chain.is_empty());
 
     assert!(
         page.rows.iter().all(|row| !row.url.ends_with("/blocked")),
