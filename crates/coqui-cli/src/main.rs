@@ -3,6 +3,7 @@
 use coqui_core::{CrawlConfig, CrawlProgress, now_ms};
 use coqui_store::Store;
 use serde::Deserialize;
+use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -101,7 +102,7 @@ fn load_config(path: &Path, required: bool) -> Result<FileConfig, String> {
 }
 
 fn usage() -> &'static str {
-    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance] [--out DIR]\n       coqui reports\n       coqui export [--out DIR]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N]\n       coqui schedule list|remove <id>|run-due [--out DIR]"
+    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance] [--out DIR]\n       coqui reports\n       coqui export [--out DIR]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui mcp [--out DIR]"
 }
 
 fn parse_args(values: &[String], config: &FileConfig) -> Result<Args, String> {
@@ -558,6 +559,215 @@ async fn run_schedule(values: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn rpc_result(id: serde_json::Value, result: serde_json::Value) -> serde_json::Value {
+    serde_json::json!({"jsonrpc": "2.0", "id": id, "result": result})
+}
+
+fn rpc_error(id: serde_json::Value, code: i64, message: &str) -> serde_json::Value {
+    serde_json::json!({"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": message}})
+}
+
+fn tool_definitions() -> serde_json::Value {
+    serde_json::json!([
+        {
+            "name": "list_crawls",
+            "description": "List recent crawls in the Coqui crawl database.",
+            "inputSchema": {"type": "object", "properties": {}}
+        },
+        {
+            "name": "get_crawl",
+            "description": "Get a crawl summary by id.",
+            "inputSchema": {"type": "object", "properties": {"crawl_id": {"type": "string"}}, "required": ["crawl_id"]}
+        },
+        {
+            "name": "list_urls",
+            "description": "List URLs for a crawl.",
+            "inputSchema": {"type": "object", "properties": {"crawl_id": {"type": "string"}, "limit": {"type": "integer"}, "page": {"type": "integer"}}, "required": ["crawl_id"]}
+        },
+        {
+            "name": "issue_counts",
+            "description": "Issue counts for a crawl.",
+            "inputSchema": {"type": "object", "properties": {"crawl_id": {"type": "string"}}, "required": ["crawl_id"]}
+        },
+        {
+            "name": "export_urls",
+            "description": "Export a crawl's URLs to CSV and return the path.",
+            "inputSchema": {"type": "object", "properties": {"crawl_id": {"type": "string"}}, "required": ["crawl_id"]}
+        }
+    ])
+}
+
+fn call_tool(
+    store: &Store,
+    out: &Path,
+    message: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let params = message
+        .get("params")
+        .ok_or_else(|| "missing params".to_string())?;
+    let name = params
+        .get("name")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| "missing tool name".to_string())?;
+    let arguments = params
+        .get("arguments")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+    let crawl_id = || {
+        arguments
+            .get("crawl_id")
+            .and_then(|value| value.as_str())
+            .ok_or_else(|| "crawl_id is required".to_string())
+    };
+    match name {
+        "list_crawls" => {
+            let crawls = store.list_crawls().map_err(|error| error.to_string())?;
+            let values: Vec<_> = crawls
+                .iter()
+                .map(|crawl| {
+                    serde_json::json!({
+                        "id": crawl.id,
+                        "seed": crawl.seed,
+                        "seedKind": crawl.seed_kind,
+                        "status": format!("{:?}", crawl.status),
+                        "totalUrls": crawl.total_urls,
+                        "blockedUrls": crawl.blocked_urls,
+                    })
+                })
+                .collect();
+            Ok(serde_json::Value::Array(values))
+        }
+        "get_crawl" => {
+            let crawl = store
+                .get_crawl(&crawl_id()?)
+                .map_err(|error| error.to_string())?;
+            Ok(serde_json::json!({
+                "id": crawl.id,
+                "seed": crawl.seed,
+                "seedKind": crawl.seed_kind,
+                "status": format!("{:?}", crawl.status),
+                "totalUrls": crawl.total_urls,
+                "blockedUrls": crawl.blocked_urls,
+            }))
+        }
+        "list_urls" => {
+            let page = arguments
+                .get("page")
+                .and_then(|value| value.as_u64())
+                .unwrap_or(1) as u32;
+            let limit = arguments
+                .get("limit")
+                .and_then(|value| value.as_u64())
+                .unwrap_or(20) as u32;
+            let result = store
+                .list_urls(&crawl_id()?, page, limit, None)
+                .map_err(|error| error.to_string())?;
+            let rows: Vec<_> = result
+                .rows
+                .iter()
+                .map(|url| {
+                    serde_json::json!({
+                        "url": url.url,
+                        "status": url.status,
+                        "title": url.title,
+                        "h1": url.h1,
+                        "wordCount": url.word_count,
+                    })
+                })
+                .collect();
+            Ok(serde_json::json!({"total": result.total, "rows": rows}))
+        }
+        "issue_counts" => {
+            let counts = store
+                .issue_counts(&crawl_id()?)
+                .map_err(|error| error.to_string())?;
+            let values: Vec<_> = counts
+                .iter()
+                .map(|count| serde_json::json!({"rule": count.rule, "count": count.count}))
+                .collect();
+            Ok(serde_json::Value::Array(values))
+        }
+        "export_urls" => {
+            let crawl_id_value = crawl_id()?;
+            let path = out.join(format!("export-{crawl_id_value}.csv"));
+            let rows = store
+                .export_urls_csv(&crawl_id_value, &path, &[], None)
+                .map_err(|error| error.to_string())?;
+            Ok(serde_json::json!({"path": path.to_string_lossy(), "rows": rows}))
+        }
+        other => Err(format!("unknown tool '{other}'")),
+    }
+}
+
+fn run_mcp(values: &[String]) -> Result<(), String> {
+    let mut out = PathBuf::from("coqui-out");
+    let mut index = 0;
+    while index < values.len() {
+        match values[index].as_str() {
+            "--out" => {
+                index += 1;
+                out = PathBuf::from(values.get(index).ok_or("missing --out value")?);
+            }
+            other => return Err(format!("unknown option '{other}'")),
+        }
+        index += 1;
+    }
+    let store = Store::open(out.join("coqui.db")).map_err(|error| error.to_string())?;
+    let stdin = std::io::stdin();
+    let mut stdout = std::io::stdout();
+    for line in stdin.lock().lines() {
+        let line = line.map_err(|error| error.to_string())?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let Ok(message) = serde_json::from_str::<serde_json::Value>(&line) else {
+            continue;
+        };
+        let id = message
+            .get("id")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        let method = message
+            .get("method")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
+        if method == "notifications/initialized" {
+            continue;
+        }
+        let response = match method {
+            "initialize" => rpc_result(
+                id,
+                serde_json::json!({
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {"tools": {}},
+                    "serverInfo": {"name": "coqui", "version": env!("CARGO_PKG_VERSION")},
+                }),
+            ),
+            "ping" => rpc_result(id, serde_json::json!({})),
+            "tools/list" => rpc_result(id, serde_json::json!({"tools": tool_definitions()})),
+            "tools/call" => match call_tool(&store, &out, &message) {
+                Ok(value) => rpc_result(
+                    id,
+                    serde_json::json!({
+                        "content": [{"type": "text", "text": value.to_string()}],
+                    }),
+                ),
+                Err(error) => rpc_result(
+                    id,
+                    serde_json::json!({
+                        "content": [{"type": "text", "text": error}],
+                        "isError": true,
+                    }),
+                ),
+            },
+            other => rpc_error(id, -32601, &format!("method not found: {other}")),
+        };
+        writeln!(stdout, "{response}").map_err(|error| error.to_string())?;
+        stdout.flush().map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() {
     let values: Vec<String> = std::env::args().collect();
@@ -573,6 +783,15 @@ async fn main() {
             );
         }
         return;
+    }
+    if values.get(1).map(String::as_str) == Some("mcp") {
+        match run_mcp(&values[2..]) {
+            Ok(()) => return,
+            Err(message) => {
+                eprintln!("{message}");
+                std::process::exit(2);
+            }
+        }
     }
     if values.get(1).map(String::as_str) == Some("schedule") {
         match run_schedule(&values[2..]).await {
