@@ -63,6 +63,7 @@ interface UrlDetail {
   linkCounts: { inbound: number; outbound: number };
   inboundLinks: { url: string; anchor: string }[];
   outboundLinks: { url: string; anchor: string }[];
+  images: { src: string; alt: string | null; width: number | null; height: number | null }[];
   screenshot: string | null;
 }
 
@@ -2154,6 +2155,22 @@ export default function Home() {
                       {detail.outboundLinks.filter(matchesLink).map((link) => (
                         <li key={link.url}>
                           {link.url} — “{link.anchor}”
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+                {detail.images.length > 0 && (
+                  <>
+                    <h4>Images</h4>
+                    <ul className="settings-reference">
+                      {detail.images.map((image) => (
+                        <li key={image.src}>
+                          {image.src}
+                          {image.alt ? ` — alt “${image.alt}”` : ' — no alt'}
+                          {image.width && image.height
+                            ? ` (${image.width}×${image.height})`
+                            : ''}
                         </li>
                       ))}
                     </ul>

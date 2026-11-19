@@ -595,6 +595,26 @@ impl Store {
         Ok(rows)
     }
 
+    /// Images referenced by one URL.
+    pub fn images_for_url(&self, crawl_id: &str, url_id: i64) -> Result<Vec<coqui_core::ImageRef>> {
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT src, alt, width, height FROM images
+             WHERE crawl_id = ?1 AND url_id = ?2 ORDER BY src",
+        )?;
+        let rows = stmt
+            .query_map(params![crawl_id, url_id], |row| {
+                Ok(coqui_core::ImageRef {
+                    src: row.get(0)?,
+                    alt: row.get(1)?,
+                    width: row.get::<_, Option<i64>>(2)?.map(|value| value as u32),
+                    height: row.get::<_, Option<i64>>(3)?.map(|value| value as u32),
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     pub fn link_counts(&self, crawl_id: &str, url_id: i64) -> Result<(i64, i64)> {
         let conn = self.lock()?;
         let incoming = conn.query_row(
@@ -3073,6 +3093,19 @@ mod tests {
             .insert_link("c1", id, id, Some("self"), None, true)
             .unwrap();
         assert_eq!(store.link_counts("c1", id).unwrap(), (1, 1));
+        store
+            .replace_images(
+                "c1",
+                id,
+                &[coqui_core::ImageRef {
+                    src: "https://example.com/a.png".into(),
+                    alt: Some("A".into()),
+                    width: Some(10),
+                    height: Some(20),
+                }],
+            )
+            .unwrap();
+        assert_eq!(store.images_for_url("c1", id).unwrap().len(), 1);
         assert_eq!(store.inbound_links("c1", id).unwrap().len(), 1);
         assert_eq!(store.outbound_links("c1", id).unwrap().len(), 1);
         std::fs::remove_dir_all(dir).ok();
