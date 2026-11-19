@@ -11,7 +11,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const SCHEMA_VERSION: i32 = 23;
+pub const SCHEMA_VERSION: i32 = 24;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -540,13 +540,49 @@ impl Store {
         Ok(rows)
     }
 
+    pub fn set_override(&self, crawl_id: &str, rule: &str, severity: &str) -> Result<()> {
+        self.lock()?.execute(
+            "INSERT INTO issue_overrides (crawl_id, rule, severity) VALUES (?1, ?2, ?3)
+             ON CONFLICT(crawl_id, rule) DO UPDATE SET severity = excluded.severity",
+            params![crawl_id, rule, severity],
+        )?;
+        Ok(())
+    }
+
+    pub fn clear_override(&self, crawl_id: &str, rule: &str) -> Result<usize> {
+        let changed = self.lock()?.execute(
+            "DELETE FROM issue_overrides WHERE crawl_id = ?1 AND rule = ?2",
+            params![crawl_id, rule],
+        )?;
+        Ok(changed)
+    }
+
+    pub fn overrides(&self, crawl_id: &str) -> Result<Vec<(String, String)>> {
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT rule, severity FROM issue_overrides WHERE crawl_id = ?1 ORDER BY rule",
+        )?;
+        let rows = stmt
+            .query_map(params![crawl_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     pub fn issue_counts(&self, crawl_id: &str) -> Result<Vec<IssueCount>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
-            "SELECT rule, severity, COUNT(*) FROM issues
-             WHERE crawl_id = ?1
-               AND rule NOT IN (SELECT rule FROM issue_suppressions WHERE crawl_id = ?1)
-             GROUP BY rule, severity ORDER BY COUNT(*) DESC, rule",
+            "SELECT issues.rule, COALESCE(issue_overrides.severity, issues.severity),
+                    COUNT(*)
+             FROM issues
+             LEFT JOIN issue_overrides
+               ON issue_overrides.crawl_id = issues.crawl_id
+              AND issue_overrides.rule = issues.rule
+             WHERE issues.crawl_id = ?1
+               AND issues.rule NOT IN (
+                   SELECT rule FROM issue_suppressions WHERE crawl_id = ?1)
+             GROUP BY issues.rule,
+                      COALESCE(issue_overrides.severity, issues.severity)
+             ORDER BY COUNT(*) DESC, issues.rule",
         )?;
         let rows = stmt
             .query_map(params![crawl_id], |row| {
@@ -3237,6 +3273,46 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].1, "https://example.com/");
         assert_eq!(rows[0].2.as_deref(), Some("no title tag"));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn overrides_change_issue_severity() {
+        let dir = std::env::temp_dir().join(format!("coqui-override-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        store
+            .create_crawl(
+                "c1",
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        store
+            .insert_url(&sample_record("c1", "https://example.com/"))
+            .unwrap();
+        store
+            .insert_issue(&Issue {
+                crawl_id: "c1".into(),
+                url: "https://example.com/".into(),
+                rule: "missing_title".into(),
+                severity: IssueSeverity::Error,
+                detail: None,
+            })
+            .unwrap();
+        store
+            .set_override("c1", "missing_title", "warning")
+            .unwrap();
+        let counts = store.issue_counts("c1").unwrap();
+        assert_eq!(counts[0].severity, IssueSeverity::Warning);
+        assert_eq!(store.overrides("c1").unwrap().len(), 1);
+        store.clear_override("c1", "missing_title").unwrap();
+        assert_eq!(
+            store.issue_counts("c1").unwrap()[0].severity,
+            IssueSeverity::Error
+        );
         std::fs::remove_dir_all(dir).ok();
     }
 
