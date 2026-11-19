@@ -392,7 +392,9 @@ export default function Home() {
   const [progress, setProgress] = useState<CrawlProgress | null>(null);
   const [issues, setIssues] = useState<IssueCount[]>([]);
   const [suppressed, setSuppressed] = useState<string[]>([]);
-  const [issueDetails, setIssueDetails] = useState<{ url: string; detail: string | null }[]>([]);
+  const [issueDetails, setIssueDetails] = useState<
+    { id: number; url: string; detail: string | null }[]
+  >([]);
   const [statusCounts, setStatusCounts] = useState<{ status: number | null; count: number }[]>([]);
   const [responseStats, setResponseStats] = useState<{ averageMs: number; p95Ms: number } | null>(
     null,
@@ -680,10 +682,10 @@ export default function Home() {
     void (async () => {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
-        const rows = await invoke<{ url: string; detail: string | null }[]>('issues_for_rule', {
-          crawlId: crawl.id,
-          rule: activeIssue,
-        });
+        const rows = await invoke<{ id: number; url: string; detail: string | null }[]>(
+          'issues_for_rule',
+          { crawlId: crawl.id, rule: activeIssue },
+        );
         setIssueDetails(rows);
       } catch {
         setIssueDetails([]);
@@ -883,6 +885,22 @@ export default function Home() {
       setCompareError(null);
     } catch (cause) {
       setCompareError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
+  const openDetailById = async (urlId: number) => {
+    if (!crawl) return;
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const data = await invoke<UrlDetail>('get_url_detail', {
+        crawlId: crawl.id,
+        urlId,
+      });
+      setDetail(data);
+      setLinkFilter('');
+      setDetailError(null);
+    } catch (cause) {
+      setDetailError(cause instanceof Error ? cause.message : String(cause));
     }
   };
 
@@ -3146,6 +3164,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 

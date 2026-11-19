@@ -518,15 +518,17 @@ impl Store {
         &self,
         crawl_id: &str,
         rule: &str,
-    ) -> Result<Vec<(String, Option<String>)>> {
+    ) -> Result<Vec<(i64, String, Option<String>)>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
-            "SELECT url, detail FROM issues WHERE crawl_id = ?1 AND rule = ?2
-             ORDER BY url LIMIT 500",
+            "SELECT urls.id, issues.url, issues.detail FROM issues
+             JOIN urls ON urls.crawl_id = issues.crawl_id AND urls.url = issues.url
+             WHERE issues.crawl_id = ?1 AND issues.rule = ?2
+             ORDER BY issues.url LIMIT 500",
         )?;
         let rows = stmt
             .query_map(params![crawl_id, rule], |row| {
-                Ok((row.get(0)?, row.get(1)?))
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
@@ -3192,6 +3194,9 @@ mod tests {
             )
             .unwrap();
         store
+            .insert_url(&sample_record("c1", "https://example.com/"))
+            .unwrap();
+        store
             .insert_issue(&Issue {
                 crawl_id: "c1".into(),
                 url: "https://example.com/".into(),
@@ -3202,8 +3207,8 @@ mod tests {
             .unwrap();
         let rows = store.issues_for_rule("c1", "missing_title").unwrap();
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].0, "https://example.com/");
-        assert_eq!(rows[0].1.as_deref(), Some("no title tag"));
+        assert_eq!(rows[0].1, "https://example.com/");
+        assert_eq!(rows[0].2.as_deref(), Some("no title tag"));
         std::fs::remove_dir_all(dir).ok();
     }
 

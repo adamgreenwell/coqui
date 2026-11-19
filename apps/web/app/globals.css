@@ -1107,3 +1107,14 @@ tbody tr:hover {
   font-size: 11px;
   word-break: break-all;
 }
+
+.link-button {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: #1f6b4f;
+  text-decoration: underline;
+  cursor: pointer;
+  word-break: break-all;
+}
