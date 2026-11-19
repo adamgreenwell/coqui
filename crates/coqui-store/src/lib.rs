@@ -3046,7 +3046,7 @@ mod tests {
                 now_ms(),
             )
             .unwrap();
-        for (index, depth) in [0i64, 1, 1].into_iter().enumerate() {
+        for (index, depth) in [0u32, 1, 1].into_iter().enumerate() {
             let mut record = sample_record("c1", &format!("https://example.com/{index}"));
             record.depth = depth;
             store.insert_url(&record).unwrap();
