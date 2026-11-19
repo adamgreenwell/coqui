@@ -576,6 +576,29 @@ impl Store {
         Ok((incoming, outgoing))
     }
 
+    /// Count, average and p95 response time (ms) for timed URLs.
+    pub fn response_time_stats(&self, crawl_id: &str) -> Result<(i64, i64, i64)> {
+        let conn = self.lock()?;
+        let (count, average): (i64, f64) = conn.query_row(
+            "SELECT COUNT(*), COALESCE(AVG(response_time_ms), 0) FROM urls
+             WHERE crawl_id = ?1 AND response_time_ms IS NOT NULL",
+            params![crawl_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        if count == 0 {
+            return Ok((0, 0, 0));
+        }
+        let offset = ((count as f64 * 0.95).floor() as i64).clamp(0, count - 1);
+        let p95: i64 = conn.query_row(
+            "SELECT response_time_ms FROM urls
+             WHERE crawl_id = ?1 AND response_time_ms IS NOT NULL
+             ORDER BY response_time_ms LIMIT 1 OFFSET ?2",
+            params![crawl_id, offset],
+            |row| row.get(0),
+        )?;
+        Ok((count, average.round() as i64, p95))
+    }
+
     pub fn status_counts(&self, crawl_id: &str) -> Result<Vec<(Option<u16>, i64)>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
@@ -2976,6 +2999,29 @@ mod tests {
         assert!(store.issue_counts("c1").unwrap().is_empty());
         assert_eq!(store.restore_rule("c1", "missing_title").unwrap(), 1);
         assert_eq!(store.issue_counts("c1").unwrap().len(), 1);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn response_stats_are_aggregated() {
+        let dir = std::env::temp_dir().join(format!("coqui-stats-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        store
+            .create_crawl(
+                "c1",
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        for (index, time) in [100, 300, 500].into_iter().enumerate() {
+            let mut record = sample_record("c1", &format!("https://example.com/{index}"));
+            record.response_time_ms = Some(time);
+            store.insert_url(&record).unwrap();
+        }
+        assert_eq!(store.response_time_stats("c1").unwrap(), (3, 300, 500));
         std::fs::remove_dir_all(dir).ok();
     }
 
