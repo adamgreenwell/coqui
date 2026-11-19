@@ -358,6 +358,7 @@ export default function Home() {
     image: number;
     other: number;
   } | null>(null);
+  const [responseBuckets, setResponseBuckets] = useState<{ label: string; count: number }[]>([]);
   const [activeIssue, setActiveIssue] = useState<string | null>(null);
   const [queryInput, setQueryInput] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -610,6 +611,10 @@ export default function Home() {
           other: number;
         }>('content_stats', { crawlId: crawl.id });
         setContentStats(content);
+        const buckets = await invoke<{ label: string; count: number }[]>('response_buckets', {
+          crawlId: crawl.id,
+        });
+        setResponseBuckets(buckets);
       } catch {
         // overview is best-effort
       }
@@ -2246,6 +2251,25 @@ export default function Home() {
                   <strong>{contentStats[key]}</strong>
                 </button>
               ))}
+            {responseBuckets.length > 0 && (
+              <div className="overview-bars" style={{ flexBasis: '100%' }}>
+                {responseBuckets.map((bucket) => {
+                  const max = Math.max(1, ...responseBuckets.map((entry) => entry.count));
+                  return (
+                    <div className="bar-row" key={bucket.label}>
+                      <span>{bucket.label}</span>
+                      <div className="bar-track">
+                        <div
+                          className="bar-fill"
+                          style={{ width: `${Math.round((bucket.count / max) * 100)}%` }}
+                        />
+                      </div>
+                      <strong>{bucket.count}</strong>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </section>
 
           <section className="panel results">

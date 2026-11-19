@@ -821,6 +821,21 @@ fn depth_counts(
 }
 
 #[tauri::command]
+fn response_buckets(
+    state: State<'_, AppState>,
+    crawl_id: String,
+) -> Result<Vec<serde_json::Value>, String> {
+    let buckets = state
+        .store
+        .response_time_buckets(&crawl_id)
+        .map_err(|error| error.to_string())?;
+    Ok(buckets
+        .into_iter()
+        .map(|(label, count)| serde_json::json!({"label": label, "count": count}))
+        .collect())
+}
+
+#[tauri::command]
 fn indexability_stats(
     state: State<'_, AppState>,
     crawl_id: String,
@@ -1188,6 +1203,7 @@ pub fn run() {
             indexability_stats,
             depth_counts,
             content_stats,
+            response_buckets,
             get_url_detail,
             export_pdf_report,
             run_due_schedules,
