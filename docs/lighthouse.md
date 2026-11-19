@@ -15,7 +15,7 @@ If `node`/`node.exe` and `lighthouse/lighthouse-cli/index.js` sit next to the Co
 ## Behaviour
 
 - Row action **LH** calls `run_lighthouse(crawl_id, url_id)`.
-- Tauri spawns `npx --yes lighthouse@12.8.2 <url>` with a 240-second timeout, JSON output to a temp file.
+- Tauri spawns the bundled sidecar Node with Lighthouse 12.8.2 (`src-tauri/sidecars/...`) and falls back to `npx --yes lighthouse@12.8.2 <url>`; 240-second timeout, JSON output to a temp file.
 - The JSON is reduced to category scores plus up to 12 failing audits and stored in `lighthouse_reports`.
 - A modal shows Performance / Accessibility / Best practices / SEO scores and the failing audits.
 - Missing Node surfaces as “could not run npx … Install Node.js or add it to PATH”; a Lighthouse failure returns its stderr snippet.
@@ -50,5 +50,6 @@ The SEO score reflects staging behaviour (no canonical/noindex), matching the cr
 ## Path to 1.0
 
 Bundle Node + Lighthouse as a Tauri sidecar so the feature works offline and behind logins (with our session material). The command and storage contract stay the same.
+
 
 
