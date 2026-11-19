@@ -11,7 +11,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const SCHEMA_VERSION: i32 = 22;
+pub const SCHEMA_VERSION: i32 = 23;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -141,6 +141,9 @@ CREATE TABLE IF NOT EXISTS saved_views (
     content_class TEXT,
     max_depth     INTEGER,
     indexability  TEXT,
+    sort_key      TEXT,
+    sort_desc     INTEGER,
+    page_size     INTEGER,
     created_at    INTEGER NOT NULL
 );
 
@@ -182,6 +185,9 @@ pub struct SavedView {
     pub content_class: Option<String>,
     pub max_depth: Option<u32>,
     pub indexability: Option<String>,
+    pub sort_key: Option<String>,
+    pub sort_desc: bool,
+    pub page_size: Option<u32>,
 }
 
 /// A scheduled crawl.
@@ -1956,17 +1962,23 @@ impl Store {
         content_class: Option<&str>,
         max_depth: Option<u32>,
         indexability: Option<&str>,
+        sort_key: Option<&str>,
+        sort_desc: bool,
+        page_size: Option<u32>,
     ) -> Result<()> {
         self.lock()?.execute(
             "INSERT INTO saved_views (name, search, status, issue, content_class, max_depth,
-                                      indexability, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                                      indexability, sort_key, sort_desc, page_size, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
              ON CONFLICT(name) DO UPDATE SET search = excluded.search,
                                             status = excluded.status,
                                             issue = excluded.issue,
                                             content_class = excluded.content_class,
                                             max_depth = excluded.max_depth,
                                             indexability = excluded.indexability,
+                                            sort_key = excluded.sort_key,
+                                            sort_desc = excluded.sort_desc,
+                                            page_size = excluded.page_size,
                                             created_at = excluded.created_at",
             params![
                 name,
@@ -1976,6 +1988,9 @@ impl Store {
                 content_class,
                 max_depth.map(i64::from),
                 indexability,
+                sort_key,
+                if sort_desc { 1 } else { 0 },
+                page_size.map(i64::from),
                 now_ms()
             ],
         )?;
@@ -1985,7 +2000,8 @@ impl Store {
     pub fn saved_views(&self) -> Result<Vec<SavedView>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
-            "SELECT name, search, status, issue, content_class, max_depth, indexability
+            "SELECT name, search, status, issue, content_class, max_depth, indexability,
+                    sort_key, sort_desc, page_size
              FROM saved_views ORDER BY name",
         )?;
         let rows = stmt
@@ -1998,6 +2014,9 @@ impl Store {
                     content_class: row.get(4)?,
                     max_depth: row.get::<_, Option<i64>>(5)?.map(|value| value as u32),
                     indexability: row.get(6)?,
+                    sort_key: row.get(7)?,
+                    sort_desc: row.get::<_, Option<i64>>(8)?.unwrap_or(0) != 0,
+                    page_size: row.get::<_, Option<i64>>(9)?.map(|value| value as u32),
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -2293,6 +2312,9 @@ fn migrate(conn: &Connection) -> Result<()> {
     content_class TEXT,
     max_depth     INTEGER,
     indexability  TEXT,
+    sort_key      TEXT,
+    sort_desc     INTEGER,
+    page_size     INTEGER,
     created_at    INTEGER NOT NULL
 );
 
@@ -2361,6 +2383,9 @@ CREATE TABLE IF NOT EXISTS saved_views (
     content_class TEXT,
     max_depth     INTEGER,
     indexability  TEXT,
+    sort_key      TEXT,
+    sort_desc     INTEGER,
+    page_size     INTEGER,
     created_at    INTEGER NOT NULL
 );
 
@@ -2402,6 +2427,9 @@ CREATE TABLE IF NOT EXISTS saved_views (
     content_class TEXT,
     max_depth     INTEGER,
     indexability  TEXT,
+    sort_key      TEXT,
+    sort_desc     INTEGER,
+    page_size     INTEGER,
     created_at    INTEGER NOT NULL
 );
 
@@ -3410,7 +3438,18 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let store = Store::open(dir.join("coqui.db")).unwrap();
         store
-            .save_view("broken", Some("Missing"), Some(404), None, None, None, None)
+            .save_view(
+                "broken",
+                Some("Missing"),
+                Some(404),
+                None,
+                None,
+                None,
+                None,
+                None,
+                false,
+                None,
+            )
             .unwrap();
         store
             .save_view(
@@ -3421,6 +3460,9 @@ mod tests {
                 Some("html"),
                 Some(3),
                 Some("indexable"),
+                Some("status"),
+                true,
+                Some(100),
             )
             .unwrap();
         let views = store.saved_views().unwrap();
@@ -3431,6 +3473,9 @@ mod tests {
         assert_eq!(views[0].content_class.as_deref(), Some("html"));
         assert_eq!(views[0].max_depth, Some(3));
         assert_eq!(views[0].indexability.as_deref(), Some("indexable"));
+        assert_eq!(views[0].sort_key.as_deref(), Some("status"));
+        assert!(views[0].sort_desc);
+        assert_eq!(views[0].page_size, Some(100));
         assert_eq!(store.delete_view("broken").unwrap(), 1);
         assert!(store.saved_views().unwrap().is_empty());
         std::fs::remove_dir_all(dir).ok();

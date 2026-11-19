@@ -427,6 +427,9 @@ export default function Home() {
       contentClass: string | null;
       maxDepth: number | null;
       indexability: string | null;
+            sortKey: string | null;
+            sortDesc: boolean;
+            pageSize: number | null;
     }[]
   >([]);
   const [viewName, setViewName] = useState('');
@@ -580,6 +583,9 @@ export default function Home() {
             contentClass: string | null;
             maxDepth: number | null;
             indexability: string | null;
+            sortKey: string | null;
+            sortDesc: boolean;
+            pageSize: number | null;
           }[]
         >('list_views');
         setViews(rows);
@@ -600,6 +606,9 @@ export default function Home() {
             contentClass: string | null;
             maxDepth: number | null;
             indexability: string | null;
+            sortKey: string | null;
+            sortDesc: boolean;
+            pageSize: number | null;
           }[]
     >('list_views');
     setViews(rows);
