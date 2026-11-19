@@ -762,6 +762,47 @@ fn remove_schedule(state: State<'_, AppState>, id: i64) -> Result<usize, String>
 }
 
 #[tauri::command]
+fn list_views(state: State<'_, AppState>) -> Result<Vec<serde_json::Value>, String> {
+    let views = state
+        .store
+        .saved_views()
+        .map_err(|error| error.to_string())?;
+    Ok(views
+        .into_iter()
+        .map(|view| {
+            serde_json::json!({
+                "name": view.name,
+                "search": view.search,
+                "status": view.status,
+                "issue": view.issue,
+            })
+        })
+        .collect())
+}
+
+#[tauri::command]
+fn save_view(
+    state: State<'_, AppState>,
+    name: String,
+    search: Option<String>,
+    status: Option<u16>,
+    issue: Option<String>,
+) -> Result<(), String> {
+    state
+        .store
+        .save_view(&name, search.as_deref(), status, issue.as_deref())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn delete_view(state: State<'_, AppState>, name: String) -> Result<usize, String> {
+    state
+        .store
+        .delete_view(&name)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn export_catalog() -> Vec<coqui_core::ExportDefinition> {
     coqui_core::export_catalog()
 }
@@ -945,6 +986,9 @@ pub fn run() {
             add_extractor,
             list_extractors,
             delete_extractor,
+            list_views,
+            save_view,
+            delete_view,
             save_profile,
             list_profiles,
             get_profile,

@@ -298,6 +298,11 @@ export default function Home() {
   const [activeIssue, setActiveIssue] = useState<string | null>(null);
   const [queryInput, setQueryInput] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [views, setViews] = useState<
+    { name: string; search: string | null; status: number | null; issue: string | null }[]
+  >([]);
+  const [viewName, setViewName] = useState('');
+  const [viewSelected, setViewSelected] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [exportPath, setExportPath] = useState<string | null>(null);
   const [bulkView, setBulkView] = useState('accessibility');
@@ -382,6 +387,58 @@ export default function Home() {
     }, 1200);
     return () => clearInterval(timer);
   }, [isTauri, phase, crawl, page, activeIssue, loadPage]);
+
+  useEffect(() => {
+    if (!isTauri) return;
+    void (async () => {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const rows = await invoke<
+          { name: string; search: string | null; status: number | null; issue: string | null }[]
+        >('list_views');
+        setViews(rows);
+      } catch {
+        // views are optional
+      }
+    })();
+  }, [isTauri]);
+
+  const loadViews = async () => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const rows = await invoke<
+      { name: string; search: string | null; status: number | null; issue: string | null }[]
+    >('list_views');
+    setViews(rows);
+  };
+  const saveView = async () => {
+    const name = viewName.trim();
+    if (!name) return;
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('save_view', {
+      name,
+      search: queryInput.trim() || null,
+      status: statusFilter ? Number(statusFilter) : null,
+      issue: activeIssue,
+    });
+    setViewName('');
+    setViewSelected(name);
+    await loadViews();
+  };
+  const applyView = async (name: string) => {
+    const view = views.find((entry) => entry.name === name);
+    if (!view) return;
+    setQueryInput(view.search ?? '');
+    setStatusFilter(view.status ? String(view.status) : '');
+    setActiveIssue(view.issue);
+    setPage(1);
+    if (crawl) await loadPage(crawl.id, 1, view.issue);
+  };
+  const removeView = async (name: string) => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('delete_view', { name });
+    setViewSelected('');
+    await loadViews();
+  };
 
   async function startCrawl(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1668,6 +1725,41 @@ export default function Home() {
                   <option value="404">404</option>
                   <option value="500">500</option>
                 </select>
+                <input
+                  type="text"
+                  value={viewName}
+                  onChange={(event) => setViewName(event.target.value)}
+                  placeholder="View name"
+                  aria-label="Saved view name"
+                  disabled={!isTauri || !crawl}
+                />
+                <button className="secondary" type="button" onClick={saveView}>
+                  Save view
+                </button>
+                <select
+                  value={viewSelected}
+                  onChange={(event) => {
+                    setViewSelected(event.target.value);
+                    void applyView(event.target.value);
+                  }}
+                  aria-label="Saved views"
+                  disabled={!isTauri || !crawl}
+                >
+                  <option value="">Saved views…</option>
+                  {views.map((view) => (
+                    <option key={view.name} value={view.name}>
+                      {view.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  className="secondary"
+                  type="button"
+                  onClick={() => removeView(viewSelected)}
+                  disabled={!viewSelected}
+                >
+                  Delete view
+                </button>
                 <div className="columns-wrap">
                   <button
                     className="secondary"
