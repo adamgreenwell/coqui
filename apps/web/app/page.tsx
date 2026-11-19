@@ -1697,6 +1697,37 @@ export default function Home() {
                 >
                   Export CSV
                 </button>
+                <select
+                  value={reportKind}
+                  onChange={(event) => setReportKind(event.target.value)}
+                  aria-label="Report type"
+                  disabled={!isTauri || !crawl}
+                >
+                  <option value="summary">Crawl summary</option>
+                  <option value="issues">Issue breakdown</option>
+                  <option value="status">Status codes</option>
+                  <option value="performance">Performance</option>
+                </select>
+                <input
+                  type="number"
+                  min={1}
+                  max={500}
+                  value={reportTop}
+                  onChange={(event) => setReportTop(event.target.value)}
+                  placeholder="Top N"
+                  aria-label="Report row limit"
+                  disabled={!isTauri || !crawl}
+                />
+                <input
+                  type="number"
+                  min={100}
+                  max={599}
+                  value={reportStatus}
+                  onChange={(event) => setReportStatus(event.target.value)}
+                  placeholder="Status"
+                  aria-label="Report status filter"
+                  disabled={!isTauri || !crawl}
+                />
                 <button
                   className="secondary"
                   type="button"
@@ -1707,6 +1738,9 @@ export default function Home() {
                       const path = await invoke<string>('export_html_report', {
                         crawlId: crawl.id,
                         pattern: exportPattern.trim() || null,
+                        report: reportKind,
+                        top: reportTop.trim() ? Number(reportTop) : null,
+                        status: reportStatus.trim() ? Number(reportStatus) : null,
                       });
                       setExportPath(path);
                     } catch (cause) {
@@ -1716,6 +1750,29 @@ export default function Home() {
                   disabled={!isTauri || !crawl}
                 >
                   HTML report
+                </button>
+                <button
+                  className="secondary"
+                  type="button"
+                  onClick={async () => {
+                    if (!crawl) return;
+                    try {
+                      const { invoke } = await import('@tauri-apps/api/core');
+                      const path = await invoke<string>('export_pdf_report', {
+                        crawlId: crawl.id,
+                        pattern: exportPattern.trim() || null,
+                        report: reportKind,
+                        top: reportTop.trim() ? Number(reportTop) : null,
+                        status: reportStatus.trim() ? Number(reportStatus) : null,
+                      });
+                      setExportPath(path);
+                    } catch (cause) {
+                      setError(cause instanceof Error ? cause.message : String(cause));
+                    }
+                  }}
+                  disabled={!isTauri || !crawl}
+                >
+                  PDF report
                 </button>
                 <button
                   className="secondary"
