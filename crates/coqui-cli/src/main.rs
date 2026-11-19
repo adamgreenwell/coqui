@@ -593,12 +593,22 @@ fn tool_definitions() -> serde_json::Value {
             "name": "export_urls",
             "description": "Export a crawl's URLs to CSV and return the path.",
             "inputSchema": {"type": "object", "properties": {"crawl_id": {"type": "string"}}, "required": ["crawl_id"]}
+        },
+        {
+            "name": "start_crawl",
+            "description": "Start a crawl in the background and return its id.",
+            "inputSchema": {"type": "object", "properties": {"seed": {"type": "string"}, "seedKind": {"type": "string"}, "maxUrls": {"type": "integer"}}, "required": ["seed"]}
+        },
+        {
+            "name": "run_schedule_due",
+            "description": "Run every due schedule in the background.",
+            "inputSchema": {"type": "object", "properties": {}}
         }
     ])
 }
 
 fn call_tool(
-    store: &Store,
+    store: &std::sync::Arc<Store>,
     out: &Path,
     message: &serde_json::Value,
 ) -> Result<serde_json::Value, String> {
@@ -695,6 +705,99 @@ fn call_tool(
                 .map_err(|error| error.to_string())?;
             Ok(serde_json::json!({"path": path.to_string_lossy(), "rows": rows}))
         }
+        "start_crawl" => {
+            let seed = arguments
+                .get("seed")
+                .and_then(|value| value.as_str())
+                .ok_or_else(|| "seed is required".to_string())?
+                .to_string();
+            let seed_kind = arguments
+                .get("seedKind")
+                .and_then(|value| value.as_str())
+                .unwrap_or("url")
+                .to_string();
+            if !matches!(seed_kind.as_str(), "url" | "sitemap" | "list") {
+                return Err(format!("unknown seed kind '{seed_kind}'"));
+            }
+            let mut config = CrawlConfig::default();
+            if let Some(max_urls) = arguments.get("maxUrls").and_then(|value| value.as_u64()) {
+                config.max_urls = max_urls as u32;
+            }
+            let crawl_id = format!("mcp-{}", now_ms());
+            store
+                .create_crawl(&crawl_id, &seed, &seed_kind, &config, now_ms())
+                .map_err(|error| error.to_string())?;
+            let task_store = std::sync::Arc::clone(store);
+            let task_id = crawl_id.clone();
+            tokio::spawn(async move {
+                let result = coqui_crawl::run_crawl(
+                    task_store.clone(),
+                    task_id.clone(),
+                    seed_kind,
+                    seed,
+                    config,
+                    CancellationToken::new(),
+                    Arc::new(AtomicBool::new(false)),
+                    None,
+                    Arc::new(|_| {}),
+                )
+                .await;
+                if result.is_ok() {
+                    let _ = coqui_audit::analyze_crawl(&task_store, &task_id);
+                }
+            });
+            Ok(serde_json::json!({"crawlId": crawl_id, "status": "started"}))
+        }
+        "run_schedule_due" => {
+            let due = store
+                .due_schedules(now_ms())
+                .map_err(|error| error.to_string())?;
+            let ids: Vec<i64> = due.iter().map(|schedule| schedule.id).collect();
+            let task_store = std::sync::Arc::clone(store);
+            tokio::spawn(async move {
+                for schedule in due {
+                    let Ok(config) = serde_json::from_str::<CrawlConfig>(&schedule.config_json)
+                    else {
+                        continue;
+                    };
+                    let crawl_id = format!("mcp-sched-{}-{}", schedule.id, now_ms());
+                    if task_store
+                        .create_crawl(
+                            &crawl_id,
+                            &schedule.seed,
+                            &schedule.seed_kind,
+                            &config,
+                            now_ms(),
+                        )
+                        .is_err()
+                    {
+                        continue;
+                    }
+                    let result = coqui_crawl::run_crawl(
+                        task_store.clone(),
+                        crawl_id.clone(),
+                        schedule.seed_kind.clone(),
+                        schedule.seed.clone(),
+                        config,
+                        CancellationToken::new(),
+                        Arc::new(AtomicBool::new(false)),
+                        None,
+                        Arc::new(|_| {}),
+                    )
+                    .await;
+                    if result.is_ok() {
+                        let _ = coqui_audit::analyze_crawl(&task_store, &crawl_id);
+                        let now = now_ms();
+                        let _ = task_store.mark_schedule_run(
+                            schedule.id,
+                            now,
+                            now + schedule.interval_seconds * 1000,
+                        );
+                    }
+                }
+            });
+            Ok(serde_json::json!({"schedules": ids, "status": "started"}))
+        }
         other => Err(format!("unknown tool '{other}'")),
     }
 }
@@ -712,7 +815,8 @@ fn run_mcp(values: &[String]) -> Result<(), String> {
         }
         index += 1;
     }
-    let store = Store::open(out.join("coqui.db")).map_err(|error| error.to_string())?;
+    let store =
+        std::sync::Arc::new(Store::open(out.join("coqui.db")).map_err(|error| error.to_string())?);
     let stdin = std::io::stdin();
     let mut stdout = std::io::stdout();
     for line in stdin.lock().lines() {
