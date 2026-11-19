@@ -16,6 +16,15 @@ struct Args {
     depth: u32,
     concurrency: u16,
     respect_robots: bool,
+    user_agent: Option<String>,
+    headers: Vec<String>,
+    auth: Option<(String, String)>,
+    timeout_ms: u64,
+    render: bool,
+    screenshots: bool,
+    accessibility: bool,
+    web_vitals: bool,
+    render_workers: u32,
 }
 
 fn usage() -> &'static str {
@@ -42,6 +51,15 @@ fn parse_args(values: &[String]) -> Result<Args, String> {
         depth: 3,
         concurrency: 8,
         respect_robots: true,
+        user_agent: None,
+        headers: Vec::new(),
+        auth: None,
+        timeout_ms: 20_000,
+        render: false,
+        screenshots: false,
+        accessibility: false,
+        web_vitals: false,
+        render_workers: 2,
     };
     let mut index = 4;
     while index < values.len() {
@@ -75,6 +93,48 @@ fn parse_args(values: &[String]) -> Result<Args, String> {
                     .map_err(|_| "invalid --concurrency".to_string())?;
             }
             "--ignore-robots" => args.respect_robots = false,
+            "--render" => args.render = true,
+            "--screenshots" => args.screenshots = true,
+            "--a11y" => args.accessibility = true,
+            "--vitals" => args.web_vitals = true,
+            "--user-agent" => {
+                index += 1;
+                args.user_agent = Some(
+                    values
+                        .get(index)
+                        .ok_or("missing --user-agent value")?
+                        .clone(),
+                );
+            }
+            "--header" => {
+                index += 1;
+                args.headers
+                    .push(values.get(index).ok_or("missing --header value")?.clone());
+            }
+            "--auth" => {
+                index += 1;
+                let value = values.get(index).ok_or("missing --auth value")?;
+                let (user, password) = value
+                    .split_once(':')
+                    .ok_or("--auth must be user:password")?;
+                args.auth = Some((user.to_string(), password.to_string()));
+            }
+            "--timeout-ms" => {
+                index += 1;
+                args.timeout_ms = values
+                    .get(index)
+                    .ok_or("missing --timeout-ms value")?
+                    .parse()
+                    .map_err(|_| "invalid --timeout-ms".to_string())?;
+            }
+            "--render-workers" => {
+                index += 1;
+                args.render_workers = values
+                    .get(index)
+                    .ok_or("missing --render-workers value")?
+                    .parse()
+                    .map_err(|_| "invalid --render-workers".to_string())?;
+            }
             other => return Err(format!("unknown option '{other}'\n{}", usage())),
         }
         index += 1;
@@ -101,13 +161,27 @@ async fn main() {
     let db = args.out.join("coqui.db");
     let store = Arc::new(Store::open(&db).expect("open crawl store"));
     let crawl_id = format!("cli-{}", now_ms());
-    let config = CrawlConfig {
+    let mut config = CrawlConfig {
         max_depth: args.depth,
         max_urls: args.max_urls,
         concurrency: args.concurrency,
         respect_robots: args.respect_robots,
+        request_timeout_ms: args.timeout_ms,
+        custom_headers: args.headers.clone(),
+        render: args.render,
+        screenshots: args.screenshots,
+        accessibility: args.accessibility,
+        web_vitals: args.web_vitals,
+        render_workers: args.render_workers,
         ..CrawlConfig::default()
     };
+    if let Some(user_agent) = &args.user_agent {
+        config.user_agent = user_agent.clone();
+    }
+    if let Some((user, password)) = &args.auth {
+        config.auth_user = Some(user.clone());
+        config.auth_password = Some(password.clone());
+    }
     store
         .create_crawl(&crawl_id, &args.seed, &args.kind, &config, now_ms())
         .expect("create crawl");
@@ -198,6 +272,37 @@ mod tests {
         assert_eq!(parsed.depth, 1);
         assert_eq!(parsed.concurrency, 4);
         assert!(!parsed.respect_robots);
+    }
+
+    #[test]
+    fn parses_auth_headers_and_rendering() {
+        let parsed = parse_args(&args(&[
+            "crawl",
+            "url",
+            "https://example.com",
+            "--user-agent",
+            "Coqui/1.0",
+            "--header",
+            "X-Test: yes",
+            "--auth",
+            "user:pass",
+            "--timeout-ms",
+            "5000",
+            "--render",
+            "--screenshots",
+            "--a11y",
+            "--vitals",
+            "--render-workers",
+            "4",
+        ]))
+        .unwrap();
+        assert_eq!(parsed.user_agent.as_deref(), Some("Coqui/1.0"));
+        assert_eq!(parsed.headers, vec!["X-Test: yes"]);
+        assert_eq!(parsed.auth, Some(("user".into(), "pass".into())));
+        assert_eq!(parsed.timeout_ms, 5000);
+        assert!(parsed.render && parsed.screenshots);
+        assert!(parsed.accessibility && parsed.web_vitals);
+        assert_eq!(parsed.render_workers, 4);
     }
 
     #[test]
