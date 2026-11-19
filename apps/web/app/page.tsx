@@ -274,6 +274,7 @@ export default function Home() {
   const [scheduleSeed, setScheduleSeed] = useState('');
   const [scheduleEvery, setScheduleEvery] = useState(3600);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const [scheduleResult, setScheduleResult] = useState<string | null>(null);
   const [settingsQuery, setSettingsQuery] = useState('');
   const [probe, setProbe] = useState<{ status: number; ms: number; finalUrl: string } | null>(null);
   const [probeError, setProbeError] = useState<string | null>(null);
@@ -655,6 +656,29 @@ export default function Home() {
     try {
       const { invoke } = await import('@tauri-apps/api/core');
       await invoke('remove_schedule', { id });
+      await loadSchedules();
+    } catch (cause) {
+      setScheduleError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+  const runDueSchedules = async () => {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const results = await invoke<{ id: number; rows?: number; error?: string }[]>(
+        'run_due_schedules',
+      );
+      setScheduleResult(
+        results.length === 0
+          ? 'No schedules due.'
+          : results
+              .map((result) =>
+                result.error
+                  ? `Schedule ${result.id} failed: ${result.error}`
+                  : `Schedule ${result.id}: ${result.rows} rows`,
+              )
+              .join(' · '),
+      );
+      setScheduleError(null);
       await loadSchedules();
     } catch (cause) {
       setScheduleError(cause instanceof Error ? cause.message : String(cause));
@@ -1079,6 +1103,9 @@ export default function Home() {
                   <button className="secondary" type="button" onClick={addSchedule}>
                     Add schedule
                   </button>
+                  <button className="secondary" type="button" onClick={runDueSchedules}>
+                    Run due now
+                  </button>
                 </div>
                 <ul className="settings-reference">
                   {schedules.map((schedule) => (
@@ -1098,6 +1125,7 @@ export default function Home() {
                   {schedules.length === 0 && <li>No schedules yet.</li>}
                 </ul>
                 {scheduleError && <p className="settings-errors">{scheduleError}</p>}
+                {scheduleResult && <p className="settings-diff">{scheduleResult}</p>}
               </div>
               <div className="field">
                 <label htmlFor="settingsSearch">Find a setting</label>

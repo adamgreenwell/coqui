@@ -582,6 +582,65 @@ fn delete_extractor(
 }
 
 #[tauri::command]
+async fn run_due_schedules(state: State<'_, AppState>) -> Result<Vec<serde_json::Value>, String> {
+    let store = state.store.clone();
+    let data_dir = state.data_dir.clone();
+    let due = store
+        .due_schedules(now_ms())
+        .map_err(|error| error.to_string())?;
+    let mut results = Vec::new();
+    for schedule in due {
+        let config: coqui_core::CrawlConfig = serde_json::from_str(&schedule.config_json)
+            .map_err(|error| format!("schedule {}: {error}", schedule.id))?;
+        let crawl_id = format!("sched-{}-{}", schedule.id, now_ms());
+        store
+            .create_crawl(
+                &crawl_id,
+                &schedule.seed,
+                &schedule.seed_kind,
+                &config,
+                now_ms(),
+            )
+            .map_err(|error| error.to_string())?;
+        let result = coqui_crawl::run_crawl(
+            store.clone(),
+            crawl_id.clone(),
+            schedule.seed_kind.clone(),
+            schedule.seed.clone(),
+            config,
+            CancellationToken::new(),
+            Arc::new(AtomicBool::new(false)),
+            None,
+            Arc::new(|_| {}),
+        )
+        .await;
+        match result {
+            Ok(_) => {
+                let _ = coqui_audit::analyze_crawl(&store, &crawl_id);
+                let path = data_dir.join("exports").join(format!("{crawl_id}.csv"));
+                let rows = store
+                    .export_urls_csv(&crawl_id, &path, &[], None)
+                    .map_err(|error| error.to_string())?;
+                let now = now_ms();
+                store
+                    .mark_schedule_run(schedule.id, now, now + schedule.interval_seconds * 1000)
+                    .map_err(|error| error.to_string())?;
+                results.push(serde_json::json!({
+                    "id": schedule.id,
+                    "rows": rows,
+                    "path": path.to_string_lossy(),
+                }));
+            }
+            Err(error) => results.push(serde_json::json!({
+                "id": schedule.id,
+                "error": error.to_string(),
+            })),
+        }
+    }
+    Ok(results)
+}
+
+#[tauri::command]
 fn list_schedules(state: State<'_, AppState>) -> Result<Vec<serde_json::Value>, String> {
     let rows = state.store.schedules().map_err(|error| error.to_string())?;
     Ok(rows
@@ -800,6 +859,7 @@ pub fn run() {
             run_lighthouse,
             run_lighthouse_sample,
             test_connection,
+            run_due_schedules,
             list_schedules,
             add_schedule,
             remove_schedule,
