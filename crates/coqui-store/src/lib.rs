@@ -1490,16 +1490,29 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("coqui-shots-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let store = Store::open(dir.join("coqui.db")).unwrap();
+        store
+            .create_crawl(
+                "c1",
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        store
+            .insert_url(&sample_record("c1", "https://example.com/"))
+            .unwrap();
+        let url_id = store.url_id("c1", "https://example.com/").unwrap().unwrap();
         let bytes = b"\xff\xd8fake-jpeg";
-        store.save_screenshot("c1", 7, bytes).unwrap();
+        store.save_screenshot("c1", url_id, bytes).unwrap();
         assert_eq!(
-            store.get_screenshot("c1", 7).unwrap().as_deref(),
+            store.get_screenshot("c1", url_id).unwrap().as_deref(),
             Some(bytes.as_slice())
         );
-        assert!(dir.join("screenshots/c1/7.jpg").exists());
+        assert!(dir.join(format!("screenshots/c1/{url_id}.jpg")).exists());
         let bundle = dir.join("bundle");
         assert_eq!(store.export_screenshots("c1", &bundle).unwrap(), 1);
-        assert!(bundle.join("7.jpg").exists());
+        assert!(bundle.join(format!("{url_id}.jpg")).exists());
         assert!(bundle.join("screenshots.csv").exists());
         std::fs::remove_dir_all(dir).ok();
     }
