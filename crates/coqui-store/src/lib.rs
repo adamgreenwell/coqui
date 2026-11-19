@@ -11,7 +11,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const SCHEMA_VERSION: i32 = 13;
+pub const SCHEMA_VERSION: i32 = 14;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -92,6 +92,16 @@ CREATE TABLE IF NOT EXISTS issues (
 );
 
 CREATE INDEX IF NOT EXISTS idx_issues_crawl_rule ON issues (crawl_id, rule);
+
+CREATE TABLE IF NOT EXISTS images (
+    crawl_id TEXT NOT NULL,
+    url_id   INTEGER NOT NULL,
+    src      TEXT NOT NULL,
+    alt      TEXT,
+    width    INTEGER,
+    height   INTEGER,
+    PRIMARY KEY (crawl_id, url_id, src)
+);
 
 CREATE TABLE IF NOT EXISTS lighthouse_reports (
     crawl_id   TEXT NOT NULL,
@@ -619,6 +629,67 @@ impl Store {
         Ok(copied)
     }
 
+    pub fn replace_images(
+        &self,
+        crawl_id: &str,
+        url_id: i64,
+        images: &[coqui_core::ImageRef],
+    ) -> Result<()> {
+        let conn = self.lock()?;
+        conn.execute(
+            "DELETE FROM images WHERE crawl_id = ?1 AND url_id = ?2",
+            params![crawl_id, url_id],
+        )?;
+        let mut stmt = conn.prepare(
+            "INSERT OR IGNORE INTO images (crawl_id, url_id, src, alt, width, height)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        )?;
+        for image in images {
+            stmt.execute(params![
+                crawl_id,
+                url_id,
+                image.src,
+                image.alt,
+                image.width.map(i64::from),
+                image.height.map(i64::from)
+            ])?;
+        }
+        Ok(())
+    }
+
+    pub fn export_images_csv(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT u.url, i.src, i.alt, i.width, i.height FROM images i
+             JOIN urls u ON u.id = i.url_id AND u.crawl_id = i.crawl_id
+             WHERE i.crawl_id = ?1 ORDER BY u.url, i.src",
+        )?;
+        let mut writer = csv::Writer::from_path(path)?;
+        writer.write_record(["url", "src", "alt", "width", "height"])?;
+        let mut rows = 0u64;
+        let mut records = stmt.query(params![crawl_id])?;
+        while let Some(row) = records.next()? {
+            let url: String = row.get(0)?;
+            let src: String = row.get(1)?;
+            let alt: Option<String> = row.get(2)?;
+            let width: Option<i64> = row.get(3)?;
+            let height: Option<i64> = row.get(4)?;
+            writer.write_record([
+                url,
+                src,
+                alt.unwrap_or_default(),
+                width.map(|value| value.to_string()).unwrap_or_default(),
+                height.map(|value| value.to_string()).unwrap_or_default(),
+            ])?;
+            rows += 1;
+        }
+        writer.flush()?;
+        Ok(rows)
+    }
+
     pub fn save_lighthouse(&self, crawl_id: &str, url_id: i64, summary_json: &str) -> Result<()> {
         self.lock()?.execute(
             "INSERT OR REPLACE INTO lighthouse_reports (crawl_id, url_id, summary_json, created_at)
@@ -1109,6 +1180,7 @@ impl Store {
         )?;
         let _ = std::fs::remove_dir_all(self.root.join("screenshots").join(id));
         conn.execute("DELETE FROM screenshots WHERE crawl_id = ?1", params![id])?;
+        conn.execute("DELETE FROM images WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM links WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM url_map WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM urls WHERE crawl_id = ?1", params![id])?;
@@ -1212,6 +1284,19 @@ fn migrate(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_links_crawl_from ON links (crawl_id, from_id);
          CREATE INDEX IF NOT EXISTS idx_links_crawl_to ON links (crawl_id, to_id);",
     )?;
+    if version < 14 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS images (
+                crawl_id TEXT NOT NULL,
+                url_id   INTEGER NOT NULL,
+                src      TEXT NOT NULL,
+                alt      TEXT,
+                width    INTEGER,
+                height   INTEGER,
+                PRIMARY KEY (crawl_id, url_id, src)
+            );",
+        )?;
+    }
     if version < 13 && !has_column(conn, "urls", "headers_json")? {
         conn.execute("ALTER TABLE urls ADD COLUMN headers_json TEXT", [])?;
     }
@@ -1553,7 +1638,7 @@ mod tests {
 
     #[test]
     fn bulk_data_exports_flatten_evidence() {
-        use coqui_core::{AxeViolation, HreflangLink, StructuredData, WebVitals};
+        use coqui_core::{AxeViolation, HreflangLink, ImageRef, StructuredData, WebVitals};
         let dir = std::env::temp_dir().join(format!("coqui-bulk-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let store = Store::open(dir.join("coqui.db")).unwrap();
@@ -1613,6 +1698,19 @@ mod tests {
             })
             .unwrap();
 
+        let url_id = store.url_id("c1", "https://example.com/").unwrap().unwrap();
+        store
+            .replace_images(
+                "c1",
+                url_id,
+                &[ImageRef {
+                    src: "https://example.com/a.png".into(),
+                    alt: Some("A frog".into()),
+                    width: Some(10),
+                    height: Some(20),
+                }],
+            )
+            .unwrap();
         let accessibility = dir.join("a11y.csv");
         assert_eq!(
             store
@@ -1631,6 +1729,8 @@ mod tests {
         assert_eq!(store.export_console_csv("c1", &console).unwrap(), 2);
         let headers = dir.join("headers.csv");
         assert_eq!(store.export_headers_csv("c1", &headers).unwrap(), 1);
+        let images = dir.join("images.csv");
+        assert_eq!(store.export_images_csv("c1", &images).unwrap(), 1);
         let text = std::fs::read_to_string(&accessibility).unwrap();
         assert!(text.contains("image-alt"));
         std::fs::remove_dir_all(dir).ok();

@@ -3,7 +3,7 @@
 //! The full column registry (X-01) will replace this module with a field-oriented design; the
 //! shape here is intentionally simple: one page in, the values the UI and audit rules need.
 
-use coqui_core::{HreflangLink, StructuredData, resolve_url};
+use coqui_core::{HreflangLink, ImageRef, StructuredData, resolve_url};
 use scraper::{Html, Selector};
 use serde_json::Value;
 use std::collections::HashSet;
@@ -27,6 +27,7 @@ pub struct ExtractedPage {
     pub pagination_next: Option<String>,
     pub pagination_prev: Option<String>,
     pub structured_data: StructuredData,
+    pub images: Vec<ImageRef>,
     pub word_count: u32,
     pub links: Vec<ExtractedLink>,
 }
@@ -187,6 +188,33 @@ pub fn extract_page(html: &str, base_url: &str) -> ExtractedPage {
 
     let structured_data = extract_structured_data(&document);
 
+    let mut images = Vec::new();
+    for image in document.select(&selector("img[src]")) {
+        let Some(src) = image.value().attr("src") else {
+            continue;
+        };
+        let Ok(url) = resolve_url(base_url, src) else {
+            continue;
+        };
+        images.push(ImageRef {
+            src: url,
+            alt: image
+                .value()
+                .attr("alt")
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string),
+            width: image
+                .value()
+                .attr("width")
+                .and_then(|value| value.parse().ok()),
+            height: image
+                .value()
+                .attr("height")
+                .and_then(|value| value.parse().ok()),
+        });
+    }
+
     let body_text = document
         .select(&selector("body"))
         .next()
@@ -224,6 +252,7 @@ pub fn extract_page(html: &str, base_url: &str) -> ExtractedPage {
         pagination_next,
         pagination_prev,
         structured_data,
+        images,
         word_count,
         links,
     }
@@ -291,6 +320,27 @@ mod tests {
     fn tolerates_malformed_html() {
         let page = extract_page("<html><body><h1>Only a heading", "https://example.com/");
         assert_eq!(page.h1.as_deref(), Some("Only a heading"));
+    }
+}
+
+#[cfg(test)]
+mod image_tests {
+    use super::*;
+
+    #[test]
+    fn extracts_images_with_alt_and_dimensions() {
+        let html = r#"
+            <html><body>
+              <img src="/a.png" alt="A frog" width="640" height="480">
+              <img src="https://cdn.example.com/b.jpg">
+            </body></html>
+        "#;
+        let page = extract_page(html, "https://example.com/");
+        assert_eq!(page.images.len(), 2);
+        assert_eq!(page.images[0].src, "https://example.com/a.png");
+        assert_eq!(page.images[0].alt.as_deref(), Some("A frog"));
+        assert_eq!(page.images[0].width, Some(640));
+        assert_eq!(page.images[1].src, "https://cdn.example.com/b.jpg");
     }
 }
 
