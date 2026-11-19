@@ -94,10 +94,19 @@ fn list_urls(
     page: u32,
     page_size: u32,
     issue: Option<String>,
+    query: Option<String>,
+    status: Option<u16>,
 ) -> Result<UrlPage, String> {
     state
         .store
-        .list_urls(&crawl_id, page, page_size, issue.as_deref())
+        .list_urls(
+            &crawl_id,
+            page,
+            page_size,
+            issue.as_deref(),
+            query.as_deref(),
+            status,
+        )
         .map_err(|error| error.to_string())
 }
 
