@@ -645,6 +645,11 @@ fn tool_definitions() -> serde_json::Value {
             "inputSchema": {"type": "object", "properties": {"crawl_id": {"type": "string"}, "family": {"type": "string"}, "path": {"type": "string"}}, "required": ["crawl_id", "family"]}
         },
         {
+            "name": "compare_crawls",
+            "description": "Compare issue counts between two crawls.",
+            "inputSchema": {"type": "object", "properties": {"left": {"type": "string"}, "right": {"type": "string"}}, "required": ["left", "right"]}
+        },
+        {
             "name": "start_crawl",
             "description": "Start a crawl in the background and return its id.",
             "inputSchema": {"type": "object", "properties": {"seed": {"type": "string"}, "seedKind": {"type": "string"}, "maxUrls": {"type": "integer"}}, "required": ["seed"]}
@@ -833,6 +838,43 @@ fn call_tool(
                 "rows": rows,
                 "family": family,
             }))
+        }
+        "compare_crawls" => {
+            let left = arguments
+                .get("left")
+                .and_then(|value| value.as_str())
+                .ok_or_else(|| "left is required".to_string())?;
+            let right = arguments
+                .get("right")
+                .and_then(|value| value.as_str())
+                .ok_or_else(|| "right is required".to_string())?;
+            let mut rules: std::collections::BTreeMap<String, (i64, i64)> =
+                std::collections::BTreeMap::new();
+            for issue in store
+                .issue_counts(left)
+                .map_err(|error| error.to_string())?
+            {
+                rules.entry(issue.rule).or_default().0 += issue.count;
+            }
+            for issue in store
+                .issue_counts(right)
+                .map_err(|error| error.to_string())?
+            {
+                rules.entry(issue.rule).or_default().1 += issue.count;
+            }
+            Ok(serde_json::Value::Array(
+                rules
+                    .into_iter()
+                    .map(|(rule, (left_count, right_count))| {
+                        serde_json::json!({
+                            "rule": rule,
+                            "left": left_count,
+                            "right": right_count,
+                            "delta": right_count - left_count,
+                        })
+                    })
+                    .collect(),
+            ))
         }
         "start_crawl" => {
             let seed = arguments
