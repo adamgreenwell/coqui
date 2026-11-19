@@ -41,3 +41,34 @@ jobs:
         with:
           files: dist/*
           fail_on_unmatched_files: true
+
+  desktop:
+    name: Desktop (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - name: Fetch sidecars
+        run: npm run sidecars
+      - name: Build desktop installer
+        run: npm run build
+      - name: Check installer size
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if (-not $installer) { throw 'No NSIS installer produced' }
+          $mb = [math]::Round($installer.Length / 1MB, 1)
+          Write-Output "installer: $($installer.Name) $mb MB"
+          if ($mb -gt 350) { throw "Installer exceeds the 350 MB budget: $mb MB" }
+      - name: Upload installers
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/msi/*.msi
