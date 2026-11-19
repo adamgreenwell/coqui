@@ -186,6 +186,11 @@ pub const RULES: &[RuleDef] = &[
         severity: IssueSeverity::Opportunity,
     },
     RuleDef {
+        id: "orphan_url",
+        label: "Orphan URL",
+        severity: IssueSeverity::Opportunity,
+    },
+    RuleDef {
         id: "hreflang_missing_return",
         label: "Hreflang missing return link",
         severity: IssueSeverity::Warning,
@@ -267,6 +272,20 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
     let mut status_by_url: HashMap<&str, &UrlRecord> = HashMap::new();
     for url in &urls {
         status_by_url.insert(url.url.as_str(), url);
+    }
+
+    let mut inbound: HashMap<String, i64> = HashMap::new();
+    for link in &links {
+        *inbound.entry(link.to_url.clone()).or_default() += 1;
+    }
+    for url in &urls {
+        let ok = url
+            .status
+            .map(|status| (200..300).contains(&status))
+            .unwrap_or(false);
+        if ok && url.depth > 0 && inbound.get(&url.url).copied().unwrap_or(0) == 0 {
+            issue(store, crawl_id, &url.url, "orphan_url", None)?;
+        }
     }
 
     let missing_alt: HashMap<String, i64> =
@@ -1316,6 +1335,55 @@ mod tests {
         let counts = analyze_crawl(&store, id).unwrap();
         let by_rule: HashMap<_, _> = counts.iter().map(|c| (c.rule.as_str(), c.count)).collect();
         assert_eq!(by_rule.get("client_error"), Some(&1));
+    }
+
+    #[test]
+    fn flags_orphan_urls() {
+        let store = Store::open_in_memory().unwrap();
+        let id = "orphan";
+        store
+            .create_crawl(
+                id,
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        store
+            .insert_url(&NewUrl {
+                crawl_id: id.to_string(),
+                url: "https://example.com/hidden".to_string(),
+                status: Some(200),
+                blocked: false,
+                hreflang: Vec::new(),
+                pagination_next: None,
+                pagination_prev: None,
+                structured_data: Default::default(),
+                console_errors: Vec::new(),
+                axe: Vec::new(),
+                vitals: None,
+                headers: Vec::new(),
+                content_type: Some("text/html".into()),
+                title: Some("A perfectly reasonable title".into()),
+                meta_description: None,
+                h1: Some("H1".into()),
+                h1_count: 1,
+                canonical: None,
+                meta_robots: None,
+                redirect_target: None,
+                redirect_chain: Vec::new(),
+                word_count: Some(600),
+                depth: 1,
+                response_time_ms: Some(10),
+                size_bytes: Some(100),
+                error: None,
+                discovered_at: now_ms(),
+            })
+            .unwrap();
+        let counts = analyze_crawl(&store, id).unwrap();
+        let by_rule: HashMap<_, _> = counts.iter().map(|c| (c.rule.as_str(), c.count)).collect();
+        assert_eq!(by_rule.get("orphan_url"), Some(&1));
     }
 
     #[test]

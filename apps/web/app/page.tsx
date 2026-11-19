@@ -193,6 +193,7 @@ const ISSUE_LABELS: Record<string, string> = {
   client_error: '4xx client error',
   server_error: '5xx server error',
   redirected_url: 'Redirected URL',
+  orphan_url: 'Orphan URL',
   hreflang_missing_return: 'Hreflang missing return link',
   hreflang_invalid_target: 'Hreflang target not reachable',
   pagination_broken: 'Broken pagination link',
@@ -225,6 +226,7 @@ const ISSUE_DESCRIPTIONS: Record<string, string> = {
   client_error: 'The URL returned a 4xx status.',
   server_error: 'The URL returned a 5xx status.',
   redirected_url: 'The URL redirects with a 3xx status.',
+  orphan_url: 'No internal page links to this URL.',
   multiple_h1: 'More than one H1 heading was found.',
   missing_h1: 'No H1 heading was found.',
   thin_content: 'The page has very little body text.',
@@ -3103,6 +3105,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 
