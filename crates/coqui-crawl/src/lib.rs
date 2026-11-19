@@ -224,10 +224,12 @@ pub async fn run_crawl(
         .max(1);
 
     if config.max_urls == 0 {
-        return Ok(CrawlResult {
+        let result = CrawlResult {
             stats,
             paused: false,
-        });
+        };
+        notify_webhook(&config, &crawl_id, &result).await;
+        return Ok(result);
     }
 
     let renderer = if config.render {
@@ -511,10 +513,12 @@ pub async fn run_crawl(
                 }
             }
             if pause_requested {
-                return Ok(CrawlResult {
+                let result = CrawlResult {
                     stats,
                     paused: true,
-                });
+                };
+                notify_webhook(&config, &crawl_id, &result).await;
+                return Ok(result);
             }
             if blocked_abort {
                 return Err(CrawlError::Blocked(stats.blocked));
@@ -528,10 +532,39 @@ pub async fn run_crawl(
     if cancel.is_cancelled() {
         return Err(CrawlError::Cancelled);
     }
-    Ok(CrawlResult {
+    let result = CrawlResult {
         stats,
         paused: false,
-    })
+    };
+    notify_webhook(&config, &crawl_id, &result).await;
+    Ok(result)
+}
+
+async fn notify_webhook(config: &CrawlConfig, crawl_id: &str, result: &CrawlResult) {
+    let Some(url) = config
+        .webhook_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|url| !url.is_empty())
+    else {
+        return;
+    };
+    let payload = serde_json::json!({
+        "event": "crawl.finished",
+        "crawlId": crawl_id,
+        "paused": result.paused,
+        "stats": {
+            "crawled": result.stats.crawled,
+            "discovered": result.stats.discovered,
+            "failed": result.stats.failed,
+            "redirected": result.stats.redirected,
+            "blocked": result.stats.blocked,
+        },
+    });
+    let Ok(client) = Client::builder().timeout(Duration::from_secs(5)).build() else {
+        return;
+    };
+    let _ = client.post(url).json(&payload).send().await;
 }
 
 fn compile_patterns(patterns: &[String]) -> Result<Vec<Regex>, CrawlError> {
