@@ -498,6 +498,13 @@ export default function Home() {
     })();
   }, [isTauri, crawl?.id, phase]);
 
+  const applyTab = (content: string, status: string) => {
+    setContentFilter(content);
+    setStatusFilter(status);
+    setPage(1);
+    if (crawl) void loadPage(crawl.id, 1, activeIssue);
+  };
+
   const clearFilters = () => {
     setQueryInput('');
     setStatusFilter('');
@@ -950,6 +957,21 @@ export default function Home() {
     indexFilter,
     activeIssue ?? '',
   ].filter(Boolean).length;
+
+  const resultTabs = [
+    { id: 'all', label: 'All', content: '', status: '' },
+    { id: 'html', label: 'HTML', content: 'html', status: '' },
+    { id: 'images', label: 'Images', content: 'image', status: '' },
+    { id: 'xml', label: 'XML', content: 'xml', status: '' },
+    { id: 'redirects', label: 'Redirects', content: '', status: '3xx' },
+    { id: 'errors', label: 'Errors', content: '', status: '4xx' },
+  ] as const;
+  const activeTab =
+    statusFilter === '3xx'
+      ? 'redirects'
+      : statusFilter === '4xx' || statusFilter === '5xx'
+        ? 'errors'
+        : contentFilter || 'all';
 
   function cell(row: UrlRow, key: ColumnKey) {
     switch (key) {
@@ -1915,6 +1937,19 @@ export default function Home() {
               </div>
             </section>
           )}
+
+          <div className="result-tabs">
+            {resultTabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                className={`tab${activeTab === tab.id ? ' active' : ''}`}
+                onClick={() => applyTab(tab.content, tab.status)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
 
           <section className="overview-strip">
             <div>
