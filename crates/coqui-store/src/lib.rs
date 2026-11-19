@@ -499,6 +499,7 @@ impl Store {
         search: Option<&str>,
         status: Option<u16>,
         status_class: Option<u16>,
+        content_class: Option<&str>,
     ) -> Result<UrlPage> {
         let page = page.max(1);
         let page_size = page_size.clamp(1, 500);
@@ -524,8 +525,23 @@ impl Store {
                     WHERE issues.crawl_id = urls.crawl_id AND issues.url = urls.url AND issues.rule = ?2))
                AND (?3 IS NULL OR urls.url LIKE ?3 ESCAPE '\\' OR urls.title LIKE ?3 ESCAPE '\\')
                AND (?4 IS NULL OR urls.status = ?4)
-               AND (?5 IS NULL OR urls.status BETWEEN ?5 * 100 AND ?5 * 100 + 99)",
-            params![crawl_id, filter, search_like, status, status_class],
+               AND (?5 IS NULL OR urls.status BETWEEN ?5 * 100 AND ?5 * 100 + 99)
+               AND (?6 IS NULL OR
+                    (?6 = 'html' AND urls.content_type LIKE 'text/html%') OR
+                    (?6 = 'xml' AND urls.content_type LIKE '%xml%') OR
+                    (?6 = 'image' AND urls.content_type LIKE 'image/%') OR
+                    (?6 = 'other' AND (urls.content_type IS NULL OR
+                        (urls.content_type NOT LIKE 'text/html%' AND
+                         urls.content_type NOT LIKE '%xml%' AND
+                         urls.content_type NOT LIKE 'image/%'))))",
+            params![
+                crawl_id,
+                filter,
+                search_like,
+                status,
+                status_class,
+                content_class
+            ],
             |row| row.get(0),
         )?;
         let mut stmt = conn.prepare(
@@ -541,7 +557,15 @@ impl Store {
                AND (?4 IS NULL OR urls.url LIKE ?4 ESCAPE '\\' OR urls.title LIKE ?4 ESCAPE '\\')
                AND (?5 IS NULL OR urls.status = ?5)
                AND (?6 IS NULL OR urls.status BETWEEN ?6 * 100 AND ?6 * 100 + 99)
-             ORDER BY id LIMIT ?2 OFFSET ?7",
+               AND (?7 IS NULL OR
+                    (?7 = 'html' AND urls.content_type LIKE 'text/html%') OR
+                    (?7 = 'xml' AND urls.content_type LIKE '%xml%') OR
+                    (?7 = 'image' AND urls.content_type LIKE 'image/%') OR
+                    (?7 = 'other' AND (urls.content_type IS NULL OR
+                        (urls.content_type NOT LIKE 'text/html%' AND
+                         urls.content_type NOT LIKE '%xml%' AND
+                         urls.content_type NOT LIKE 'image/%'))))
+             ORDER BY id LIMIT ?2 OFFSET ?8",
         )?;
         let rows = stmt
             .query_map(
@@ -552,6 +576,7 @@ impl Store {
                     search_like,
                     status,
                     status_class,
+                    content_class,
                     offset
                 ],
                 map_url_row,
@@ -573,7 +598,9 @@ impl Store {
         page_size: u32,
         issue_rule: Option<&str>,
     ) -> Result<UrlPage> {
-        self.list_urls_filtered(crawl_id, page, page_size, issue_rule, None, None, None)
+        self.list_urls_filtered(
+            crawl_id, page, page_size, issue_rule, None, None, None, None,
+        )
     }
 
     /// Every URL of a crawl, used by post-crawl analysis. Callers should not use this for UI paging.
@@ -2628,21 +2655,21 @@ mod tests {
         store.insert_url(&missing).unwrap();
         assert_eq!(
             store
-                .list_urls_filtered("c1", 1, 10, None, Some("Missing"), None, None)
+                .list_urls_filtered("c1", 1, 10, None, Some("Missing"), None, None, None)
                 .unwrap()
                 .total,
             1
         );
         assert_eq!(
             store
-                .list_urls_filtered("c1", 1, 10, None, None, Some(404), None)
+                .list_urls_filtered("c1", 1, 10, None, None, Some(404), None, None)
                 .unwrap()
                 .total,
             1
         );
         assert_eq!(
             store
-                .list_urls_filtered("c1", 1, 10, None, None, None, None)
+                .list_urls_filtered("c1", 1, 10, None, None, None, None, None)
                 .unwrap()
                 .total,
             2

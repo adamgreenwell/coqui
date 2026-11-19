@@ -684,6 +684,10 @@ fn call_tool(
                 .get("statusClass")
                 .and_then(|value| value.as_u64())
                 .map(|value| value as u16);
+            let content_class = arguments
+                .get("contentClass")
+                .and_then(|value| value.as_str())
+                .map(str::to_string);
             let query = arguments
                 .get("query")
                 .and_then(|value| value.as_str())
@@ -697,6 +701,7 @@ fn call_tool(
                     query.as_deref(),
                     status,
                     status_class,
+                    content_class.as_deref(),
                 )
                 .map_err(|error| error.to_string())?;
             let rows: Vec<_> = result
