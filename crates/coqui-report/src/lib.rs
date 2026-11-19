@@ -162,6 +162,11 @@ pub const REPORTS: &[(&str, &str, &str)] = &[
         "Broken links",
         "4xx/5xx and failed responses.",
     ),
+    (
+        "overview",
+        "Crawl overview",
+        "Status, indexability, content, depth and issue totals.",
+    ),
 ];
 
 /// Render a named report.
@@ -182,6 +187,7 @@ pub fn render_report_with(
         "performance" => render_performance(store, crawl_id, options.top, options.status),
         "redirects" => render_redirects(store, crawl_id),
         "broken-links" => render_broken_links(store, crawl_id),
+        "overview" => render_overview(store, crawl_id),
         _ => render_html(store, crawl_id),
     }
 }
@@ -309,6 +315,66 @@ fn render_redirects(store: &Store, crawl_id: &str) -> Result<String, String> {
     }
     body.push_str("</table>");
     Ok(shell(&crawl.seed, "Redirects", &body))
+}
+
+fn render_overview(store: &Store, crawl_id: &str) -> Result<String, String> {
+    let crawl = store
+        .get_crawl(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let mut body = String::from("<h2>Status</h2><table><tr><th>Status</th><th>URLs</th></tr>");
+    for (status, count) in store
+        .status_counts(crawl_id)
+        .map_err(|error| error.to_string())?
+    {
+        body.push_str(&format!(
+            "<tr><td>{}</td><td>{count}</td></tr>",
+            status
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "-".into())
+        ));
+    }
+    body.push_str("</table>");
+    let (indexable, noindex, blocked) = store
+        .indexability_counts(crawl_id)
+        .map_err(|error| error.to_string())?;
+    body.push_str(&format!(
+        "<h2>Indexability</h2><table><tr><th>Indexable</th><th>Noindex</th><th>Blocked</th></tr>\
+         <tr><td>{indexable}</td><td>{noindex}</td><td>{blocked}</td></tr></table>"
+    ));
+    let (html, xml, image, other) = store
+        .content_counts(crawl_id)
+        .map_err(|error| error.to_string())?;
+    body.push_str(&format!(
+        "<h2>Content types</h2><table><tr><th>HTML</th><th>XML</th><th>Images</th><th>Other</th></tr>\
+         <tr><td>{html}</td><td>{xml}</td><td>{image}</td><td>{other}</td></tr></table>"
+    ));
+    body.push_str("<h2>Depth</h2><table><tr><th>Depth</th><th>URLs</th></tr>");
+    for (depth, count) in store
+        .depth_counts(crawl_id)
+        .map_err(|error| error.to_string())?
+    {
+        body.push_str(&format!("<tr><td>{depth}</td><td>{count}</td></tr>"));
+    }
+    body.push_str("</table>");
+    let issues = store
+        .issue_counts(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let mut totals = [0i64; 3];
+    for issue in &issues {
+        let index = match issue.severity {
+            coqui_core::IssueSeverity::Error => 0,
+            coqui_core::IssueSeverity::Warning => 1,
+            coqui_core::IssueSeverity::Opportunity => 2,
+        };
+        totals[index] += issue.count;
+    }
+    body.push_str(&format!(
+        "<h2>Issues</h2><table><tr><th>Severity</th><th>Count</th></tr>\
+         <tr><td>Error</td><td>{}</td></tr><tr><td>Warning</td><td>{}</td></tr>\
+         <tr><td>Opportunity</td><td>{}</td></tr></table>",
+        totals[0], totals[1], totals[2]
+    ));
+    Ok(shell(&crawl.seed, "Crawl overview", &body))
 }
 
 fn render_broken_links(store: &Store, crawl_id: &str) -> Result<String, String> {
