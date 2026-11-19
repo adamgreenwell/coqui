@@ -757,30 +757,45 @@ impl Store {
         } else {
             columns.to_vec()
         };
-        let issue_urls: Option<std::collections::HashSet<String>> = match issue {
-            Some(rule) => {
-                let conn = self.lock()?;
-                let mut stmt =
-                    conn.prepare("SELECT url FROM issues WHERE crawl_id = ?1 AND rule = ?2")?;
-                let rows = stmt
-                    .query_map(params![crawl_id, rule], |row| row.get::<_, String>(0))?
-                    .collect::<std::result::Result<std::collections::HashSet<_>, _>>()?;
-                Some(rows)
-            }
-            None => None,
+        let conn = self.lock()?;
+        let mut stmt = if issue.is_some() {
+            conn.prepare(
+                "SELECT url, status, title, h1, word_count, canonical, meta_robots,
+                        redirect_target, depth, response_time_ms, vitals_json
+                 FROM urls WHERE crawl_id = ?1
+                   AND EXISTS (SELECT 1 FROM issues i
+                               WHERE i.crawl_id = urls.crawl_id AND i.url = urls.url AND i.rule = ?2)
+                 ORDER BY id",
+            )?
+        } else {
+            conn.prepare(
+                "SELECT url, status, title, h1, word_count, canonical, meta_robots,
+                        redirect_target, depth, response_time_ms, vitals_json
+                 FROM urls WHERE crawl_id = ?1 ORDER BY id",
+            )?
         };
-        let urls = self.all_urls(crawl_id)?;
         let mut writer = csv::Writer::from_path(path)?;
         writer.write_record(allowed.iter().map(|key| csv_header(key)))?;
         let mut rows = 0u64;
-        for url in &urls {
-            if let Some(filter) = &issue_urls {
-                if !filter.contains(&url.url) {
-                    continue;
-                }
-            }
-            writer.write_record(allowed.iter().map(|key| url_csv_value(url, key)))?;
+        let mut write = |record: &rusqlite::Row<'_>| -> Result<()> {
+            let values: Vec<String> = allowed
+                .iter()
+                .map(|key| row_csv_value(key, record))
+                .collect();
+            writer.write_record(values)?;
             rows += 1;
+            Ok(())
+        };
+        if let Some(rule) = issue {
+            let mut query = stmt.query(params![crawl_id, rule])?;
+            while let Some(record) = query.next()? {
+                write(record)?;
+            }
+        } else {
+            let mut query = stmt.query(params![crawl_id])?;
+            while let Some(record) = query.next()? {
+                write(record)?;
+            }
         }
         writer.flush()?;
         Ok(rows)
@@ -1922,5 +1937,46 @@ fn url_csv_value(url: &UrlRecord, key: &str) -> String {
             .map(|vitals| vitals.cls.to_string())
             .unwrap_or_default(),
         other => other.to_string(),
+    }
+}
+
+fn row_csv_value(key: &str, row: &rusqlite::Row<'_>) -> String {
+    let string = |index: usize| -> String {
+        row.get::<_, Option<String>>(index)
+            .ok()
+            .flatten()
+            .unwrap_or_default()
+    };
+    let number = |index: usize| -> String {
+        row.get::<_, Option<i64>>(index)
+            .ok()
+            .flatten()
+            .map(|value| value.to_string())
+            .unwrap_or_default()
+    };
+    match key {
+        "url" => string(0),
+        "status" => number(1),
+        "title" => string(2),
+        "h1" => string(3),
+        "words" => number(4),
+        "canonical" => string(5),
+        "robots" => string(6),
+        "redirect" => string(7),
+        "depth" => number(8),
+        "time" => number(9),
+        "lcp" | "cls" => {
+            let vitals = row
+                .get::<_, Option<String>>(10)
+                .ok()
+                .flatten()
+                .and_then(|json| serde_json::from_str::<WebVitals>(&json).ok());
+            match (key, vitals) {
+                ("lcp", Some(vitals)) => vitals.lcp_ms.to_string(),
+                ("cls", Some(vitals)) => vitals.cls.to_string(),
+                _ => String::new(),
+            }
+        }
+        _ => String::new(),
     }
 }
