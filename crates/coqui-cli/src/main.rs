@@ -97,7 +97,7 @@ fn load_config(path: &Path, required: bool) -> Result<FileConfig, String> {
 }
 
 fn usage() -> &'static str {
-    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]"
+    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance] [--out DIR]\n       coqui reports"
 }
 
 fn parse_args(values: &[String], config: &FileConfig) -> Result<Args, String> {
@@ -235,6 +235,35 @@ fn parse_resume(values: &[String], config: &FileConfig) -> Result<Args, String> 
     Ok(args)
 }
 
+fn run_report(values: &[String]) -> Result<(), String> {
+    let mut kind = "summary".to_string();
+    let mut out = PathBuf::from("coqui-out");
+    let mut index = 0;
+    while index < values.len() {
+        match values[index].as_str() {
+            "--out" => {
+                index += 1;
+                out = PathBuf::from(values.get(index).ok_or("missing --out value")?);
+            }
+            other if !other.starts_with("--") => kind = other.to_string(),
+            other => return Err(format!("unknown option '{other}'")),
+        }
+        index += 1;
+    }
+    if !coqui_report::REPORTS.iter().any(|(id, _, _)| *id == kind) {
+        return Err(format!("unknown report '{kind}'"));
+    }
+    let store = Store::open(out.join("coqui.db")).map_err(|error| error.to_string())?;
+    let crawl = store
+        .latest_crawl()
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "no crawl found".to_string())?;
+    let path = out.join(format!("report-{kind}.html"));
+    let urls = coqui_report::write_report(&store, &crawl.id, &path, &kind)?;
+    println!("report: {} ({} urls)", path.display(), urls);
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() {
     let values: Vec<String> = std::env::args().collect();
@@ -250,6 +279,21 @@ async fn main() {
             );
         }
         return;
+    }
+    if values.get(1).map(String::as_str) == Some("reports") {
+        for (id, label, description) in coqui_report::REPORTS {
+            println!("{id}\t{label}\t{description}");
+        }
+        return;
+    }
+    if values.get(1).map(String::as_str) == Some("report") {
+        match run_report(&values[2..]) {
+            Ok(()) => return,
+            Err(message) => {
+                eprintln!("{message}");
+                std::process::exit(2);
+            }
+        }
     }
     let explicit_config = values.windows(2).any(|pair| pair[0] == "--config");
     let config_path = values

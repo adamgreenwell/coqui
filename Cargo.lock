@@ -507,6 +507,7 @@ dependencies = [
  "coqui-audit",
  "coqui-core",
  "coqui-crawl",
+ "coqui-report",
  "coqui-store",
  "serde",
  "tokio",
