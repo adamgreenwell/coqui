@@ -690,6 +690,59 @@ impl Store {
         Ok(rows)
     }
 
+    pub fn save_page_text(
+        &self,
+        crawl_id: &str,
+        url_id: i64,
+        text: &str,
+        markdown: &str,
+    ) -> Result<()> {
+        self.lock()?.execute(
+            "INSERT INTO page_text (crawl_id, url_id, text, markdown) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(crawl_id, url_id) DO UPDATE SET text = excluded.text,
+                                                        markdown = excluded.markdown",
+            params![crawl_id, url_id, text, markdown],
+        )?;
+        Ok(())
+    }
+
+    pub fn export_text_csv(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {
+        self.export_page_text(crawl_id, path, "text")
+    }
+
+    pub fn export_markdown_csv(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {
+        self.export_page_text(crawl_id, path, "markdown")
+    }
+
+    fn export_page_text(
+        &self,
+        crawl_id: &str,
+        path: impl AsRef<Path>,
+        column: &str,
+    ) -> Result<u64> {
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT u.url, p.{column} FROM page_text p
+             JOIN urls u ON u.id = p.url_id AND u.crawl_id = p.crawl_id
+             WHERE p.crawl_id = ?1 ORDER BY u.url"
+        ))?;
+        let mut writer = csv::Writer::from_path(path)?;
+        writer.write_record(["url", column])?;
+        let mut rows = 0u64;
+        let mut records = stmt.query(params![crawl_id])?;
+        while let Some(row) = records.next()? {
+            let url: String = row.get(0)?;
+            let value: String = row.get(1)?;
+            writer.write_record([url, value])?;
+            rows += 1;
+        }
+        writer.flush()?;
+        Ok(rows)
+    }
+
     pub fn save_lighthouse(&self, crawl_id: &str, url_id: i64, summary_json: &str) -> Result<()> {
         self.lock()?.execute(
             "INSERT OR REPLACE INTO lighthouse_reports (crawl_id, url_id, summary_json, created_at)
@@ -1321,6 +1374,44 @@ impl Store {
     }
 
     /// Delete a crawl and all of its rows.
+    pub fn save_profile(&self, name: &str, config_json: &str) -> Result<()> {
+        self.lock()?.execute(
+            "INSERT INTO profiles (name, config_json, updated_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(name) DO UPDATE SET config_json = excluded.config_json,
+                                            updated_at = excluded.updated_at",
+            params![name, config_json, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_profiles(&self) -> Result<Vec<(String, i64)>> {
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare("SELECT name, updated_at FROM profiles ORDER BY name")?;
+        let rows = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn get_profile(&self, name: &str) -> Result<Option<String>> {
+        let conn = self.lock()?;
+        let json = conn
+            .query_row(
+                "SELECT config_json FROM profiles WHERE name = ?1",
+                params![name],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(json)
+    }
+
+    pub fn delete_profile(&self, name: &str) -> Result<usize> {
+        let changed = self
+            .lock()?
+            .execute("DELETE FROM profiles WHERE name = ?1", params![name])?;
+        Ok(changed)
+    }
+
     pub fn delete_crawl(&self, id: &str) -> Result<()> {
         let conn = self.lock()?;
         conn.execute("DELETE FROM issues WHERE crawl_id = ?1", params![id])?;
@@ -1342,6 +1433,7 @@ impl Store {
         let _ = std::fs::remove_dir_all(self.root.join("screenshots").join(id));
         conn.execute("DELETE FROM screenshots WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM images WHERE crawl_id = ?1", params![id])?;
+        conn.execute("DELETE FROM page_text WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM links WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM url_map WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM urls WHERE crawl_id = ?1", params![id])?;
@@ -1445,6 +1537,26 @@ fn migrate(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_links_crawl_from ON links (crawl_id, from_id);
          CREATE INDEX IF NOT EXISTS idx_links_crawl_to ON links (crawl_id, to_id);",
     )?;
+    if version < 16 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS page_text (
+                crawl_id TEXT NOT NULL,
+                url_id   INTEGER NOT NULL,
+                text     TEXT NOT NULL,
+                markdown TEXT NOT NULL,
+                PRIMARY KEY (crawl_id, url_id)
+            );",
+        )?;
+    }
+    if version < 15 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS profiles (
+                name        TEXT PRIMARY KEY,
+                config_json TEXT NOT NULL,
+                updated_at  INTEGER NOT NULL
+            );",
+        )?;
+    }
     if version < 14 {
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS images (
@@ -1967,6 +2079,62 @@ mod tests {
         assert_eq!(store.export_sitemap_bundle("c1", &gz, true).unwrap(), 2);
         let bytes = std::fs::read(gz.join("sitemap-1.xml.gz")).unwrap();
         assert_eq!(&bytes[..2], &[0x1f, 0x8b]);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn page_text_exports() {
+        let dir = std::env::temp_dir().join(format!("coqui-text-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        store
+            .create_crawl(
+                "c1",
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        store
+            .insert_url(&sample_record("c1", "https://example.com/"))
+            .unwrap();
+        let id = store.url_id("c1", "https://example.com/").unwrap().unwrap();
+        store
+            .save_page_text("c1", id, "hello world", "# Hello\n\nhello world")
+            .unwrap();
+        let text = dir.join("text.csv");
+        assert_eq!(store.export_text_csv("c1", &text).unwrap(), 1);
+        assert!(
+            std::fs::read_to_string(&text)
+                .unwrap()
+                .contains("hello world")
+        );
+        let markdown = dir.join("markdown.csv");
+        assert_eq!(store.export_markdown_csv("c1", &markdown).unwrap(), 1);
+        assert!(
+            std::fs::read_to_string(&markdown)
+                .unwrap()
+                .contains("# Hello")
+        );
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn profiles_round_trip() {
+        let dir = std::env::temp_dir().join(format!("coqui-profiles-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        store.save_profile("fast", "{\"maxUrls\":10}").unwrap();
+        store.save_profile("fast", "{\"maxUrls\":20}").unwrap();
+        let profiles = store.list_profiles().unwrap();
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(
+            store.get_profile("fast").unwrap().as_deref(),
+            Some("{\"maxUrls\":20}")
+        );
+        assert_eq!(store.delete_profile("fast").unwrap(), 1);
+        assert!(store.get_profile("fast").unwrap().is_none());
         std::fs::remove_dir_all(dir).ok();
     }
 

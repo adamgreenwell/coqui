@@ -259,6 +259,7 @@ export default function Home() {
   const [renderBlockAssets, setRenderBlockAssets] = useState(false);
   const [accessibility, setAccessibility] = useState(false);
   const [webVitals, setWebVitals] = useState(false);
+  const [storeText, setStoreText] = useState(false);
   const [settingsQuery, setSettingsQuery] = useState('');
   const [probe, setProbe] = useState<{ status: number; ms: number; finalUrl: string } | null>(null);
   const [probeError, setProbeError] = useState<string | null>(null);
@@ -512,6 +513,7 @@ export default function Home() {
     { label: 'Block third-party assets', help: 'Skip third-party requests while rendering.', value: renderBlockAssets ? 'on' : 'off', changed: renderBlockAssets },
     { label: 'Accessibility (axe)', help: 'Run axe-core on rendered pages.', value: accessibility ? 'on' : 'off', changed: accessibility },
     { label: 'Web Vitals', help: 'Capture LCP, CLS, TBT, TTFB and FCP.', value: webVitals ? 'on' : 'off', changed: webVitals },
+    { label: 'Store page text', help: 'Save extracted text and Markdown for exports.', value: storeText ? 'on' : 'off', changed: storeText },
     { label: 'Browser path', help: 'Chrome/Edge executable override.', value: browserPath || 'auto', changed: browserPath.length > 0 },
     { label: 'Include patterns', help: 'One regex per line; only matching URLs are crawled.', value: includePatterns ? 'set' : 'none', changed: includePatterns.length > 0 },
     { label: 'Exclude patterns', help: 'One regex per line; matching URLs are skipped.', value: excludePatterns ? 'set' : 'none', changed: excludePatterns.length > 0 },
@@ -950,6 +952,15 @@ export default function Home() {
                       disabled={isRunning}
                     />
                     Capture Web Vitals (LCP, CLS, TBT)
+                  </label>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={storeText}
+                      onChange={(event) => setStoreText(event.target.checked)}
+                      disabled={isRunning}
+                    />
+                    Store page text + Markdown
                   </label>
                 </>
               )}
@@ -1437,6 +1448,8 @@ export default function Home() {
     </div>
   );
 }
+
+
 
 
 

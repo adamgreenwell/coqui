@@ -58,6 +58,7 @@ impl Args {
             accessibility: config.accessibility.unwrap_or(false),
             web_vitals: config.web_vitals.unwrap_or(false),
             render_workers: config.render_workers.unwrap_or(2),
+            store_text: false,
             resume: false,
         }
     }
@@ -81,6 +82,7 @@ struct Args {
     accessibility: bool,
     web_vitals: bool,
     render_workers: u32,
+    store_text: bool,
     resume: bool,
 }
 
@@ -154,6 +156,7 @@ fn parse_args(values: &[String], config: &FileConfig) -> Result<Args, String> {
             "--screenshots" => args.screenshots = true,
             "--a11y" => args.accessibility = true,
             "--vitals" => args.web_vitals = true,
+            "--store-text" => args.store_text = true,
             "--user-agent" => {
                 index += 1;
                 args.user_agent = Some(
@@ -378,6 +381,7 @@ async fn main() {
             screenshots: args.screenshots,
             accessibility: args.accessibility,
             web_vitals: args.web_vitals,
+            store_text: args.store_text,
             render_workers: args.render_workers,
             ..CrawlConfig::default()
         };

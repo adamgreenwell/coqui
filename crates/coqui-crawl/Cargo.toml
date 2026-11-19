@@ -22,6 +22,7 @@ tokio-util.workspace = true
 futures.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+html2md = "0.2.17"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

@@ -73,6 +73,9 @@ pub struct CrawlConfig {
     /// Capture Web Vitals (LCP, CLS, TBT, TTFB, FCP) from rendered pages.
     #[serde(default)]
     pub web_vitals: bool,
+    /// Store extracted text and Markdown for each page (off by default).
+    #[serde(default)]
+    pub store_text: bool,
     /// Only crawl discovered URLs matching at least one pattern (empty = all).
     #[serde(default)]
     pub include_patterns: Vec<String>,
@@ -125,6 +128,7 @@ impl Default for CrawlConfig {
             render_block_patterns: Vec::new(),
             accessibility: false,
             web_vitals: false,
+            store_text: false,
             include_patterns: Vec::new(),
             exclude_patterns: Vec::new(),
             auth_user: None,

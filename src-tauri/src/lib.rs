@@ -486,6 +486,42 @@ fn export_html_report(
 }
 
 #[tauri::command]
+fn save_profile(
+    state: State<'_, AppState>,
+    name: String,
+    config_json: String,
+) -> Result<(), String> {
+    state
+        .store
+        .save_profile(&name, &config_json)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn list_profiles(state: State<'_, AppState>) -> Result<Vec<(String, i64)>, String> {
+    state
+        .store
+        .list_profiles()
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn get_profile(state: State<'_, AppState>, name: String) -> Result<Option<String>, String> {
+    state
+        .store
+        .get_profile(&name)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn delete_profile(state: State<'_, AppState>, name: String) -> Result<usize, String> {
+    state
+        .store
+        .delete_profile(&name)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn export_catalog() -> Vec<coqui_core::ExportDefinition> {
     coqui_core::export_catalog()
 }
@@ -550,6 +586,14 @@ fn export_view(
         ("headers", _) => state
             .store
             .export_headers_csv(&crawl_id, &path)
+            .map_err(|error| error.to_string())?,
+        ("text", _) => state
+            .store
+            .export_text_csv(&crawl_id, &path)
+            .map_err(|error| error.to_string())?,
+        ("markdown", _) => state
+            .store
+            .export_markdown_csv(&crawl_id, &path)
             .map_err(|error| error.to_string())?,
         ("sitemap", _) => state
             .store
@@ -645,6 +689,10 @@ pub fn run() {
             run_lighthouse,
             run_lighthouse_sample,
             test_connection,
+            save_profile,
+            list_profiles,
+            get_profile,
+            delete_profile,
             export_catalog,
             export_html_report,
             export_view
