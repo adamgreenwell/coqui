@@ -72,6 +72,7 @@ struct FetchOutcome {
     screenshot: Option<Vec<u8>>,
     axe: Vec<coqui_core::AxeViolation>,
     vitals: Option<coqui_core::WebVitals>,
+    headers: Vec<(String, String)>,
 }
 
 /// Run a crawl to completion (or cancellation).
@@ -317,6 +318,7 @@ pub async fn run_crawl(
                         console_errors: outcome.console.clone(),
                         axe: outcome.axe.clone(),
                         vitals: outcome.vitals,
+                        headers: outcome.headers.clone(),
                         hreflang: Vec::new(),
                         pagination_next: None,
                         pagination_prev: None,
@@ -370,6 +372,7 @@ pub async fn run_crawl(
                     console_errors: outcome.console.clone(),
                     axe: outcome.axe.clone(),
                     vitals: outcome.vitals,
+                    headers: outcome.headers.clone(),
                     hreflang: extracted
                         .as_ref()
                         .map(|page| page.hreflang.clone())
@@ -616,6 +619,7 @@ async fn fetch(
                     screenshot: None,
                     axe: Vec::new(),
                     vitals: None,
+                    headers: Vec::new(),
                 };
             }
         };
@@ -663,6 +667,15 @@ async fn fetch(
         }
 
         let response_headers = response.headers().clone();
+        let header_pairs: Vec<(String, String)> = response_headers
+            .iter()
+            .map(|(name, value)| {
+                (
+                    name.as_str().to_string(),
+                    value.to_str().unwrap_or("").to_string(),
+                )
+            })
+            .collect();
         let content_type = response
             .headers()
             .get(CONTENT_TYPE)
@@ -693,6 +706,7 @@ async fn fetch(
                         screenshot: None,
                         axe: Vec::new(),
                         vitals: None,
+                        headers: header_pairs,
                     };
                 }
             }
@@ -738,6 +752,7 @@ async fn fetch(
             screenshot,
             axe,
             vitals,
+            headers: header_pairs,
         };
     }
 
@@ -755,6 +770,7 @@ async fn fetch(
         screenshot: None,
         axe: Vec::new(),
         vitals: None,
+        headers: Vec::new(),
     }
 }
 

@@ -216,6 +216,8 @@ pub struct UrlRecord {
     pub console_errors: Vec<String>,
     pub axe: Vec<AxeViolation>,
     pub vitals: Option<WebVitals>,
+    /// Final response headers (name, value), in wire order.
+    pub headers: Vec<(String, String)>,
     pub redirect_target: Option<String>,
     pub redirect_chain: Vec<String>,
     pub word_count: Option<u32>,
@@ -267,6 +269,8 @@ pub struct NewUrl {
     pub console_errors: Vec<String>,
     pub axe: Vec<AxeViolation>,
     pub vitals: Option<WebVitals>,
+    /// Final response headers (name, value), in wire order.
+    pub headers: Vec<(String, String)>,
     pub redirect_target: Option<String>,
     pub redirect_chain: Vec<String>,
     pub word_count: Option<u32>,
