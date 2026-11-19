@@ -736,6 +736,7 @@ async fn fetch(
         let mut custom_js: Vec<serde_json::Value> = Vec::new();
         let mut vitals = None;
         let blocked = looks_blocked(status, &response_headers, body.as_deref());
+        let http_elapsed_ms = started.elapsed().as_millis() as u64;
         if !blocked {
             if let Some(renderer) = renderer {
                 if html && (200..300).contains(&status) {
@@ -765,7 +766,7 @@ async fn fetch(
             content_type,
             body,
             size_bytes,
-            elapsed_ms: started.elapsed().as_millis() as u64,
+            elapsed_ms: http_elapsed_ms,
             error: None,
             blocked,
             console,
