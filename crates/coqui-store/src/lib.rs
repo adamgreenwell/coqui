@@ -3595,6 +3595,39 @@ mod tests {
     }
 
     #[test]
+    fn upgrades_old_schema_on_open() {
+        let dir = std::env::temp_dir().join(format!("coqui-migrate-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("coqui.db");
+        Store::open(&path).unwrap();
+        {
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "DROP TABLE IF EXISTS issue_overrides;
+                 DROP TABLE IF EXISTS issue_suppressions;",
+            )
+            .unwrap();
+            let _ = conn.execute_batch(
+                "ALTER TABLE saved_views DROP COLUMN sort_key;
+                 ALTER TABLE saved_views DROP COLUMN sort_desc;
+                 ALTER TABLE saved_views DROP COLUMN page_size;",
+            );
+            conn.pragma_update(None, "user_version", 21).unwrap();
+        }
+        let store = Store::open(&path).unwrap();
+        store.suppress_rule("c", "r").unwrap();
+        store.set_override("c", "r", "warning").unwrap();
+        assert_eq!(store.overrides("c").unwrap().len(), 1);
+        drop(store);
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        let version: i32 = conn
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 24);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
     fn lighthouse_reports_round_trip() {
         let store = Store::open_in_memory().unwrap();
         let summary = r#"{"performance":0.72,"accessibility":0.95,"bestPractices":0.57,"seo":0.42,"audits":[],"finalUrl":null,"fetchTime":null}"#;
