@@ -5,7 +5,7 @@ Headless crawler using the same engine, store and audit rules as the desktop app
 ## Usage
 
 ```bash
-coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots]
+coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots] [--user-agent UA] [--header "Name: value"] [--auth user:pass] [--timeout-ms N] [--render] [--screenshots] [--a11y] [--vitals] [--render-workers N]
 ```
 
 Examples:
@@ -32,4 +32,5 @@ coqui crawl list ./urls.txt --depth 1 --concurrency 4 --ignore-robots
 
 ## Current limits
 
-This first cut supports URL/sitemap/list seeds and the crawl-limit flags. Export formats, config files, profiles, auth/headers and rendering flags are not exposed yet — they are next steps for T-01.
+Supports URL/sitemap/list seeds, crawl limits, user agent, custom headers, basic auth, timeout, and rendering with screenshots/axe/Web Vitals. Export formats, config files, profiles and checkpoint/resume flags are next.
+
