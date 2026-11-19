@@ -352,6 +352,12 @@ export default function Home() {
     blocked: number;
   } | null>(null);
   const [depthCounts, setDepthCounts] = useState<{ depth: number; count: number }[]>([]);
+  const [contentStats, setContentStats] = useState<{
+    html: number;
+    xml: number;
+    image: number;
+    other: number;
+  } | null>(null);
   const [activeIssue, setActiveIssue] = useState<string | null>(null);
   const [queryInput, setQueryInput] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -597,6 +603,13 @@ export default function Home() {
           crawlId: crawl.id,
         });
         setDepthCounts(depths);
+        const content = await invoke<{
+          html: number;
+          xml: number;
+          image: number;
+          other: number;
+        }>('content_stats', { crawlId: crawl.id });
+        setContentStats(content);
       } catch {
         // overview is best-effort
       }
@@ -2209,6 +2222,30 @@ export default function Home() {
                 <strong>{depthBuckets[index] ?? 0}</strong>
               </div>
             ))}
+            {contentStats &&
+              (
+                [
+                  ['html', 'HTML'],
+                  ['xml', 'XML'],
+                  ['image', 'Images'],
+                  ['other', 'Other'],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={`overview-card${contentFilter === key ? ' active' : ''}`}
+                  onClick={() => {
+                    const next = contentFilter === key ? '' : key;
+                    setContentFilter(next);
+                    setPage(1);
+                    if (crawl) void loadPage(crawl.id, 1, activeIssue);
+                  }}
+                >
+                  <span>{label}</span>
+                  <strong>{contentStats[key]}</strong>
+                </button>
+              ))}
           </section>
 
           <section className="panel results">

@@ -629,6 +629,25 @@ impl Store {
         Ok(rows)
     }
 
+    /// HTML, XML, image and other content counts.
+    pub fn content_counts(&self, crawl_id: &str) -> Result<(i64, i64, i64, i64)> {
+        let conn = self.lock()?;
+        let counts = conn.query_row(
+            "SELECT
+                COALESCE(SUM(CASE WHEN content_type LIKE 'text/html%' THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN content_type LIKE '%xml%'
+                    AND content_type NOT LIKE 'text/html%' THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN content_type LIKE 'image/%' THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN content_type IS NULL OR
+                    (content_type NOT LIKE 'text/html%' AND content_type NOT LIKE '%xml%'
+                     AND content_type NOT LIKE 'image/%') THEN 1 ELSE 0 END), 0)
+             FROM urls WHERE crawl_id = ?1",
+            params![crawl_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )?;
+        Ok(counts)
+    }
+
     pub fn status_counts(&self, crawl_id: &str) -> Result<Vec<(Option<u16>, i64)>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
@@ -3029,6 +3048,37 @@ mod tests {
         assert!(store.issue_counts("c1").unwrap().is_empty());
         assert_eq!(store.restore_rule("c1", "missing_title").unwrap(), 1);
         assert_eq!(store.issue_counts("c1").unwrap().len(), 1);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn content_counts_classify_types() {
+        let dir = std::env::temp_dir().join(format!("coqui-content-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        store
+            .create_crawl(
+                "c1",
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        for (index, content_type) in [
+            "text/html; charset=utf-8",
+            "application/xml",
+            "image/png",
+            "application/pdf",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut record = sample_record("c1", &format!("https://example.com/{index}"));
+            record.content_type = Some(content_type.into());
+            store.insert_url(&record).unwrap();
+        }
+        assert_eq!(store.content_counts("c1").unwrap(), (1, 1, 1, 1));
         std::fs::remove_dir_all(dir).ok();
     }
 
