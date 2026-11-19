@@ -561,6 +561,40 @@ impl Store {
         Ok(rows)
     }
 
+    /// URLs linking to this URL, with anchor text.
+    pub fn inbound_links(&self, crawl_id: &str, url_id: i64) -> Result<Vec<(String, String)>> {
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT urls.url, links.anchor FROM links
+             JOIN urls ON urls.id = links.from_id
+             WHERE links.crawl_id = ?1 AND links.to_id = ?2
+             ORDER BY urls.url LIMIT 100",
+        )?;
+        let rows = stmt
+            .query_map(params![crawl_id, url_id], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// URLs this URL links to, with anchor text.
+    pub fn outbound_links(&self, crawl_id: &str, url_id: i64) -> Result<Vec<(String, String)>> {
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT urls.url, links.anchor FROM links
+             JOIN urls ON urls.id = links.to_id
+             WHERE links.crawl_id = ?1 AND links.from_id = ?2
+             ORDER BY urls.url LIMIT 100",
+        )?;
+        let rows = stmt
+            .query_map(params![crawl_id, url_id], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     pub fn link_counts(&self, crawl_id: &str, url_id: i64) -> Result<(i64, i64)> {
         let conn = self.lock()?;
         let incoming = conn.query_row(
@@ -3039,6 +3073,8 @@ mod tests {
             .insert_link("c1", id, id, Some("self"), None, true)
             .unwrap();
         assert_eq!(store.link_counts("c1", id).unwrap(), (1, 1));
+        assert_eq!(store.inbound_links("c1", id).unwrap().len(), 1);
+        assert_eq!(store.outbound_links("c1", id).unwrap().len(), 1);
         std::fs::remove_dir_all(dir).ok();
     }
 

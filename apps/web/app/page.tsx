@@ -61,6 +61,8 @@ interface UrlDetail {
   extractions: { name: string; value: string }[];
   customJs: { index: number; value: string }[];
   linkCounts: { inbound: number; outbound: number };
+  inboundLinks: { url: string; anchor: string }[];
+  outboundLinks: { url: string; anchor: string }[];
   screenshot: string | null;
 }
 
@@ -1973,6 +1975,30 @@ export default function Home() {
                     alt="Page screenshot"
                     style={{ maxWidth: '100%', borderRadius: 8, marginTop: 12 }}
                   />
+                )}
+                {detail.inboundLinks.length > 0 && (
+                  <>
+                    <h4>Inbound links</h4>
+                    <ul className="settings-reference">
+                      {detail.inboundLinks.map((link) => (
+                        <li key={link.url}>
+                          {link.url} — “{link.anchor}”
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+                {detail.outboundLinks.length > 0 && (
+                  <>
+                    <h4>Outbound links</h4>
+                    <ul className="settings-reference">
+                      {detail.outboundLinks.map((link) => (
+                        <li key={link.url}>
+                          {link.url} — “{link.anchor}”
+                        </li>
+                      ))}
+                    </ul>
+                  </>
                 )}
                 {detailError && <p className="settings-errors">{detailError}</p>}
                 <button className="secondary" type="button" onClick={() => setDetail(null)}>
