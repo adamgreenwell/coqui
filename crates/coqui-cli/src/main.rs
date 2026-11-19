@@ -104,7 +104,7 @@ fn load_config(path: &Path, required: bool) -> Result<FileConfig, String> {
 }
 
 fn usage() -> &'static str {
-    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR]\n       coqui reports\n       coqui export [--out DIR] [--family urls|issues|links|headers|images|a11y|structured|vitals|console|text|markdown|extractions|custom-js]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui mcp [--out DIR]"
+    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR]\n       coqui report compare --with <crawl id> [--out DIR]\n       coqui reports\n       coqui export [--out DIR] [--family urls|issues|links|headers|images|a11y|structured|vitals|console|text|markdown|extractions|custom-js]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui mcp [--out DIR]"
 }
 
 fn parse_args(values: &[String], config: &FileConfig) -> Result<Args, String> {
@@ -260,12 +260,17 @@ fn parse_resume(values: &[String], config: &FileConfig) -> Result<Args, String> 
 fn run_report(values: &[String]) -> Result<(), String> {
     let mut kind = "summary".to_string();
     let mut out = PathBuf::from("coqui-out");
+    let mut with: Option<String> = None;
     let mut index = 0;
     while index < values.len() {
         match values[index].as_str() {
             "--out" => {
                 index += 1;
                 out = PathBuf::from(values.get(index).ok_or("missing --out value")?);
+            }
+            "--with" => {
+                index += 1;
+                with = Some(values.get(index).ok_or("missing --with value")?.clone());
             }
             "--top" | "--status" | "--title" => {
                 index += 1;
@@ -297,6 +302,18 @@ fn run_report(values: &[String]) -> Result<(), String> {
             _ => {}
         }
         index += 1;
+    }
+    if kind == "compare" {
+        let other = with.ok_or_else(|| "--with <crawl id> is required".to_string())?;
+        let store = Store::open(out.join("coqui.db")).map_err(|error| error.to_string())?;
+        let crawl = store
+            .latest_crawl()
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "no crawl found".to_string())?;
+        let path = out.join("report-compare.html");
+        let urls = coqui_report::write_comparison(&store, &crawl.id, &other, &path)?;
+        println!("report: {} ({} urls)", path.display(), urls);
+        return Ok(());
     }
     if !coqui_report::REPORTS.iter().any(|(id, _, _)| *id == kind) {
         return Err(format!("unknown report '{kind}'"));

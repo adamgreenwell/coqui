@@ -317,6 +317,62 @@ fn render_redirects(store: &Store, crawl_id: &str) -> Result<String, String> {
     Ok(shell(&crawl.seed, "Redirects", &body))
 }
 
+/// Compare issue counts between two crawls.
+pub fn render_comparison(store: &Store, left_id: &str, right_id: &str) -> Result<String, String> {
+    let left = store
+        .get_crawl(left_id)
+        .map_err(|error| error.to_string())?;
+    let right = store
+        .get_crawl(right_id)
+        .map_err(|error| error.to_string())?;
+    let left_issues = store
+        .issue_counts(left_id)
+        .map_err(|error| error.to_string())?;
+    let right_issues = store
+        .issue_counts(right_id)
+        .map_err(|error| error.to_string())?;
+    let mut rules: std::collections::BTreeMap<String, (i64, i64)> =
+        std::collections::BTreeMap::new();
+    for issue in left_issues {
+        rules.entry(issue.rule).or_default().0 += issue.count;
+    }
+    for issue in right_issues {
+        rules.entry(issue.rule).or_default().1 += issue.count;
+    }
+    let mut body = format!(
+        "<p>Left: <code>{}</code> ({})<br>Right: <code>{}</code> ({})</p>",
+        escape(&left.seed),
+        left.id,
+        escape(&right.seed),
+        right.id
+    );
+    body.push_str("<table><tr><th>Rule</th><th>Left</th><th>Right</th><th>Delta</th></tr>");
+    for (rule, (left_count, right_count)) in rules {
+        body.push_str(&format!(
+            "<tr><td>{}</td><td>{left_count}</td><td>{right_count}</td><td>{:+}</td></tr>",
+            escape(&rule),
+            right_count - left_count
+        ));
+    }
+    body.push_str("</table>");
+    Ok(shell(&left.seed, "Crawl comparison", &body))
+}
+
+/// Write a two-crawl comparison report.
+pub fn write_comparison(
+    store: &Store,
+    left_id: &str,
+    right_id: &str,
+    path: &std::path::Path,
+) -> Result<u64, String> {
+    let html = render_comparison(store, left_id, right_id)?;
+    std::fs::write(path, html).map_err(|error| error.to_string())?;
+    store
+        .total_urls(left_id)
+        .map(|count| count as u64)
+        .map_err(|error| error.to_string())
+}
+
 fn render_overview(store: &Store, crawl_id: &str) -> Result<String, String> {
     let crawl = store
         .get_crawl(crawl_id)
@@ -455,6 +511,11 @@ mod tests {
         let html = render_html(&store, "c1").unwrap();
         assert!(html.contains("https://example.com/"));
         assert!(html.contains("Status codes"));
+        assert!(
+            render_comparison(&store, "c1", "c1")
+                .unwrap()
+                .contains("Crawl comparison")
+        );
         std::fs::remove_dir_all(dir).ok();
     }
 }
