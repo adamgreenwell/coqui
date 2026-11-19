@@ -913,7 +913,7 @@ impl Store {
         }
         let conn = self.lock()?;
         let mut urls = conn.prepare(
-            "SELECT id, url, meta_robots FROM urls
+            "SELECT id, url, meta_robots, headers_json FROM urls
              WHERE crawl_id = ?1 AND status = 200 ORDER BY id",
         )?;
         let mut images = conn
@@ -933,6 +933,7 @@ impl Store {
             let id: i64 = row.get(0)?;
             let url: String = row.get(1)?;
             let robots: Option<String> = row.get(2)?;
+            let headers: Option<String> = row.get(3)?;
             if robots
                 .unwrap_or_default()
                 .to_ascii_lowercase()
@@ -942,6 +943,9 @@ impl Store {
             }
             writeln!(file, "  <url>")?;
             writeln!(file, "    <loc>{}</loc>", xml_escape(&url))?;
+            if let Some(lastmod) = lastmod_from_headers(headers.as_deref()) {
+                writeln!(file, "    <lastmod>{lastmod}</lastmod>")?;
+            }
             let mut image_rows = images.query(params![crawl_id, id])?;
             while let Some(image) = image_rows.next()? {
                 let src: String = image.get(0)?;
@@ -976,7 +980,7 @@ impl Store {
         let chunks = count.div_ceil(50_000).max(1);
         let suffix = if gzip { ".xml.gz" } else { ".xml" };
         let mut urls = conn.prepare(
-            "SELECT id, url FROM urls WHERE crawl_id = ?1 AND status = 200
+            "SELECT id, url, headers_json FROM urls WHERE crawl_id = ?1 AND status = 200
              AND (meta_robots IS NULL OR lower(meta_robots) NOT LIKE '%noindex%')
              ORDER BY id LIMIT 50000 OFFSET ?2",
         )?;
@@ -1003,8 +1007,12 @@ impl Store {
             while let Some(row) = rows.next()? {
                 let id: i64 = row.get(0)?;
                 let url: String = row.get(1)?;
+                let headers: Option<String> = row.get(2)?;
                 writeln!(writer, "  <url>")?;
                 writeln!(writer, "    <loc>{}</loc>", xml_escape(&url))?;
+                if let Some(lastmod) = lastmod_from_headers(headers.as_deref()) {
+                    writeln!(writer, "    <lastmod>{lastmod}</lastmod>")?;
+                }
                 let mut image_rows = images.query(params![crawl_id, id])?;
                 while let Some(image) = image_rows.next()? {
                     let src: String = image.get(0)?;
@@ -1903,9 +1911,12 @@ mod tests {
                 now_ms(),
             )
             .unwrap();
-        store
-            .insert_url(&sample_record("c1", "https://example.com/"))
-            .unwrap();
+        let mut page = sample_record("c1", "https://example.com/");
+        page.headers = vec![(
+            "Last-Modified".into(),
+            "Wed, 21 Oct 2015 07:28:00 GMT".into(),
+        )];
+        store.insert_url(&page).unwrap();
         let mut hidden = sample_record("c1", "https://example.com/private");
         hidden.meta_robots = Some("noindex,follow".into());
         store.insert_url(&hidden).unwrap();
@@ -1925,7 +1936,7 @@ mod tests {
         let path = dir.join("sitemap.xml");
         assert_eq!(store.export_sitemap("c1", &path).unwrap(), 1);
         let xml = std::fs::read_to_string(&path).unwrap();
-        assert!(xml.contains("https://example.com/</loc>"));
+        assert!(xml.contains("<lastmod>2015-10-21T07:28:00Z</lastmod>"));
         assert!(xml.contains("a.png?a=1&amp;b=2"));
         assert!(!xml.contains("private"));
         std::fs::remove_dir_all(dir).ok();
@@ -2196,4 +2207,20 @@ fn xml_escape(value: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&apos;")
+}
+
+fn lastmod_from_headers(json: Option<&str>) -> Option<String> {
+    use time::format_description::well_known::{Rfc2822, Rfc3339};
+    let headers: Vec<(String, String)> = serde_json::from_str(json?).ok()?;
+    let value = headers
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("last-modified"))?
+        .1
+        .clone();
+    let parsed = time::OffsetDateTime::parse(&value, &Rfc2822).ok()?;
+    let formatted = parsed
+        .to_offset(time::UtcOffset::UTC)
+        .format(&Rfc3339)
+        .ok()?;
+    Some(formatted.replace("+00:00", "Z"))
 }
