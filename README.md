@@ -16,7 +16,7 @@ Named after the *coquí*, the tiny frog native to Puerto Rico whose call is ever
 
 - **Crawl:** URL/sitemap/list seeds, regex scope, auth/headers, robots.txt, redirect chains, pause/resume, checkpoints, crawl profiles.
 - **Render:** headless Chromium over CDP, screenshots, console capture, axe accessibility, Web Vitals, custom JavaScript.
-- **Audit:** 40 rules across SEO, hreflang/pagination, JSON-LD, accessibility and vitals.
+- **Audit:** 41 rules across SEO, hreflang/pagination, JSON-LD, accessibility and vitals.
 - **Exports and reports:** CSV/XLSX for URLs/issues/links, headers, images, a11y, structured data, vitals, console, text/Markdown, custom extraction, custom JS, screenshots, sitemaps, HTML/PDF reports.
 - **Workflow:** saved views, filters (search/status/class/content/depth/indexability), interval scheduler with run-due, CLI, stdio MCP server.
 
@@ -100,6 +100,7 @@ The backlog is the roadmap. Pick an issue from the board, comment to claim it, a
 ## License
 
 To be decided by the project owner before the first code release (MIT or Apache-2.0 are the candidates). Until then, no license is granted for reuse.
+
 
 
 

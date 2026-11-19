@@ -106,6 +106,11 @@ pub const RULES: &[RuleDef] = &[
         severity: IssueSeverity::Warning,
     },
     RuleDef {
+        id: "duplicate_h1",
+        label: "Duplicate H1",
+        severity: IssueSeverity::Warning,
+    },
+    RuleDef {
         id: "misspelling",
         label: "Possible misspelling",
         severity: IssueSeverity::Opportunity,
@@ -360,6 +365,21 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
             .collect();
         if !found.is_empty() {
             misspellings_by_url.insert(url, found);
+        }
+    }
+
+    let mut duplicate_h1: HashMap<String, Vec<String>> = HashMap::new();
+    for url in &urls {
+        if let Some(h1) = url
+            .h1
+            .as_deref()
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+        {
+            duplicate_h1
+                .entry(h1.to_ascii_lowercase())
+                .or_default()
+                .push(url.url.clone());
         }
     }
 
@@ -1384,6 +1404,40 @@ mod tests {
         let counts = analyze_crawl(&store, id).unwrap();
         let by_rule: HashMap<_, _> = counts.iter().map(|c| (c.rule.as_str(), c.count)).collect();
         assert_eq!(by_rule.get("orphan_url"), Some(&1));
+    }
+
+    #[test]
+    fn flags_duplicate_h1() {
+        let store = Store::open_in_memory().unwrap();
+        let id = "h1";
+        store
+            .create_crawl(
+                id,
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        add_url(
+            &store,
+            id,
+            "https://example.com/a",
+            Some("A perfectly reasonable title"),
+            1,
+            600,
+        );
+        add_url(
+            &store,
+            id,
+            "https://example.com/b",
+            Some("Another perfectly reasonable title"),
+            1,
+            600,
+        );
+        let counts = analyze_crawl(&store, id).unwrap();
+        let by_rule: HashMap<_, _> = counts.iter().map(|c| (c.rule.as_str(), c.count)).collect();
+        assert_eq!(by_rule.get("duplicate_h1"), Some(&2));
     }
 
     #[test]
