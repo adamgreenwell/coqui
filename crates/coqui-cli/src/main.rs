@@ -101,7 +101,7 @@ fn load_config(path: &Path, required: bool) -> Result<FileConfig, String> {
 }
 
 fn usage() -> &'static str {
-    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance] [--out DIR]\n       coqui reports\n       coqui export [--out DIR]\n       coqui extractions [--out DIR]"
+    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance] [--out DIR]\n       coqui reports\n       coqui export [--out DIR]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip]"
 }
 
 fn parse_args(values: &[String], config: &FileConfig) -> Result<Args, String> {
@@ -362,6 +362,48 @@ fn run_extractions(values: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn run_sitemap(values: &[String]) -> Result<(), String> {
+    let mut out = PathBuf::from("coqui-out");
+    let mut split = false;
+    let mut gzip = false;
+    let mut index = 0;
+    while index < values.len() {
+        match values[index].as_str() {
+            "--out" => {
+                index += 1;
+                out = PathBuf::from(values.get(index).ok_or("missing --out value")?);
+            }
+            "--split" => split = true,
+            "--gzip" => gzip = true,
+            other => return Err(format!("unknown option '{other}'")),
+        }
+        index += 1;
+    }
+    let store = Store::open(out.join("coqui.db")).map_err(|error| error.to_string())?;
+    let crawl = store
+        .latest_crawl()
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "no crawl found".to_string())?;
+    if split {
+        let directory = out.join("sitemaps");
+        let rows = store
+            .export_sitemap_bundle(&crawl.id, &directory, gzip)
+            .map_err(|error| error.to_string())?;
+        println!(
+            "sitemap bundle: {} ({} urls, gzip={gzip})",
+            directory.display(),
+            rows
+        );
+    } else {
+        let path = out.join("sitemap.xml");
+        let rows = store
+            .export_sitemap(&crawl.id, &path)
+            .map_err(|error| error.to_string())?;
+        println!("sitemap: {} ({} urls)", path.display(), rows);
+    }
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() {
     let values: Vec<String> = std::env::args().collect();
@@ -377,6 +419,15 @@ async fn main() {
             );
         }
         return;
+    }
+    if values.get(1).map(String::as_str) == Some("sitemap") {
+        match run_sitemap(&values[2..]) {
+            Ok(()) => return,
+            Err(message) => {
+                eprintln!("{message}");
+                std::process::exit(2);
+            }
+        }
     }
     if values.get(1).map(String::as_str) == Some("extractions") {
         match run_extractions(&values[2..]) {
