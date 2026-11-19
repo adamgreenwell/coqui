@@ -788,6 +788,14 @@ fn get_url_detail(
         .store
         .url_custom_js(&crawl_id, url_id)
         .map_err(|error| error.to_string())?;
+    let (inbound, outbound) = state
+        .store
+        .link_counts(&crawl_id, url_id)
+        .map_err(|error| error.to_string())?;
+    let screenshot = state
+        .store
+        .get_screenshot(&crawl_id, url_id)
+        .map_err(|error| error.to_string())?;
     Ok(serde_json::json!({
         "url": url,
         "extractions": extractions
@@ -798,6 +806,14 @@ fn get_url_detail(
             .into_iter()
             .map(|(index, value)| serde_json::json!({"index": index, "value": value}))
             .collect::<Vec<_>>(),
+        "linkCounts": {"inbound": inbound, "outbound": outbound},
+        "screenshot": screenshot.map(|bytes| {
+            use base64::Engine as _;
+            format!(
+                "data:image/jpeg;base64,{}",
+                base64::engine::general_purpose::STANDARD.encode(bytes)
+            )
+        }),
     }))
 }
 

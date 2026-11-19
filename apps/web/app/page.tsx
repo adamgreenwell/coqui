@@ -60,6 +60,8 @@ interface UrlDetail {
   url: Record<string, unknown>;
   extractions: { name: string; value: string }[];
   customJs: { index: number; value: string }[];
+  linkCounts: { inbound: number; outbound: number };
+  screenshot: string | null;
 }
 
 interface LighthouseAudit {
@@ -1661,6 +1663,9 @@ export default function Home() {
                   <li>Depth: {String(detail.url.depth ?? '—')}</li>
                   <li>Response: {String(detail.url.responseTimeMs ?? '—')} ms</li>
                   <li>Words: {String(detail.url.wordCount ?? '—')}</li>
+                  <li>
+                    Links: {detail.linkCounts.inbound} in / {detail.linkCounts.outbound} out
+                  </li>
                 </ul>
                 {Array.isArray(detail.url.axe) && detail.url.axe.length > 0 && (
                   <>
@@ -1711,6 +1716,41 @@ export default function Home() {
                       ))}
                     </ul>
                   </>
+                )}
+                {Array.isArray(
+                  (detail.url.structuredData as { types?: string[] } | undefined)?.types,
+                ) &&
+                  ((detail.url.structuredData as { types?: string[] }).types ?? []).length >
+                    0 && (
+                    <>
+                      <h4>Structured data</h4>
+                      <ul className="settings-reference">
+                        {((detail.url.structuredData as { types?: string[] }).types ?? []).map(
+                          (type) => (
+                            <li key={type}>{type}</li>
+                          ),
+                        )}
+                      </ul>
+                    </>
+                  )}
+                {Array.isArray(detail.url.hreflang) && detail.url.hreflang.length > 0 && (
+                  <>
+                    <h4>Hreflang</h4>
+                    <ul className="settings-reference">
+                      {(detail.url.hreflang as { lang?: string; url: string }[]).map((link) => (
+                        <li key={link.url}>
+                          {link.lang ?? '—'}: {link.url}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+                {detail.screenshot && (
+                  <img
+                    src={detail.screenshot}
+                    alt="Page screenshot"
+                    style={{ maxWidth: '100%', borderRadius: 8, marginTop: 12 }}
+                  />
                 )}
                 {detailError && <p className="settings-errors">{detailError}</p>}
                 <button className="secondary" type="button" onClick={() => setDetail(null)}>
