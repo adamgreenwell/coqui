@@ -121,6 +121,16 @@ pub const RULES: &[RuleDef] = &[
         severity: IssueSeverity::Warning,
     },
     RuleDef {
+        id: "meta_description_too_short",
+        label: "Meta description too short",
+        severity: IssueSeverity::Opportunity,
+    },
+    RuleDef {
+        id: "url_too_long",
+        label: "URL too long",
+        severity: IssueSeverity::Opportunity,
+    },
+    RuleDef {
         id: "hreflang_missing_return",
         label: "Hreflang missing return link",
         severity: IssueSeverity::Warning,
@@ -369,6 +379,14 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
                     "meta_description_too_long",
                     Some(format!("{} characters", meta.chars().count())),
                 )?;
+            } else if meta.chars().count() < 70 {
+                issue(
+                    store,
+                    crawl_id,
+                    &url.url,
+                    "meta_description_too_short",
+                    Some(format!("{} characters", meta.chars().count())),
+                )?;
             }
             if let Some(group) = duplicate_meta.get(&meta.to_ascii_lowercase()) {
                 if group.len() > 1 {
@@ -381,6 +399,16 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
                     )?;
                 }
             }
+        }
+
+        if url.url.chars().count() > 115 {
+            issue(
+                store,
+                crawl_id,
+                &url.url,
+                "url_too_long",
+                Some(format!("{} characters", url.url.chars().count())),
+            )?;
         }
 
         if let Some(found) = misspellings_by_url.get(&url.url) {
@@ -869,6 +897,26 @@ mod tests {
         let counts = analyze_crawl(&store, id).unwrap();
         let by_rule: HashMap<_, _> = counts.iter().map(|c| (c.rule.as_str(), c.count)).collect();
         assert_eq!(by_rule.get("misspelling"), Some(&1));
+    }
+
+    #[test]
+    fn flags_long_urls() {
+        let store = Store::open_in_memory().unwrap();
+        let id = "long";
+        store
+            .create_crawl(
+                id,
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        let long = format!("https://example.com/{}", "a".repeat(120));
+        add_url(&store, id, &long, Some("A"), 1, 600);
+        let counts = analyze_crawl(&store, id).unwrap();
+        let by_rule: HashMap<_, _> = counts.iter().map(|c| (c.rule.as_str(), c.count)).collect();
+        assert_eq!(by_rule.get("url_too_long"), Some(&1));
     }
 }
 
