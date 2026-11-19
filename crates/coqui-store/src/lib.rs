@@ -232,6 +232,18 @@ impl Store {
         self.get_crawl(id)
     }
 
+    pub fn list_crawls(&self) -> Result<Vec<CrawlSummary>> {
+        let ids: Vec<String> = {
+            let conn = self.lock()?;
+            let mut stmt = conn.prepare("SELECT id FROM crawls ORDER BY rowid DESC LIMIT 100")?;
+            let rows = stmt
+                .query_map([], |row| row.get::<_, String>(0))?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            rows
+        };
+        ids.into_iter().map(|id| self.get_crawl(&id)).collect()
+    }
+
     pub fn get_crawl(&self, id: &str) -> Result<CrawlSummary> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(

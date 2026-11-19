@@ -52,6 +52,10 @@ render_workers = 2
 
 `coqui resume --out DIR` reloads the latest crawl and its checkpoint from `DIR/coqui.db`, then continues. `--max-urls` and `--concurrency` override the stored config for the resumed run. If no checkpoint exists, the command exits with an error.
 
+## MCP server
+
+`coqui mcp --out DIR` runs a stdio MCP server (JSON-RPC, newline-delimited) over `DIR/coqui.db`. Tools: `list_crawls`, `get_crawl`, `list_urls`, `issue_counts`, `export_urls`. Implements `initialize`, `ping`, `tools/list`, `tools/call`. Verified with a piped session (initialize + tools/list + list_urls).
+
 ## Schedules
 
 ```bash
@@ -96,6 +100,7 @@ Schedules are interval-based (seconds) and stored in the crawl DB. `run-due` run
 ## Current limits
 
 Supports URL/sitemap/list seeds, crawl limits, user agent, custom headers, basic auth, timeout, and rendering with screenshots/axe/Web Vitals. Export formats, config files, profiles and checkpoint/resume flags are next.
+
 
 
 
