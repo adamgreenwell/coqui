@@ -1902,10 +1902,20 @@ export default function Home() {
               <strong>{crawl?.totalUrls ?? 0}</strong>
             </div>
             {(['2xx', '3xx', '4xx', '5xx', 'other'] as const).map((key) => (
-              <div key={key}>
+              <button
+                key={key}
+                type="button"
+                className={`overview-card${statusFilter === key ? ' active' : ''}`}
+                onClick={() => {
+                  const next = statusFilter === key ? '' : key;
+                  setStatusFilter(next);
+                  setPage(1);
+                  if (crawl) void loadPage(crawl.id, 1, activeIssue);
+                }}
+              >
                 <span>{key === 'other' ? 'No response' : key}</span>
                 <strong>{classCounts[key] ?? 0}</strong>
-              </div>
+              </button>
             ))}
             <div>
               <span>Issues</span>

@@ -824,7 +824,8 @@ tbody tr:hover {
   margin: 14px 0;
 }
 
-.overview-strip > div {
+.overview-strip > div,
+.overview-strip > button {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -844,4 +845,17 @@ tbody tr:hover {
 
 .overview-strip strong {
   font-size: 18px;
+}
+
+
+.overview-strip > button {
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+.overview-card.active {
+  border-color: #2f8f6b;
+  box-shadow: inset 0 0 0 1px #2f8f6b;
 }
