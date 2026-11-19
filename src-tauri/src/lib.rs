@@ -582,6 +582,53 @@ fn delete_extractor(
 }
 
 #[tauri::command]
+fn list_schedules(state: State<'_, AppState>) -> Result<Vec<serde_json::Value>, String> {
+    let rows = state.store.schedules().map_err(|error| error.to_string())?;
+    Ok(rows
+        .into_iter()
+        .map(|schedule| {
+            serde_json::json!({
+                "id": schedule.id,
+                "seedKind": schedule.seed_kind,
+                "seed": schedule.seed,
+                "intervalSeconds": schedule.interval_seconds,
+                "nextRunAt": schedule.next_run_at,
+                "lastRunAt": schedule.last_run_at,
+            })
+        })
+        .collect())
+}
+
+#[tauri::command]
+fn add_schedule(
+    state: State<'_, AppState>,
+    seed_kind: String,
+    seed: String,
+    every_seconds: i64,
+) -> Result<i64, String> {
+    let config = coqui_core::CrawlConfig::default();
+    let json = serde_json::to_string(&config).map_err(|error| error.to_string())?;
+    state
+        .store
+        .add_schedule(
+            &seed_kind,
+            &seed,
+            every_seconds,
+            &json,
+            now_ms() + every_seconds * 1000,
+        )
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn remove_schedule(state: State<'_, AppState>, id: i64) -> Result<usize, String> {
+    state
+        .store
+        .remove_schedule(id)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn export_catalog() -> Vec<coqui_core::ExportDefinition> {
     coqui_core::export_catalog()
 }
@@ -753,6 +800,9 @@ pub fn run() {
             run_lighthouse,
             run_lighthouse_sample,
             test_connection,
+            list_schedules,
+            add_schedule,
+            remove_schedule,
             add_extractor,
             list_extractors,
             delete_extractor,

@@ -267,6 +267,13 @@ export default function Home() {
   const [profileName, setProfileName] = useState('');
   const [profileSelected, setProfileSelected] = useState('');
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [schedules, setSchedules] = useState<
+    { id: number; seedKind: string; seed: string; intervalSeconds: number; nextRunAt: number }[]
+  >([]);
+  const [scheduleKind, setScheduleKind] = useState<'url' | 'sitemap' | 'list'>('url');
+  const [scheduleSeed, setScheduleSeed] = useState('');
+  const [scheduleEvery, setScheduleEvery] = useState(3600);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [settingsQuery, setSettingsQuery] = useState('');
   const [probe, setProbe] = useState<{ status: number; ms: number; finalUrl: string } | null>(null);
   const [probeError, setProbeError] = useState<string | null>(null);
@@ -613,6 +620,48 @@ export default function Home() {
   };
   useEffect(() => {
     if (isTauri) void loadProfiles();
+  }, [isTauri]);
+  const loadSchedules = async () => {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const rows = await invoke<
+        { id: number; seedKind: string; seed: string; intervalSeconds: number; nextRunAt: number }[]
+      >('list_schedules');
+      setSchedules(rows);
+    } catch (cause) {
+      setScheduleError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+  const addSchedule = async () => {
+    if (!scheduleSeed.trim() || scheduleEvery < 1) {
+      setScheduleError('Seed and an interval of at least 1 second are required.');
+      return;
+    }
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('add_schedule', {
+        seedKind: scheduleKind,
+        seed: scheduleSeed.trim(),
+        everySeconds: scheduleEvery,
+      });
+      setScheduleSeed('');
+      setScheduleError(null);
+      await loadSchedules();
+    } catch (cause) {
+      setScheduleError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+  const removeSchedule = async (id: number) => {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('remove_schedule', { id });
+      await loadSchedules();
+    } catch (cause) {
+      setScheduleError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+  useEffect(() => {
+    if (isTauri) void loadSchedules();
   }, [isTauri]);
   const settingEntries = [
     { label: 'Max depth', help: 'How many link levels to follow from the seed.', value: String(maxDepth), changed: maxDepth !== 3 },
@@ -998,6 +1047,57 @@ export default function Home() {
                   </button>
                 </div>
                 {profileError && <p className="settings-errors">{profileError}</p>}
+              </div>
+              <div className="field">
+                <label>Schedules</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <select
+                    value={scheduleKind}
+                    onChange={(event) =>
+                      setScheduleKind(event.target.value as 'url' | 'sitemap' | 'list')
+                    }
+                    aria-label="Schedule seed kind"
+                  >
+                    <option value="url">URL</option>
+                    <option value="sitemap">Sitemap</option>
+                    <option value="list">List</option>
+                  </select>
+                  <input
+                    type="text"
+                    value={scheduleSeed}
+                    onChange={(event) => setScheduleSeed(event.target.value)}
+                    placeholder="Seed"
+                    aria-label="Schedule seed"
+                  />
+                  <input
+                    type="number"
+                    min={1}
+                    value={scheduleEvery}
+                    onChange={(event) => setScheduleEvery(Number(event.target.value))}
+                    aria-label="Schedule interval seconds"
+                  />
+                  <button className="secondary" type="button" onClick={addSchedule}>
+                    Add schedule
+                  </button>
+                </div>
+                <ul className="settings-reference">
+                  {schedules.map((schedule) => (
+                    <li key={schedule.id}>
+                      <strong>{schedule.seedKind}</strong> {schedule.seed} · every{' '}
+                      {schedule.intervalSeconds}s · next{' '}
+                      {new Date(schedule.nextRunAt).toLocaleString()}{' '}
+                      <button
+                        className="secondary"
+                        type="button"
+                        onClick={() => removeSchedule(schedule.id)}
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                  {schedules.length === 0 && <li>No schedules yet.</li>}
+                </ul>
+                {scheduleError && <p className="settings-errors">{scheduleError}</p>}
               </div>
               <div className="field">
                 <label htmlFor="settingsSearch">Find a setting</label>
