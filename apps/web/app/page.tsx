@@ -260,6 +260,9 @@ export default function Home() {
   const [accessibility, setAccessibility] = useState(false);
   const [webVitals, setWebVitals] = useState(false);
   const [settingsQuery, setSettingsQuery] = useState('');
+  const [probe, setProbe] = useState<{ status: number; ms: number; finalUrl: string } | null>(null);
+  const [probeError, setProbeError] = useState<string | null>(null);
+  const [probeBusy, setProbeBusy] = useState(false);
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
   const [lighthouse, setLighthouse] = useState<LighthouseSummary | null>(null);
   const [lighthouseBusy, setLighthouseBusy] = useState(false);
@@ -512,6 +515,48 @@ export default function Home() {
     { label: 'Basic auth user', help: 'HTTP basic authentication username.', value: authUser || 'none', changed: authUser.length > 0 },
     { label: 'Custom headers', help: 'Header: value lines sent with every request.', value: customHeaders ? 'set' : 'none', changed: customHeaders.length > 0 },
   ];
+  const validationErrors: string[] = [];
+  if (seedKind !== 'list') {
+    try {
+      const parsed = new URL(seed);
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        validationErrors.push('Seed must be an http(s) URL.');
+      }
+    } catch {
+      validationErrors.push('Seed must be a valid URL.');
+    }
+  } else if (seed.trim().length === 0) {
+    validationErrors.push('Provide a URL list path or contents.');
+  }
+  if (maxDepth < 0 || maxDepth > 100) validationErrors.push('Max depth must be 0–100.');
+  if (maxUrls < 1 || maxUrls > 1_000_000) validationErrors.push('Max URLs must be 1–1,000,000.');
+  if (concurrency < 1 || concurrency > 64) validationErrors.push('Concurrency must be 1–64.');
+  if (renderWaitMs < 0 || renderWaitMs > 60_000) validationErrors.push('Render wait must be 0–60,000 ms.');
+  if (renderWorkers < 1 || renderWorkers > 16) validationErrors.push('Render workers must be 1–16.');
+  for (const line of customHeaders.split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed.length > 0 && !trimmed.includes(':')) {
+      validationErrors.push(`Header "${trimmed}" must be "Name: value".`);
+    }
+  }
+  if (authUser.length > 0 !== authPassword.length > 0) {
+    validationErrors.push('Basic auth needs both a user and a password.');
+  }
+  for (const [label, patterns] of [
+    ['Include', includePatterns],
+    ['Exclude', excludePatterns],
+  ] as const) {
+    for (const line of patterns.split('\n')) {
+      const trimmed = line.trim();
+      if (trimmed.length === 0) continue;
+      try {
+        new RegExp(trimmed);
+      } catch {
+        validationErrors.push(`${label} pattern is not a valid regex: ${trimmed}`);
+      }
+    }
+  }
+  const canStart = validationErrors.length === 0;
   const changedSettings = settingEntries.filter((entry) => entry.changed);
   const filteredSettings = settingEntries.filter((entry) =>
     `${entry.label} ${entry.help}`.toLowerCase().includes(settingsQuery.trim().toLowerCase()),
@@ -924,6 +969,49 @@ export default function Home() {
               />
               Respect robots.txt
             </label>
+            {validationErrors.length > 0 && (
+              <ul className="settings-errors">
+                {validationErrors.map((message) => (
+                  <li key={message}>{message}</li>
+                ))}
+              </ul>
+            )}
+            <button
+              className="secondary"
+              type="button"
+              onClick={async () => {
+                setProbeBusy(true);
+                setProbeError(null);
+                setProbe(null);
+                try {
+                  const { invoke } = await import('@tauri-apps/api/core');
+                  const result = await invoke<{ status: number; ms: number; finalUrl: string }>(
+                    'test_connection',
+                    {
+                      seed,
+                      headers: customHeaders
+                        .split('\n')
+                        .map((line) => line.trim())
+                        .filter(Boolean),
+                    },
+                  );
+                  setProbe(result);
+                } catch (cause) {
+                  setProbeError(cause instanceof Error ? cause.message : String(cause));
+                } finally {
+                  setProbeBusy(false);
+                }
+              }}
+              disabled={!isTauri || busy || isRunning || probeBusy}
+            >
+              {probeBusy ? 'Testing…' : 'Test connection'}
+            </button>
+            {probe && (
+              <p className="settings-diff">
+                Connected: HTTP {probe.status} · {probe.ms} ms · {probe.finalUrl}
+              </p>
+            )}
+            {probeError && <p className="settings-errors">{probeError}</p>}
             <p className="settings-diff">
               {changedSettings.length === 0
                 ? 'Default configuration.'
@@ -941,7 +1029,11 @@ export default function Home() {
                 Resume crawl
               </button>
             ) : (
-              <button className="primary" type="submit" disabled={!isTauri || busy || isRunning}>
+              <button
+                className="primary"
+                type="submit"
+                disabled={!isTauri || busy || isRunning || !canStart}
+              >
                 {isRunning ? 'Crawling…' : 'Start crawl'}
               </button>
             )}
