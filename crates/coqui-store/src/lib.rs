@@ -155,6 +155,19 @@ pub enum StoreError {
 pub type Result<T> = std::result::Result<T, StoreError>;
 
 /// A crawl store. Cheap to clone through `Arc`; writes are serialised by SQLite anyway.
+/// A scheduled crawl.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScheduleRecord {
+    pub id: i64,
+    pub seed_kind: String,
+    pub seed: String,
+    pub interval_seconds: i64,
+    pub config_json: String,
+    pub next_run_at: i64,
+    pub last_run_at: Option<i64>,
+    pub enabled: bool,
+}
+
 pub struct Store {
     conn: Mutex<Connection>,
     ids: Mutex<std::collections::HashMap<(String, String), i64>>,
@@ -1441,6 +1454,90 @@ impl Store {
     }
 
     /// Delete a crawl and all of its rows.
+    pub fn add_schedule(
+        &self,
+        seed_kind: &str,
+        seed: &str,
+        interval_seconds: i64,
+        config_json: &str,
+        next_run_at: i64,
+    ) -> Result<i64> {
+        let conn = self.lock()?;
+        conn.execute(
+            "INSERT INTO schedules (seed_kind, seed, interval_seconds, config_json, next_run_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![seed_kind, seed, interval_seconds, config_json, next_run_at],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    fn map_schedule(row: &rusqlite::Row<'_>) -> rusqlite::Result<ScheduleRecord> {
+        Ok(ScheduleRecord {
+            id: row.get(0)?,
+            seed_kind: row.get(1)?,
+            seed: row.get(2)?,
+            interval_seconds: row.get(3)?,
+            config_json: row.get(4)?,
+            next_run_at: row.get(5)?,
+            last_run_at: row.get(6)?,
+            enabled: row.get::<_, i64>(7)? != 0,
+        })
+    }
+
+    fn schedule_rows(
+        conn: &rusqlite::Connection,
+        query: &str,
+        now: Option<i64>,
+    ) -> Result<Vec<ScheduleRecord>> {
+        let mut stmt = conn.prepare(query)?;
+        let rows = match now {
+            Some(now) => stmt
+                .query_map(params![now], Self::map_schedule)?
+                .collect::<std::result::Result<Vec<_>, _>>()?,
+            None => stmt
+                .query_map([], Self::map_schedule)?
+                .collect::<std::result::Result<Vec<_>, _>>()?,
+        };
+        Ok(rows)
+    }
+
+    pub fn schedules(&self) -> Result<Vec<ScheduleRecord>> {
+        let conn = self.lock()?;
+        Self::schedule_rows(
+            &conn,
+            "SELECT id, seed_kind, seed, interval_seconds, config_json, next_run_at, last_run_at,
+                    enabled
+             FROM schedules ORDER BY next_run_at, id",
+            None,
+        )
+    }
+
+    pub fn due_schedules(&self, now: i64) -> Result<Vec<ScheduleRecord>> {
+        let conn = self.lock()?;
+        Self::schedule_rows(
+            &conn,
+            "SELECT id, seed_kind, seed, interval_seconds, config_json, next_run_at, last_run_at,
+                    enabled
+             FROM schedules WHERE enabled = 1 AND next_run_at <= ?1 ORDER BY next_run_at, id",
+            Some(now),
+        )
+    }
+
+    pub fn remove_schedule(&self, id: i64) -> Result<usize> {
+        let changed = self
+            .lock()?
+            .execute("DELETE FROM schedules WHERE id = ?1", params![id])?;
+        Ok(changed)
+    }
+
+    pub fn mark_schedule_run(&self, id: i64, last_run_at: i64, next_run_at: i64) -> Result<()> {
+        self.lock()?.execute(
+            "UPDATE schedules SET last_run_at = ?2, next_run_at = ?3 WHERE id = ?1",
+            params![id, last_run_at, next_run_at],
+        )?;
+        Ok(())
+    }
+
     pub fn save_profile(&self, name: &str, config_json: &str) -> Result<()> {
         self.lock()?.execute(
             "INSERT INTO profiles (name, config_json, updated_at) VALUES (?1, ?2, ?3)
@@ -1606,6 +1703,20 @@ fn migrate(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_links_crawl_from ON links (crawl_id, from_id);
          CREATE INDEX IF NOT EXISTS idx_links_crawl_to ON links (crawl_id, to_id);",
     )?;
+    if version < 18 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS schedules (
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                seed_kind        TEXT NOT NULL,
+                seed             TEXT NOT NULL,
+                interval_seconds INTEGER NOT NULL,
+                config_json      TEXT NOT NULL,
+                next_run_at      INTEGER NOT NULL,
+                last_run_at      INTEGER,
+                enabled          INTEGER NOT NULL DEFAULT 1
+            );",
+        )?;
+    }
     if version < 17 {
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS extractors (
@@ -1651,7 +1762,18 @@ CREATE TABLE IF NOT EXISTS page_text (
     }
     if version < 15 {
         conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS profiles (
+            "CREATE TABLE IF NOT EXISTS schedules (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    seed_kind        TEXT NOT NULL,
+    seed             TEXT NOT NULL,
+    interval_seconds INTEGER NOT NULL,
+    config_json      TEXT NOT NULL,
+    next_run_at      INTEGER NOT NULL,
+    last_run_at      INTEGER,
+    enabled          INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS profiles (
                 name        TEXT PRIMARY KEY,
                 config_json TEXT NOT NULL,
                 updated_at  INTEGER NOT NULL
@@ -2245,6 +2367,26 @@ mod tests {
                 .unwrap()
                 .contains("# Hello")
         );
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn schedules_round_trip() {
+        let dir = std::env::temp_dir().join(format!("coqui-sched-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        let id = store
+            .add_schedule("url", "https://example.com/", 60, "{}", 100)
+            .unwrap();
+        assert_eq!(store.schedules().unwrap().len(), 1);
+        assert_eq!(store.due_schedules(50).unwrap().len(), 0);
+        assert_eq!(store.due_schedules(150).unwrap().len(), 1);
+        store.mark_schedule_run(id, 150, 210).unwrap();
+        let record = &store.schedules().unwrap()[0];
+        assert_eq!(record.last_run_at, Some(150));
+        assert_eq!(record.next_run_at, 210);
+        assert_eq!(store.remove_schedule(id).unwrap(), 1);
+        assert!(store.schedules().unwrap().is_empty());
         std::fs::remove_dir_all(dir).ok();
     }
 

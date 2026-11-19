@@ -52,6 +52,17 @@ render_workers = 2
 
 `coqui resume --out DIR` reloads the latest crawl and its checkpoint from `DIR/coqui.db`, then continues. `--max-urls` and `--concurrency` override the stored config for the resumed run. If no checkpoint exists, the command exits with an error.
 
+## Schedules
+
+```bash
+coqui schedule add url https://example.com/ --every 3600 --out crawls/example
+coqui schedule list --out crawls/example
+coqui schedule run-due --out crawls/example
+coqui schedule remove 1 --out crawls/example
+```
+
+Schedules are interval-based (seconds) and stored in the crawl DB. `run-due` runs every enabled schedule whose `next_run_at` has passed, writes `<crawl>.csv`, and advances the next run. Designed to be called by cron/Task Scheduler/CI. Verified end-to-end: add → run-due (3 rows) → list showed last/next → remove.
+
 ## Sitemaps
 
 `coqui sitemap --out DIR` writes `DIR/sitemap.xml` from the latest crawl (200s only, noindex excluded, image entries, lastmod). `--split` writes a 50k-chunk bundle under `DIR/sitemaps` with `sitemap-index.xml`; `--gzip` compresses parts. Verified: 3-URL crawl produced sitemap.xml and a gzipped bundle.
@@ -85,6 +96,7 @@ render_workers = 2
 ## Current limits
 
 Supports URL/sitemap/list seeds, crawl limits, user agent, custom headers, basic auth, timeout, and rendering with screenshots/axe/Web Vitals. Export formats, config files, profiles and checkpoint/resume flags are next.
+
 
 
 

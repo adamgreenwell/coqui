@@ -101,7 +101,7 @@ fn load_config(path: &Path, required: bool) -> Result<FileConfig, String> {
 }
 
 fn usage() -> &'static str {
-    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance] [--out DIR]\n       coqui reports\n       coqui export [--out DIR]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip]"
+    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance] [--out DIR]\n       coqui reports\n       coqui export [--out DIR]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N]\n       coqui schedule list|remove <id>|run-due [--out DIR]"
 }
 
 fn parse_args(values: &[String], config: &FileConfig) -> Result<Args, String> {
@@ -404,6 +404,160 @@ fn run_sitemap(values: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+async fn run_schedule(values: &[String]) -> Result<(), String> {
+    let command = values
+        .first()
+        .map(String::as_str)
+        .ok_or("usage: schedule <add|list|remove|run-due>")?;
+    let mut out = PathBuf::from("coqui-out");
+    let mut every = 3600i64;
+    let mut max_urls = None;
+    let mut remove_id = None;
+    let mut kind = String::new();
+    let mut seed = String::new();
+    let mut index = 1;
+    while index < values.len() {
+        match values[index].as_str() {
+            "--out" => {
+                index += 1;
+                out = PathBuf::from(values.get(index).ok_or("missing --out value")?);
+            }
+            "--every" => {
+                index += 1;
+                every = values
+                    .get(index)
+                    .ok_or("missing --every value")?
+                    .parse()
+                    .map_err(|_| "invalid --every".to_string())?;
+            }
+            "--max-urls" => {
+                index += 1;
+                max_urls = Some(
+                    values
+                        .get(index)
+                        .ok_or("missing --max-urls value")?
+                        .parse::<u32>()
+                        .map_err(|_| "invalid --max-urls".to_string())?,
+                );
+            }
+            other => match command {
+                "add" if kind.is_empty() => kind = other.to_string(),
+                "add" if seed.is_empty() => seed = other.to_string(),
+                "remove" => {
+                    remove_id = Some(other.parse::<i64>().map_err(|_| "invalid id".to_string())?)
+                }
+                _ => return Err(format!("unknown option '{other}'")),
+            },
+        }
+        index += 1;
+    }
+    let store = Store::open(out.join("coqui.db")).map_err(|error| error.to_string())?;
+    match command {
+        "add" => {
+            if kind.is_empty() || seed.is_empty() {
+                return Err("usage: schedule add <kind> <seed> --every SECONDS".into());
+            }
+            let mut config = CrawlConfig::default();
+            if let Some(max_urls) = max_urls {
+                config.max_urls = max_urls;
+            }
+            let json = serde_json::to_string(&config).map_err(|error| error.to_string())?;
+            let id = store
+                .add_schedule(&kind, &seed, every, &json, now_ms() + every * 1000)
+                .map_err(|error| error.to_string())?;
+            println!("schedule {id}: {kind} {seed} every {every}s");
+        }
+        "list" => {
+            for schedule in store.schedules().map_err(|error| error.to_string())? {
+                println!(
+                    "{}\t{}\t{}\tevery {}s\tnext {}\tlast {}",
+                    schedule.id,
+                    schedule.seed_kind,
+                    schedule.seed,
+                    schedule.interval_seconds,
+                    schedule.next_run_at,
+                    schedule
+                        .last_run_at
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "-".into())
+                );
+            }
+        }
+        "remove" => {
+            let id = remove_id.ok_or("usage: schedule remove <id>")?;
+            let removed = store
+                .remove_schedule(id)
+                .map_err(|error| error.to_string())?;
+            println!("removed {removed} schedule(s)");
+        }
+        "run-due" => {
+            let due = store
+                .due_schedules(now_ms())
+                .map_err(|error| error.to_string())?;
+            if due.is_empty() {
+                println!("no schedules due");
+                return Ok(());
+            }
+            for schedule in due {
+                let config: CrawlConfig = serde_json::from_str(&schedule.config_json)
+                    .map_err(|error| format!("schedule {}: {error}", schedule.id))?;
+                let crawl_id = format!("sched-{}-{}", schedule.id, now_ms());
+                let runner = std::sync::Arc::new(
+                    Store::open(out.join("coqui.db")).map_err(|error| error.to_string())?,
+                );
+                runner
+                    .create_crawl(
+                        &crawl_id,
+                        &schedule.seed,
+                        &schedule.seed_kind,
+                        &config,
+                        now_ms(),
+                    )
+                    .map_err(|error| error.to_string())?;
+                let result = coqui_crawl::run_crawl(
+                    runner.clone(),
+                    crawl_id.clone(),
+                    schedule.seed_kind.clone(),
+                    schedule.seed.clone(),
+                    config,
+                    CancellationToken::new(),
+                    Arc::new(AtomicBool::new(false)),
+                    None,
+                    Arc::new(|_| {}),
+                )
+                .await;
+                match result {
+                    Ok(_) => {
+                        let path = out.join(format!("{crawl_id}.csv"));
+                        let store =
+                            Store::open(out.join("coqui.db")).map_err(|error| error.to_string())?;
+                        let rows = store
+                            .export_urls_csv(&crawl_id, &path, &[], None)
+                            .map_err(|error| error.to_string())?;
+                        let now = now_ms();
+                        store
+                            .mark_schedule_run(
+                                schedule.id,
+                                now,
+                                now + schedule.interval_seconds * 1000,
+                            )
+                            .map_err(|error| error.to_string())?;
+                        println!(
+                            "schedule {}: {} rows -> {}",
+                            schedule.id,
+                            rows,
+                            path.display()
+                        );
+                    }
+                    Err(error) => eprintln!("schedule {} failed: {error}", schedule.id),
+                }
+            }
+        }
+        other => return Err(format!("unknown schedule command '{other}'")),
+    }
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() {
     let values: Vec<String> = std::env::args().collect();
@@ -419,6 +573,15 @@ async fn main() {
             );
         }
         return;
+    }
+    if values.get(1).map(String::as_str) == Some("schedule") {
+        match run_schedule(&values[2..]).await {
+            Ok(()) => return,
+            Err(message) => {
+                eprintln!("{message}");
+                std::process::exit(2);
+            }
+        }
     }
     if values.get(1).map(String::as_str) == Some("sitemap") {
         match run_sitemap(&values[2..]) {
