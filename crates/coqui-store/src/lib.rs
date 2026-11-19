@@ -4,8 +4,8 @@
 //! `PRAGMA user_version`; migrations are additive and run on open.
 
 use coqui_core::{
-    CrawlCheckpoint, CrawlConfig, CrawlStatus, CrawlSummary, Issue, IssueCount, IssueSeverity,
-    LinkRecord, NewUrl, UrlPage, UrlRecord, now_ms,
+    AxeViolation, CrawlCheckpoint, CrawlConfig, CrawlStatus, CrawlSummary, Issue, IssueCount,
+    IssueSeverity, LinkRecord, NewUrl, StructuredData, UrlPage, UrlRecord, WebVitals, now_ms,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
@@ -785,6 +785,122 @@ impl Store {
         Ok(links.len() as u64)
     }
 
+    pub fn export_accessibility_csv(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT url, axe_json FROM urls WHERE crawl_id = ?1 AND axe_json IS NOT NULL AND axe_json <> '[]'",
+        )?;
+        let mut writer = csv::Writer::from_path(path)?;
+        writer.write_record(["url", "rule", "impact", "help", "help_url", "nodes"])?;
+        let mut rows = 0u64;
+        let mut records = stmt.query(params![crawl_id])?;
+        while let Some(row) = records.next()? {
+            let url: String = row.get(0)?;
+            let json: String = row.get(1)?;
+            let violations: Vec<AxeViolation> = serde_json::from_str(&json).unwrap_or_default();
+            for violation in violations {
+                writer.write_record([
+                    url.clone(),
+                    violation.id,
+                    violation.impact.unwrap_or_default(),
+                    violation.help,
+                    violation.help_url,
+                    violation.nodes.to_string(),
+                ])?;
+                rows += 1;
+            }
+        }
+        writer.flush()?;
+        Ok(rows)
+    }
+
+    pub fn export_structured_data_csv(
+        &self,
+        crawl_id: &str,
+        path: impl AsRef<Path>,
+    ) -> Result<u64> {
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT url, structured_data_json FROM urls WHERE crawl_id = ?1 AND structured_data_json IS NOT NULL",
+        )?;
+        let mut writer = csv::Writer::from_path(path)?;
+        writer.write_record(["url", "types", "errors"])?;
+        let mut rows = 0u64;
+        let mut records = stmt.query(params![crawl_id])?;
+        while let Some(row) = records.next()? {
+            let url: String = row.get(0)?;
+            let json: String = row.get(1)?;
+            let data: StructuredData = serde_json::from_str(&json).unwrap_or_default();
+            writer.write_record([url, data.types.join("; "), data.errors.join("; ")])?;
+            rows += 1;
+        }
+        writer.flush()?;
+        Ok(rows)
+    }
+
+    pub fn export_vitals_csv(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT url, vitals_json FROM urls WHERE crawl_id = ?1 AND vitals_json IS NOT NULL",
+        )?;
+        let mut writer = csv::Writer::from_path(path)?;
+        writer.write_record(["url", "lcp_ms", "cls", "tbt_ms", "ttfb_ms", "fcp_ms"])?;
+        let mut rows = 0u64;
+        let mut records = stmt.query(params![crawl_id])?;
+        while let Some(row) = records.next()? {
+            let url: String = row.get(0)?;
+            let json: String = row.get(1)?;
+            let Some(vitals) = serde_json::from_str::<WebVitals>(&json).ok() else {
+                continue;
+            };
+            writer.write_record([
+                url,
+                vitals.lcp_ms.to_string(),
+                vitals.cls.to_string(),
+                vitals.tbt_ms.to_string(),
+                vitals.ttfb_ms.to_string(),
+                vitals.fcp_ms.to_string(),
+            ])?;
+            rows += 1;
+        }
+        writer.flush()?;
+        Ok(rows)
+    }
+
+    pub fn export_console_csv(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT url, console_json FROM urls WHERE crawl_id = ?1 AND console_json IS NOT NULL AND console_json <> '[]'",
+        )?;
+        let mut writer = csv::Writer::from_path(path)?;
+        writer.write_record(["url", "message"])?;
+        let mut rows = 0u64;
+        let mut records = stmt.query(params![crawl_id])?;
+        while let Some(row) = records.next()? {
+            let url: String = row.get(0)?;
+            let json: String = row.get(1)?;
+            let messages: Vec<String> = serde_json::from_str(&json).unwrap_or_default();
+            for message in messages {
+                writer.write_record([url.clone(), message])?;
+                rows += 1;
+            }
+        }
+        writer.flush()?;
+        Ok(rows)
+    }
+
     pub fn export_issues_csv(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {
         if let Some(parent) = path.as_ref().parent() {
             std::fs::create_dir_all(parent)?;
@@ -1347,6 +1463,88 @@ mod tests {
             Some(bytes.as_slice())
         );
         assert!(dir.join("screenshots/c1/7.jpg").exists());
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn bulk_data_exports_flatten_evidence() {
+        use coqui_core::{AxeViolation, HreflangLink, StructuredData, WebVitals};
+        let dir = std::env::temp_dir().join(format!("coqui-bulk-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        store
+            .create_crawl(
+                "c1",
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        store
+            .insert_url(&NewUrl {
+                crawl_id: "c1".into(),
+                url: "https://example.com/".into(),
+                status: Some(200),
+                blocked: false,
+                content_type: Some("text/html".into()),
+                title: Some("Example".into()),
+                meta_description: None,
+                h1: Some("Example".into()),
+                h1_count: 1,
+                canonical: None,
+                meta_robots: None,
+                hreflang: Vec::<HreflangLink>::new(),
+                pagination_next: None,
+                pagination_prev: None,
+                structured_data: StructuredData {
+                    types: vec!["Article".into()],
+                    errors: vec!["missing headline for Article".into()],
+                },
+                console_errors: vec!["js: boom".into(), "network: 404".into()],
+                axe: vec![AxeViolation {
+                    id: "image-alt".into(),
+                    impact: Some("critical".into()),
+                    help: "Images must have alternate text".into(),
+                    help_url: "https://example.com/rule".into(),
+                    nodes: 2,
+                }],
+                vitals: Some(WebVitals {
+                    lcp_ms: 3000,
+                    cls: 0.2,
+                    tbt_ms: 250,
+                    ttfb_ms: 900,
+                    fcp_ms: 1200,
+                }),
+                redirect_target: None,
+                redirect_chain: Vec::new(),
+                word_count: Some(500),
+                depth: 0,
+                response_time_ms: Some(10),
+                size_bytes: Some(100),
+                error: None,
+                discovered_at: now_ms(),
+            })
+            .unwrap();
+
+        let accessibility = dir.join("a11y.csv");
+        assert_eq!(
+            store
+                .export_accessibility_csv("c1", &accessibility)
+                .unwrap(),
+            1
+        );
+        let structured = dir.join("structured.csv");
+        assert_eq!(
+            store.export_structured_data_csv("c1", &structured).unwrap(),
+            1
+        );
+        let vitals = dir.join("vitals.csv");
+        assert_eq!(store.export_vitals_csv("c1", &vitals).unwrap(), 1);
+        let console = dir.join("console.csv");
+        assert_eq!(store.export_console_csv("c1", &console).unwrap(), 2);
+        let text = std::fs::read_to_string(&accessibility).unwrap();
+        assert!(text.contains("image-alt"));
         std::fs::remove_dir_all(dir).ok();
     }
 

@@ -436,6 +436,22 @@ fn export_view(
             .store
             .export_urls_xlsx(&crawl_id, &path, &columns, issue.as_deref())
             .map_err(|error| error.to_string())?,
+        ("accessibility", _) => state
+            .store
+            .export_accessibility_csv(&crawl_id, &path)
+            .map_err(|error| error.to_string())?,
+        ("structured", _) => state
+            .store
+            .export_structured_data_csv(&crawl_id, &path)
+            .map_err(|error| error.to_string())?,
+        ("vitals", _) => state
+            .store
+            .export_vitals_csv(&crawl_id, &path)
+            .map_err(|error| error.to_string())?,
+        ("console", _) => state
+            .store
+            .export_console_csv(&crawl_id, &path)
+            .map_err(|error| error.to_string())?,
         ("issues", _) => state
             .store
             .export_issues_csv(&crawl_id, &path)
