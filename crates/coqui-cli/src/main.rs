@@ -802,6 +802,80 @@ fn call_tool(
     }
 }
 
+fn resource_definitions() -> serde_json::Value {
+    serde_json::json!({
+        "resources": [{
+            "uri": "coqui://crawls",
+            "name": "Crawls",
+            "description": "Recent crawls in the database.",
+            "mimeType": "application/json",
+        }]
+    })
+}
+
+fn resource_templates() -> serde_json::Value {
+    serde_json::json!({
+        "resourceTemplates": [
+            {
+                "uriTemplate": "coqui://crawl/{id}",
+                "name": "Crawl summary",
+                "description": "Summary for one crawl.",
+                "mimeType": "application/json",
+            },
+            {
+                "uriTemplate": "coqui://crawl/{id}/issues",
+                "name": "Crawl issues",
+                "description": "Issue counts for one crawl.",
+                "mimeType": "application/json",
+            }
+        ]
+    })
+}
+
+fn read_resource(store: &Store, uri: &str) -> Result<String, String> {
+    if uri == "coqui://crawls" {
+        let crawls = store.list_crawls().map_err(|error| error.to_string())?;
+        let values: Vec<_> = crawls
+            .iter()
+            .map(|crawl| {
+                serde_json::json!({
+                    "id": crawl.id,
+                    "seed": crawl.seed,
+                    "seedKind": crawl.seed_kind,
+                    "status": format!("{:?}", crawl.status),
+                    "totalUrls": crawl.total_urls,
+                })
+            })
+            .collect();
+        return Ok(serde_json::Value::Array(values).to_string());
+    }
+    let rest = uri
+        .strip_prefix("coqui://crawl/")
+        .ok_or_else(|| format!("unknown resource '{uri}'"))?;
+    let (id, suffix) = match rest.split_once('/') {
+        Some((id, suffix)) => (id, Some(suffix)),
+        None => (rest, None),
+    };
+    if suffix == Some("issues") {
+        let counts = store.issue_counts(id).map_err(|error| error.to_string())?;
+        let values: Vec<_> = counts
+            .iter()
+            .map(|count| serde_json::json!({"rule": count.rule, "count": count.count}))
+            .collect();
+        return Ok(serde_json::Value::Array(values).to_string());
+    }
+    let crawl = store.get_crawl(id).map_err(|error| error.to_string())?;
+    Ok(serde_json::json!({
+        "id": crawl.id,
+        "seed": crawl.seed,
+        "seedKind": crawl.seed_kind,
+        "status": format!("{:?}", crawl.status),
+        "totalUrls": crawl.total_urls,
+        "blockedUrls": crawl.blocked_urls,
+    })
+    .to_string())
+}
+
 fn run_mcp(values: &[String]) -> Result<(), String> {
     let mut out = PathBuf::from("coqui-out");
     let mut index = 0;
@@ -843,12 +917,30 @@ fn run_mcp(values: &[String]) -> Result<(), String> {
                 id,
                 serde_json::json!({
                     "protocolVersion": "2025-06-18",
-                    "capabilities": {"tools": {}},
+                    "capabilities": {"tools": {}, "resources": {}},
                     "serverInfo": {"name": "coqui", "version": env!("CARGO_PKG_VERSION")},
                 }),
             ),
             "ping" => rpc_result(id, serde_json::json!({})),
             "tools/list" => rpc_result(id, serde_json::json!({"tools": tool_definitions()})),
+            "resources/list" => rpc_result(id, resource_definitions()),
+            "resources/templates/list" => rpc_result(id, resource_templates()),
+            "resources/read" => {
+                let uri = message
+                    .get("params")
+                    .and_then(|params| params.get("uri"))
+                    .and_then(|uri| uri.as_str())
+                    .unwrap_or_default();
+                match read_resource(&store, uri) {
+                    Ok(text) => rpc_result(
+                        id,
+                        serde_json::json!({
+                            "contents": [{"uri": uri, "mimeType": "application/json", "text": text}],
+                        }),
+                    ),
+                    Err(error) => rpc_error(id, -32602, &error),
+                }
+            }
             "tools/call" => match call_tool(&store, &out, &message) {
                 Ok(value) => rpc_result(
                     id,
