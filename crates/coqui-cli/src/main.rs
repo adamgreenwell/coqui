@@ -104,7 +104,8 @@ fn load_config(path: &Path, required: bool) -> Result<FileConfig, String> {
 }
 
 fn usage() -> &'static str {
-    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR]\n       coqui report compare --with <crawl id> [--out DIR]\n       coqui reports\n       coqui export [--out DIR] [--family urls|issues|links|headers|images|a11y|structured|vitals|console|text|markdown|extractions|custom-js]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui mcp [--out DIR]"
+    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR]\n       coqui report compare --with <crawl id> [--out DIR]\n       coqui reports\n       coqui export [--out DIR] [--family urls|issues|links|headers|images|a11y|structured|vitals|console|text|markdown|extractions|custom-js]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui doctor [--out DIR]
+       coqui mcp [--out DIR]"
 }
 
 fn parse_args(values: &[String], config: &FileConfig) -> Result<Args, String> {
@@ -420,6 +421,90 @@ fn run_export(values: &[String]) -> Result<(), String> {
         rows,
         started.elapsed().as_secs_f64()
     );
+    Ok(())
+}
+
+fn first_existing(paths: &[&str]) -> Option<String> {
+    paths
+        .iter()
+        .find(|path| std::path::Path::new(path).exists())
+        .map(|path| (*path).to_string())
+}
+
+fn run_doctor(values: &[String]) -> Result<(), String> {
+    let mut out = PathBuf::from("coqui-out");
+    let mut index = 0;
+    while index < values.len() {
+        match values[index].as_str() {
+            "--out" => {
+                index += 1;
+                out = PathBuf::from(values.get(index).ok_or("missing --out value")?);
+            }
+            other => return Err(format!("unknown option '{other}'")),
+        }
+        index += 1;
+    }
+    println!("coqui {}", env!("CARGO_PKG_VERSION"));
+    Store::open(out.join("coqui.db")).map_err(|error| error.to_string())?;
+    println!("database: ok ({})", out.join("coqui.db").display());
+
+    let sidecar_node = [
+        "sidecars/node.exe",
+        "src-tauri/sidecars/node.exe",
+        "sidecars/node",
+        "src-tauri/sidecars/node",
+    ];
+    let node = std::env::var_os("COQUI_NODE")
+        .map(|value| value.to_string_lossy().to_string())
+        .filter(|path| std::path::Path::new(path).exists())
+        .or_else(|| first_existing(&sidecar_node))
+        .or_else(|| {
+            std::process::Command::new("node")
+                .arg("--version")
+                .output()
+                .ok()
+                .filter(|output| output.status.success())
+                .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        });
+    match node {
+        Some(value) => println!("node: ok ({value})"),
+        None => println!("node: missing (lighthouse runs need Node)"),
+    }
+
+    let lighthouse = std::env::var_os("COQUI_LIGHTHOUSE_CLI")
+        .map(|value| value.to_string_lossy().to_string())
+        .filter(|path| std::path::Path::new(path).exists())
+        .or_else(|| {
+            first_existing(&[
+                "sidecars/lighthouse/node_modules/lighthouse/cli/index.js",
+                "src-tauri/sidecars/lighthouse/node_modules/lighthouse/cli/index.js",
+            ])
+        });
+    match lighthouse {
+        Some(value) => println!("lighthouse: ok ({value})"),
+        None => println!("lighthouse: missing (run `npm run sidecars`)"),
+    }
+
+    let browser = std::env::var_os("CHROME_PATH")
+        .map(|value| value.to_string_lossy().to_string())
+        .filter(|path| std::path::Path::new(path).exists())
+        .or_else(|| {
+            first_existing(&[
+                r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+                r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+                r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+                "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+                "/usr/bin/google-chrome",
+                "/usr/bin/chromium",
+                "/usr/bin/chromium-browser",
+            ])
+        });
+    match browser {
+        Some(value) => println!("browser: ok ({value})"),
+        None => println!("browser: missing (render and lighthouse need Chrome/Edge)"),
+    }
     Ok(())
 }
 
@@ -1249,6 +1334,15 @@ async fn main() {
     }
     if values.get(1).map(String::as_str) == Some("mcp") {
         match run_mcp(&values[2..]) {
+            Ok(()) => return,
+            Err(message) => {
+                eprintln!("{message}");
+                std::process::exit(2);
+            }
+        }
+    }
+    if values.get(1).map(String::as_str) == Some("doctor") {
+        match run_doctor(&values[2..]) {
             Ok(()) => return,
             Err(message) => {
                 eprintln!("{message}");
