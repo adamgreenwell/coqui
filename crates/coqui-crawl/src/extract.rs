@@ -29,6 +29,8 @@ pub struct ExtractedPage {
     pub structured_data: StructuredData,
     pub images: Vec<ImageRef>,
     pub word_count: u32,
+    pub text: String,
+    pub markdown: String,
     pub links: Vec<ExtractedLink>,
 }
 
@@ -221,6 +223,11 @@ pub fn extract_page(html: &str, base_url: &str) -> ExtractedPage {
         .map(|body| body.text().collect::<String>())
         .unwrap_or_default();
     let word_count = body_text.split_whitespace().count() as u32;
+    let markdown = if body_text.trim().is_empty() {
+        String::new()
+    } else {
+        html2md::parse_html(html)
+    };
 
     let mut seen = HashSet::new();
     let mut links = Vec::new();
@@ -254,6 +261,8 @@ pub fn extract_page(html: &str, base_url: &str) -> ExtractedPage {
         structured_data,
         images,
         word_count,
+        text: body_text,
+        markdown,
         links,
     }
 }
