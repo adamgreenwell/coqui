@@ -3648,7 +3648,7 @@ mod tests {
         let version: i32 = conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 24);
+        assert_eq!(version, 25);
         std::fs::remove_dir_all(dir).ok();
     }
 
@@ -3906,3 +3906,4 @@ fn lastmod_from_headers(json: Option<&str>) -> Option<String> {
         .ok()?;
     Some(formatted.replace("+00:00", "Z"))
 }
+
