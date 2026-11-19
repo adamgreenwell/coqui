@@ -263,13 +263,31 @@ fn export_csv(state: State<'_, AppState>, crawl_id: String) -> Result<String, St
     Ok(path.to_string_lossy().to_string())
 }
 
-fn lighthouse_command(url: &str, output_path: &std::path::Path) -> tokio::process::Command {
-    let sidecar = |name: &str| {
-        std::env::current_exe()
-            .ok()
-            .and_then(|exe| exe.parent().map(|dir| dir.join(name)))
-            .filter(|path| path.exists())
-    };
+fn sidecar_path(app: &tauri::AppHandle, name: &str) -> Option<std::path::PathBuf> {
+    use tauri::Manager;
+    let mut bases = Vec::new();
+    if let Ok(dir) = app.path().resource_dir() {
+        bases.push(dir.join("sidecars"));
+        bases.push(dir);
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            bases.push(parent.to_path_buf());
+            bases.push(parent.join("sidecars"));
+        }
+    }
+    bases
+        .into_iter()
+        .map(|base| base.join(name))
+        .find(|path| path.exists())
+}
+
+fn lighthouse_command(
+    app: &tauri::AppHandle,
+    url: &str,
+    output_path: &std::path::Path,
+) -> tokio::process::Command {
+    let sidecar = |name: &str| sidecar_path(app, name);
     let chrome = std::env::var_os("CHROME_PATH")
         .map(std::path::PathBuf::from)
         .filter(|path| path.exists())
@@ -325,10 +343,13 @@ fn lighthouse_command(url: &str, output_path: &std::path::Path) -> tokio::proces
     command
 }
 
-async fn lighthouse_summary(url: &str) -> Result<coqui_lighthouse::LighthouseSummary, String> {
+async fn lighthouse_summary(
+    app: &tauri::AppHandle,
+    url: &str,
+) -> Result<coqui_lighthouse::LighthouseSummary, String> {
     let output_path =
         std::env::temp_dir().join(format!("coqui-lighthouse-{}.json", uuid::Uuid::new_v4()));
-    let mut command = lighthouse_command(url, &output_path);
+    let mut command = lighthouse_command(app, url, &output_path);
     let output = tokio::time::timeout(std::time::Duration::from_secs(240), command.output())
         .await
         .map_err(|_| "Lighthouse timed out after 240 seconds".to_string())?
@@ -367,6 +388,7 @@ fn get_screenshot(
 
 #[tauri::command]
 async fn run_lighthouse(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     crawl_id: String,
     url_id: i64,
@@ -376,7 +398,7 @@ async fn run_lighthouse(
         .get_url(&crawl_id, url_id)
         .map_err(|error| error.to_string())?
         .ok_or_else(|| "URL not found".to_string())?;
-    let summary = lighthouse_summary(&record.url).await?;
+    let summary = lighthouse_summary(&app, &record.url).await?;
     let json = serde_json::to_string(&summary).map_err(|error| error.to_string())?;
     state
         .store
@@ -387,6 +409,7 @@ async fn run_lighthouse(
 
 #[tauri::command]
 async fn run_lighthouse_sample(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     crawl_id: String,
     sample: u32,
@@ -400,7 +423,7 @@ async fn run_lighthouse_sample(
     }
     let mut summaries = Vec::new();
     for record in urls {
-        let summary = lighthouse_summary(&record.url).await?;
+        let summary = lighthouse_summary(&app, &record.url).await?;
         let json = serde_json::to_string(&summary).map_err(|error| error.to_string())?;
         state
             .store
@@ -744,3 +767,4 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running Coqui");
 }
+

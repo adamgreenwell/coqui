@@ -32,4 +32,5 @@ apps/web/out/
 
 
 # Downloaded sidecars
-/src-tauri/sidecars/
+/src-tauri/sidecars/*
+!/src-tauri/sidecars/README.md

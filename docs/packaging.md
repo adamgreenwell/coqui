@@ -13,6 +13,8 @@ Coqui ships the desktop app and headless CLI from one workspace. Installer budge
 
 ## Fetching sidecars
 
+Sidecars are bundled via `bundle.resources` (`sidecars/**/*`); at runtime the app resolves them from the Tauri resource directory (falling back to next to the executable). A tracked `src-tauri/sidecars/README.md` keeps the glob valid when sidecars have not been fetched.
+
 `npm run sidecars` downloads a pinned Node build (checksum verified against SHASUMS256.txt) and installs Lighthouse with production dependencies into `src-tauri/sidecars/` (ignored by git). Verified: Node v22.14.0 and Lighthouse 12.8.2 (201 packages) run from the sidecar (`node .../cli/index.js --version` → 12.8.2).
 
 ## Sidecar layout
@@ -52,4 +54,5 @@ The release workflow builds the CLI for the three desktop platforms, publishes t
 3. Bundle Chromium for rendering and Lighthouse.
 4. Signing/notarization and reproducible-build notes.
 5. Docker/Compose packaging for the headless server mode.
+
 
