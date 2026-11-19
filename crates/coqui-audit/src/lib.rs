@@ -146,6 +146,16 @@ pub const RULES: &[RuleDef] = &[
         severity: IssueSeverity::Opportunity,
     },
     RuleDef {
+        id: "blocked_by_robots",
+        label: "Blocked by robots.txt",
+        severity: IssueSeverity::Warning,
+    },
+    RuleDef {
+        id: "long_redirect_chain",
+        label: "Long redirect chain",
+        severity: IssueSeverity::Warning,
+    },
+    RuleDef {
         id: "hreflang_missing_return",
         label: "Hreflang missing return link",
         severity: IssueSeverity::Warning,
@@ -231,6 +241,10 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
 
     let missing_alt: HashMap<String, i64> =
         store.images_missing_alt(crawl_id)?.into_iter().collect();
+
+    for url in urls.iter().filter(|url| url.blocked) {
+        issue(store, crawl_id, &url.url, "blocked_by_robots", None)?;
+    }
 
     let mut duplicate_content: HashMap<String, Vec<String>> = HashMap::new();
     let mut content_hash_by_url: HashMap<String, String> = HashMap::new();
@@ -417,6 +431,16 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
                     )?;
                 }
             }
+        }
+
+        if url.redirect_chain.len() > 2 {
+            issue(
+                store,
+                crawl_id,
+                &url.url,
+                "long_redirect_chain",
+                Some(format!("{} hops", url.redirect_chain.len())),
+            )?;
         }
 
         if url.url.starts_with("http://") {
@@ -1026,6 +1050,55 @@ mod tests {
         let counts = analyze_crawl(&store, id).unwrap();
         let by_rule: HashMap<_, _> = counts.iter().map(|c| (c.rule.as_str(), c.count)).collect();
         assert_eq!(by_rule.get("non_https"), Some(&1));
+    }
+
+    #[test]
+    fn flags_blocked_urls() {
+        let store = Store::open_in_memory().unwrap();
+        let id = "redirect";
+        store
+            .create_crawl(
+                id,
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        store
+            .insert_url(&NewUrl {
+                crawl_id: id.to_string(),
+                url: "https://example.com/old".to_string(),
+                status: Some(200),
+                blocked: true,
+                hreflang: Vec::new(),
+                pagination_next: None,
+                pagination_prev: None,
+                structured_data: Default::default(),
+                console_errors: Vec::new(),
+                axe: Vec::new(),
+                vitals: None,
+                headers: Vec::new(),
+                content_type: Some("text/html".into()),
+                title: Some("Old".into()),
+                meta_description: None,
+                h1: Some("H1".into()),
+                h1_count: 1,
+                canonical: None,
+                meta_robots: None,
+                redirect_target: Some("https://example.com/new".into()),
+                redirect_chain: vec!["a".into(), "b".into(), "c".into()],
+                word_count: Some(600),
+                depth: 0,
+                response_time_ms: Some(10),
+                size_bytes: Some(100),
+                error: None,
+                discovered_at: now_ms(),
+            })
+            .unwrap();
+        let counts = analyze_crawl(&store, id).unwrap();
+        let by_rule: HashMap<_, _> = counts.iter().map(|c| (c.rule.as_str(), c.count)).collect();
+        assert_eq!(by_rule.get("blocked_by_robots"), Some(&1), "{:?}", by_rule);
     }
 }
 
