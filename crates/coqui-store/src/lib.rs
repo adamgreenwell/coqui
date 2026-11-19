@@ -906,6 +906,56 @@ impl Store {
         Ok(links.len() as u64)
     }
 
+    pub fn export_sitemap(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {
+        use std::io::Write;
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let conn = self.lock()?;
+        let mut urls = conn.prepare(
+            "SELECT id, url, meta_robots FROM urls
+             WHERE crawl_id = ?1 AND status = 200 ORDER BY id",
+        )?;
+        let mut images = conn
+            .prepare("SELECT src FROM images WHERE crawl_id = ?1 AND url_id = ?2 ORDER BY src")?;
+        let mut file = std::fs::File::create(path)?;
+        writeln!(file, r#"<?xml version="1.0" encoding="UTF-8"?>"#)?;
+        writeln!(
+            file,
+            r#"<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">"#
+        )?;
+        let mut rows = urls.query(params![crawl_id])?;
+        let mut count = 0u64;
+        while let Some(row) = rows.next()? {
+            if count >= 50_000 {
+                break;
+            }
+            let id: i64 = row.get(0)?;
+            let url: String = row.get(1)?;
+            let robots: Option<String> = row.get(2)?;
+            if robots
+                .unwrap_or_default()
+                .to_ascii_lowercase()
+                .contains("noindex")
+            {
+                continue;
+            }
+            writeln!(file, "  <url>")?;
+            writeln!(file, "    <loc>{}</loc>", xml_escape(&url))?;
+            let mut image_rows = images.query(params![crawl_id, id])?;
+            while let Some(image) = image_rows.next()? {
+                let src: String = image.get(0)?;
+                writeln!(file, "    <image:image>")?;
+                writeln!(file, "      <image:loc>{}</image:loc>", xml_escape(&src))?;
+                writeln!(file, "    </image:image>")?;
+            }
+            writeln!(file, "  </url>")?;
+            count += 1;
+        }
+        writeln!(file, "</urlset>")?;
+        Ok(count)
+    }
+
     pub fn export_headers_csv(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {
         if let Some(parent) = path.as_ref().parent() {
             std::fs::create_dir_all(parent)?;
@@ -1752,6 +1802,48 @@ mod tests {
     }
 
     #[test]
+    fn sitemap_skips_noindex_and_escapes_images() {
+        let dir = std::env::temp_dir().join(format!("coqui-sitemap-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        store
+            .create_crawl(
+                "c1",
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        store
+            .insert_url(&sample_record("c1", "https://example.com/"))
+            .unwrap();
+        let mut hidden = sample_record("c1", "https://example.com/private");
+        hidden.meta_robots = Some("noindex,follow".into());
+        store.insert_url(&hidden).unwrap();
+        let url_id = store.url_id("c1", "https://example.com/").unwrap().unwrap();
+        store
+            .replace_images(
+                "c1",
+                url_id,
+                &[coqui_core::ImageRef {
+                    src: "https://example.com/a.png?a=1&b=2".into(),
+                    alt: None,
+                    width: None,
+                    height: None,
+                }],
+            )
+            .unwrap();
+        let path = dir.join("sitemap.xml");
+        assert_eq!(store.export_sitemap("c1", &path).unwrap(), 1);
+        let xml = std::fs::read_to_string(&path).unwrap();
+        assert!(xml.contains("https://example.com/</loc>"));
+        assert!(xml.contains("a.png?a=1&amp;b=2"));
+        assert!(!xml.contains("private"));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
     fn lighthouse_reports_round_trip() {
         let store = Store::open_in_memory().unwrap();
         let summary = r#"{"performance":0.72,"accessibility":0.95,"bestPractices":0.57,"seo":0.42,"audits":[],"finalUrl":null,"fetchTime":null}"#;
@@ -1979,4 +2071,13 @@ fn row_csv_value(key: &str, row: &rusqlite::Row<'_>) -> String {
         }
         _ => String::new(),
     }
+}
+
+fn xml_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
 }
