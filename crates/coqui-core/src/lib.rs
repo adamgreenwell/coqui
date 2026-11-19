@@ -67,6 +67,9 @@ pub struct CrawlConfig {
     /// Extra URL patterns to block while rendering (for example third-party scripts).
     #[serde(default)]
     pub render_block_patterns: Vec<String>,
+    /// Custom JavaScript expressions evaluated after rendering.
+    #[serde(default)]
+    pub custom_js: Vec<String>,
     /// Run the axe-core accessibility audit on rendered pages.
     #[serde(default)]
     pub accessibility: bool,
@@ -126,6 +129,7 @@ impl Default for CrawlConfig {
             render_block_assets: false,
             render_early: false,
             render_block_patterns: Vec::new(),
+            custom_js: Vec::new(),
             accessibility: false,
             web_vitals: false,
             store_text: false,
