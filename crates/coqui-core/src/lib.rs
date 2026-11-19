@@ -79,6 +79,9 @@ pub struct CrawlConfig {
     /// Store extracted text and Markdown for each page (off by default).
     #[serde(default)]
     pub store_text: bool,
+    /// Optional webhook URL posted on crawl completion.
+    #[serde(default)]
+    pub webhook_url: Option<String>,
     /// Only crawl discovered URLs matching at least one pattern (empty = all).
     #[serde(default)]
     pub include_patterns: Vec<String>,
@@ -133,6 +136,7 @@ impl Default for CrawlConfig {
             accessibility: false,
             web_vitals: false,
             store_text: false,
+            webhook_url: None,
             include_patterns: Vec::new(),
             exclude_patterns: Vec::new(),
             auth_user: None,
