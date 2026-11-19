@@ -333,6 +333,7 @@ export default function Home() {
   const [detail, setDetail] = useState<UrlDetail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [linkFilter, setLinkFilter] = useState('');
   const [lighthouse, setLighthouse] = useState<LighthouseSummary | null>(null);
   const [lighthouseBusy, setLighthouseBusy] = useState(false);
   const [lighthouseError, setLighthouseError] = useState<string | null>(null);
@@ -761,6 +762,12 @@ export default function Home() {
     })();
   }, [isTauri]);
 
+  const matchesLink = (link: { url: string; anchor: string }) => {
+    const needle = linkFilter.trim().toLowerCase();
+    if (!needle) return true;
+    return `${link.url} ${link.anchor}`.toLowerCase().includes(needle);
+  };
+
   const openDetail = async (row: UrlRow) => {
     try {
       const { invoke } = await import('@tauri-apps/api/core');
@@ -769,6 +776,7 @@ export default function Home() {
         urlId: row.id,
       });
       setDetail(data);
+      setLinkFilter('');
       setDetailError(null);
     } catch (cause) {
       setDetailError(cause instanceof Error ? cause.message : String(cause));
@@ -2120,11 +2128,18 @@ export default function Home() {
                     style={{ maxWidth: '100%', borderRadius: 8, marginTop: 12 }}
                   />
                 )}
+                <input
+                  type="search"
+                  value={linkFilter}
+                  onChange={(event) => setLinkFilter(event.target.value)}
+                  placeholder="Filter links"
+                  aria-label="Filter links"
+                />
                 {detail.inboundLinks.length > 0 && (
                   <>
                     <h4>Inbound links</h4>
                     <ul className="settings-reference">
-                      {detail.inboundLinks.map((link) => (
+                      {detail.inboundLinks.filter(matchesLink).map((link) => (
                         <li key={link.url}>
                           {link.url} — “{link.anchor}”
                         </li>
@@ -2136,7 +2151,7 @@ export default function Home() {
                   <>
                     <h4>Outbound links</h4>
                     <ul className="settings-reference">
-                      {detail.outboundLinks.map((link) => (
+                      {detail.outboundLinks.filter(matchesLink).map((link) => (
                         <li key={link.url}>
                           {link.url} — “{link.anchor}”
                         </li>
@@ -2906,6 +2921,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 
