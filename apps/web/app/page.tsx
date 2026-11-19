@@ -299,6 +299,8 @@ export default function Home() {
   const [queryInput, setQueryInput] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [contentFilter, setContentFilter] = useState('');
+  const [maxDepthFilter, setMaxDepthFilter] = useState('');
+  const [indexFilter, setIndexFilter] = useState('');
   const [views, setViews] = useState<
     { name: string; search: string | null; status: number | null; issue: string | null }[]
   >([]);
@@ -333,6 +335,8 @@ export default function Home() {
         status: /^\d{3}$/.test(statusFilter) ? Number(statusFilter) : null,
         statusClass: /^[2-5]xx$/.test(statusFilter) ? Number(statusFilter[0]) : null,
         contentClass: contentFilter || null,
+        maxDepth: maxDepthFilter.trim() ? Number(maxDepthFilter) : null,
+        indexability: indexFilter || null,
       });
       setRows(data.rows);
       setTotal(data.total);
@@ -1747,6 +1751,34 @@ export default function Home() {
                   <option value="xml">XML</option>
                   <option value="image">Images</option>
                   <option value="other">Other</option>
+                </select>
+                <input
+                  type="number"
+                  min={0}
+                  value={maxDepthFilter}
+                  onChange={(event) => {
+                    setMaxDepthFilter(event.target.value);
+                    setPage(1);
+                    if (crawl) void loadPage(crawl.id, 1, activeIssue);
+                  }}
+                  placeholder="Max depth"
+                  aria-label="Max depth filter"
+                  disabled={!isTauri || !crawl}
+                />
+                <select
+                  value={indexFilter}
+                  onChange={(event) => {
+                    setIndexFilter(event.target.value);
+                    setPage(1);
+                    if (crawl) void loadPage(crawl.id, 1, activeIssue);
+                  }}
+                  aria-label="Indexability filter"
+                  disabled={!isTauri || !crawl}
+                >
+                  <option value="">Any indexability</option>
+                  <option value="indexable">Indexable</option>
+                  <option value="noindex">Noindex</option>
+                  <option value="blocked">Blocked</option>
                 </select>
                 <input
                   type="text"

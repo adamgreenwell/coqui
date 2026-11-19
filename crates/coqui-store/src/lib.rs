@@ -500,6 +500,8 @@ impl Store {
         status: Option<u16>,
         status_class: Option<u16>,
         content_class: Option<&str>,
+        max_depth: Option<u32>,
+        indexability: Option<&str>,
     ) -> Result<UrlPage> {
         let page = page.max(1);
         let page_size = page_size.clamp(1, 500);
@@ -533,14 +535,22 @@ impl Store {
                     (?6 = 'other' AND (urls.content_type IS NULL OR
                         (urls.content_type NOT LIKE 'text/html%' AND
                          urls.content_type NOT LIKE '%xml%' AND
-                         urls.content_type NOT LIKE 'image/%'))))",
+                         urls.content_type NOT LIKE 'image/%'))))
+               AND (?7 IS NULL OR urls.depth <= ?7)
+               AND (?8 IS NULL OR
+                    (?8 = 'noindex' AND urls.meta_robots LIKE '%noindex%') OR
+                    (?8 = 'blocked' AND urls.blocked = 1) OR
+                    (?8 = 'indexable' AND urls.blocked = 0 AND
+                        (urls.meta_robots IS NULL OR urls.meta_robots NOT LIKE '%noindex%')))",
             params![
                 crawl_id,
                 filter,
                 search_like,
                 status,
                 status_class,
-                content_class
+                content_class,
+                max_depth.map(i64::from),
+                indexability
             ],
             |row| row.get(0),
         )?;
@@ -565,7 +575,13 @@ impl Store {
                         (urls.content_type NOT LIKE 'text/html%' AND
                          urls.content_type NOT LIKE '%xml%' AND
                          urls.content_type NOT LIKE 'image/%'))))
-             ORDER BY id LIMIT ?2 OFFSET ?8",
+               AND (?8 IS NULL OR urls.depth <= ?8)
+               AND (?9 IS NULL OR
+                    (?9 = 'noindex' AND urls.meta_robots LIKE '%noindex%') OR
+                    (?9 = 'blocked' AND urls.blocked = 1) OR
+                    (?9 = 'indexable' AND urls.blocked = 0 AND
+                        (urls.meta_robots IS NULL OR urls.meta_robots NOT LIKE '%noindex%')))
+             ORDER BY id LIMIT ?2 OFFSET ?10",
         )?;
         let rows = stmt
             .query_map(
@@ -577,6 +593,8 @@ impl Store {
                     status,
                     status_class,
                     content_class,
+                    max_depth.map(i64::from),
+                    indexability,
                     offset
                 ],
                 map_url_row,
@@ -599,7 +617,7 @@ impl Store {
         issue_rule: Option<&str>,
     ) -> Result<UrlPage> {
         self.list_urls_filtered(
-            crawl_id, page, page_size, issue_rule, None, None, None, None,
+            crawl_id, page, page_size, issue_rule, None, None, None, None, None, None,
         )
     }
 
@@ -2655,21 +2673,32 @@ mod tests {
         store.insert_url(&missing).unwrap();
         assert_eq!(
             store
-                .list_urls_filtered("c1", 1, 10, None, Some("Missing"), None, None, None)
+                .list_urls_filtered(
+                    "c1",
+                    1,
+                    10,
+                    None,
+                    Some("Missing"),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None
+                )
                 .unwrap()
                 .total,
             1
         );
         assert_eq!(
             store
-                .list_urls_filtered("c1", 1, 10, None, None, Some(404), None, None)
+                .list_urls_filtered("c1", 1, 10, None, None, Some(404), None, None, None, None)
                 .unwrap()
                 .total,
             1
         );
         assert_eq!(
             store
-                .list_urls_filtered("c1", 1, 10, None, None, None, None, None)
+                .list_urls_filtered("c1", 1, 10, None, None, None, None, None, None, None)
                 .unwrap()
                 .total,
             2
