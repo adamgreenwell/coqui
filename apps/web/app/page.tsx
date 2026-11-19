@@ -298,6 +298,7 @@ export default function Home() {
   const [activeIssue, setActiveIssue] = useState<string | null>(null);
   const [queryInput, setQueryInput] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [contentFilter, setContentFilter] = useState('');
   const [views, setViews] = useState<
     { name: string; search: string | null; status: number | null; issue: string | null }[]
   >([]);
@@ -331,6 +332,7 @@ export default function Home() {
         query: queryInput.trim() || null,
         status: /^\d{3}$/.test(statusFilter) ? Number(statusFilter) : null,
         statusClass: /^[2-5]xx$/.test(statusFilter) ? Number(statusFilter[0]) : null,
+        contentClass: contentFilter || null,
       });
       setRows(data.rows);
       setTotal(data.total);
@@ -1729,6 +1731,22 @@ export default function Home() {
                   <option value="302">302</option>
                   <option value="404">404</option>
                   <option value="500">500</option>
+                </select>
+                <select
+                  value={contentFilter}
+                  onChange={(event) => {
+                    setContentFilter(event.target.value);
+                    setPage(1);
+                    if (crawl) void loadPage(crawl.id, 1, activeIssue);
+                  }}
+                  aria-label="Content type filter"
+                  disabled={!isTauri || !crawl}
+                >
+                  <option value="">All content</option>
+                  <option value="html">HTML</option>
+                  <option value="xml">XML</option>
+                  <option value="image">Images</option>
+                  <option value="other">Other</option>
                 </select>
                 <input
                   type="text"
