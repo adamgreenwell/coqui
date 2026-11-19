@@ -295,6 +295,7 @@ fn lighthouse_command(url: &str, output_path: &std::path::Path) -> tokio::proces
     let cli = std::env::var_os("COQUI_LIGHTHOUSE_CLI")
         .map(std::path::PathBuf::from)
         .filter(|path| path.exists())
+        .or_else(|| sidecar("lighthouse/node_modules/lighthouse/cli/index.js"))
         .or_else(|| sidecar("lighthouse/lighthouse-cli/index.js"));
     let mut command = match (node, cli) {
         (Some(node), Some(cli)) => {

@@ -30,3 +30,6 @@ apps/web/out/
 # Generated benchmark output
 /bench/
 
+
+# Downloaded sidecars
+/src-tauri/sidecars/
