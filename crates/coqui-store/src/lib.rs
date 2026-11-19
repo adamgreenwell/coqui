@@ -2323,6 +2323,36 @@ fn migrate(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_links_crawl_from ON links (crawl_id, from_id);
          CREATE INDEX IF NOT EXISTS idx_links_crawl_to ON links (crawl_id, to_id);",
     )?;
+    if version < 24 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS issue_overrides (
+                crawl_id TEXT NOT NULL,
+                rule     TEXT NOT NULL,
+                severity TEXT NOT NULL,
+                PRIMARY KEY (crawl_id, rule)
+            );",
+        )?;
+    }
+    if version < 23 {
+        if !has_column(conn, "saved_views", "sort_key")? {
+            conn.execute("ALTER TABLE saved_views ADD COLUMN sort_key TEXT", [])?;
+        }
+        if !has_column(conn, "saved_views", "sort_desc")? {
+            conn.execute("ALTER TABLE saved_views ADD COLUMN sort_desc INTEGER", [])?;
+        }
+        if !has_column(conn, "saved_views", "page_size")? {
+            conn.execute("ALTER TABLE saved_views ADD COLUMN page_size INTEGER", [])?;
+        }
+    }
+    if version < 22 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS issue_suppressions (
+                crawl_id TEXT NOT NULL,
+                rule     TEXT NOT NULL,
+                PRIMARY KEY (crawl_id, rule)
+            );",
+        )?;
+    }
     if version < 21 {
         if !has_column(conn, "saved_views", "content_class")? {
             conn.execute("ALTER TABLE saved_views ADD COLUMN content_class TEXT", [])?;
