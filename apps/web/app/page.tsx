@@ -682,17 +682,41 @@ export default function Home() {
     if (crawl) void loadPage(crawl.id, 1, null);
   };
 
+  const refreshHistory = async () => {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      setHistory(await invoke<CrawlSummary[]>('list_crawls'));
+    } catch {
+      // history is optional
+    }
+  };
+
   useEffect(() => {
     if (!isTauri) return;
-    void (async () => {
-      try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        setHistory(await invoke<CrawlSummary[]>('list_crawls'));
-      } catch {
-        // history is optional
-      }
-    })();
+    void refreshHistory();
   }, [isTauri, phase]);
+
+  const removeCrawl = async (entry: CrawlSummary) => {
+    if (!window.confirm(`Delete crawl “${seedLabel(entry)}”?`)) return;
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('delete_crawl', { crawlId: entry.id });
+    if (crawl?.id === entry.id) {
+      setCrawl(null);
+      setPhase('idle');
+      setRows([]);
+      setTotal(0);
+      setIssues([]);
+      setSuppressed([]);
+      setStatusCounts([]);
+      setResponseStats(null);
+      setIndexStats(null);
+      setDepthCounts([]);
+      setContentStats(null);
+      setResponseBuckets([]);
+      setPage(1);
+    }
+    await refreshHistory();
+  };
 
   const openCrawl = async (summary: CrawlSummary) => {
     setCrawl(summary);
@@ -1831,17 +1855,29 @@ export default function Home() {
               <h3>Recent crawls</h3>
               <div className="history-list">
                 {history.slice(0, 8).map((entry) => (
-                  <button
+                  <div
                     key={entry.id}
-                    type="button"
                     className={`history-item${crawl?.id === entry.id ? ' active' : ''}`}
-                    onClick={() => void openCrawl(entry)}
                   >
-                    <span>{seedLabel(entry)}</span>
-                    <small>
-                      {entry.totalUrls} URLs · {entry.status}
-                    </small>
-                  </button>
+                    <button
+                      type="button"
+                      className="history-open"
+                      onClick={() => void openCrawl(entry)}
+                    >
+                      <span>{seedLabel(entry)}</span>
+                      <small>
+                        {entry.totalUrls} URLs · {entry.status}
+                      </small>
+                    </button>
+                    <button
+                      type="button"
+                      className="history-delete"
+                      title="Delete crawl"
+                      onClick={() => void removeCrawl(entry)}
+                    >
+                      ×
+                    </button>
+                  </div>
                 ))}
               </div>
             </div>

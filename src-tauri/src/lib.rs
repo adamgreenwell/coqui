@@ -774,6 +774,14 @@ fn remove_schedule(state: State<'_, AppState>, id: i64) -> Result<usize, String>
 }
 
 #[tauri::command]
+fn delete_crawl(state: State<'_, AppState>, crawl_id: String) -> Result<(), String> {
+    state
+        .store
+        .delete_crawl(&crawl_id)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn list_crawls(state: State<'_, AppState>) -> Result<Vec<serde_json::Value>, String> {
     let crawls = state
         .store
@@ -1241,6 +1249,7 @@ pub fn run() {
             restore_rule,
             app_info,
             list_crawls,
+            delete_crawl,
             response_stats,
             indexability_stats,
             depth_counts,
