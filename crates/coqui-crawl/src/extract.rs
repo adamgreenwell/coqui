@@ -34,6 +34,23 @@ pub struct ExtractedPage {
     pub links: Vec<ExtractedLink>,
 }
 
+pub fn apply_extractors(html: &str, extractors: &[(String, String)]) -> Vec<(String, String)> {
+    let document = Html::parse_document(html);
+    extractors
+        .iter()
+        .filter_map(|(name, css)| {
+            let selector = Selector::parse(css).ok()?;
+            let element = document.select(&selector).next()?;
+            let text = element.text().collect::<String>().trim().to_string();
+            if text.is_empty() {
+                None
+            } else {
+                Some((name.clone(), text))
+            }
+        })
+        .collect()
+}
+
 fn selector(css: &str) -> Selector {
     Selector::parse(css).expect("static selector must be valid")
 }

@@ -59,6 +59,7 @@ impl Args {
             web_vitals: config.web_vitals.unwrap_or(false),
             render_workers: config.render_workers.unwrap_or(2),
             store_text: false,
+            extractors: Vec::new(),
             resume: false,
         }
     }
@@ -83,6 +84,7 @@ struct Args {
     web_vitals: bool,
     render_workers: u32,
     store_text: bool,
+    extractors: Vec<(String, String)>,
     resume: bool,
 }
 
@@ -99,7 +101,7 @@ fn load_config(path: &Path, required: bool) -> Result<FileConfig, String> {
 }
 
 fn usage() -> &'static str {
-    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance] [--out DIR]\n       coqui reports\n       coqui export [--out DIR]"
+    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance] [--out DIR]\n       coqui reports\n       coqui export [--out DIR]\n       coqui extractions [--out DIR]"
 }
 
 fn parse_args(values: &[String], config: &FileConfig) -> Result<Args, String> {
@@ -157,6 +159,15 @@ fn parse_args(values: &[String], config: &FileConfig) -> Result<Args, String> {
             "--a11y" => args.accessibility = true,
             "--vitals" => args.web_vitals = true,
             "--store-text" => args.store_text = true,
+            "--extract" => {
+                index += 1;
+                let value = values.get(index).ok_or("missing --extract value")?;
+                let (name, selector) = value
+                    .split_once('=')
+                    .ok_or("--extract must be NAME=SELECTOR")?;
+                args.extractors
+                    .push((name.trim().to_string(), selector.trim().to_string()));
+            }
             "--user-agent" => {
                 index += 1;
                 args.user_agent = Some(
@@ -325,6 +336,32 @@ fn run_export(values: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn run_extractions(values: &[String]) -> Result<(), String> {
+    let mut out = PathBuf::from("coqui-out");
+    let mut index = 0;
+    while index < values.len() {
+        match values[index].as_str() {
+            "--out" => {
+                index += 1;
+                out = PathBuf::from(values.get(index).ok_or("missing --out value")?);
+            }
+            other => return Err(format!("unknown option '{other}'")),
+        }
+        index += 1;
+    }
+    let store = Store::open(out.join("coqui.db")).map_err(|error| error.to_string())?;
+    let crawl = store
+        .latest_crawl()
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "no crawl found".to_string())?;
+    let path = out.join(format!("extractions-{}.csv", now_ms()));
+    let rows = store
+        .export_extractions_csv(&crawl.id, &path)
+        .map_err(|error| error.to_string())?;
+    println!("extractions: {} ({} rows)", path.display(), rows);
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() {
     let values: Vec<String> = std::env::args().collect();
@@ -340,6 +377,15 @@ async fn main() {
             );
         }
         return;
+    }
+    if values.get(1).map(String::as_str) == Some("extractions") {
+        match run_extractions(&values[2..]) {
+            Ok(()) => return,
+            Err(message) => {
+                eprintln!("{message}");
+                std::process::exit(2);
+            }
+        }
     }
     if values.get(1).map(String::as_str) == Some("export") {
         match run_export(&values[2..]) {
@@ -436,6 +482,11 @@ async fn main() {
         store
             .create_crawl(&crawl_id, &args.seed, &args.kind, &config, now_ms())
             .expect("create crawl");
+        for (name, selector) in &args.extractors {
+            store
+                .add_extractor(&crawl_id, name, selector)
+                .expect("save extractor");
+        }
         println!(
             "coqui: crawling {} ({}) into {}",
             args.seed,
