@@ -11,7 +11,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const SCHEMA_VERSION: i32 = 12;
+pub const SCHEMA_VERSION: i32 = 13;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -293,9 +293,9 @@ impl Store {
                  canonical, meta_robots, redirect_target, redirect_chain, word_count, depth,
                  response_time_ms, size_bytes, error, blocked, hreflang_json, pagination_next,
                  pagination_prev, structured_data_json, console_json, axe_json, vitals_json,
-                 discovered_at)
+                 headers_json, discovered_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
-                     ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)",
+                     ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)",
             params![
                 record.crawl_id,
                 record.url,
@@ -323,6 +323,7 @@ impl Store {
                 serde_json::to_string(&record.console_errors).unwrap_or_else(|_| "[]".into()),
                 serde_json::to_string(&record.axe).unwrap_or_else(|_| "[]".into()),
                 serde_json::to_string(&record.vitals).unwrap_or_else(|_| "null".into()),
+                serde_json::to_string(&record.headers).unwrap_or_else(|_| "[]".into()),
                 record.discovered_at,
             ],
         )?;
@@ -470,7 +471,7 @@ impl Store {
                     canonical, meta_robots, redirect_target, redirect_chain, word_count, depth,
                     response_time_ms, size_bytes, error, discovered_at, blocked, hreflang_json,
                     pagination_next, pagination_prev, structured_data_json, console_json,
-                    axe_json, vitals_json
+                    axe_json, vitals_json, headers_json
              FROM urls WHERE crawl_id = ?1
                AND (?3 IS NULL OR EXISTS (
                     SELECT 1 FROM issues
@@ -499,7 +500,7 @@ impl Store {
                     canonical, meta_robots, redirect_target, redirect_chain, word_count, depth,
                     response_time_ms, size_bytes, error, discovered_at, blocked, hreflang_json,
                     pagination_next, pagination_prev, structured_data_json, console_json,
-                    axe_json, vitals_json
+                    axe_json, vitals_json, headers_json
              FROM urls WHERE crawl_id = ?1 ORDER BY id",
         )?;
         let rows = stmt
@@ -819,6 +820,31 @@ impl Store {
         Ok(links.len() as u64)
     }
 
+    pub fn export_headers_csv(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT url, headers_json FROM urls WHERE crawl_id = ?1 AND headers_json IS NOT NULL",
+        )?;
+        let mut writer = csv::Writer::from_path(path)?;
+        writer.write_record(["url", "name", "value"])?;
+        let mut rows = 0u64;
+        let mut records = stmt.query(params![crawl_id])?;
+        while let Some(row) = records.next()? {
+            let url: String = row.get(0)?;
+            let json: String = row.get(1)?;
+            let headers: Vec<(String, String)> = serde_json::from_str(&json).unwrap_or_default();
+            for (name, value) in headers {
+                writer.write_record([url.clone(), name, value])?;
+                rows += 1;
+            }
+        }
+        writer.flush()?;
+        Ok(rows)
+    }
+
     pub fn export_accessibility_csv(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {
         if let Some(parent) = path.as_ref().parent() {
             std::fs::create_dir_all(parent)?;
@@ -1136,6 +1162,10 @@ fn map_url_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<UrlRecord> {
         vitals: row
             .get::<_, Option<String>>(26)?
             .and_then(|value| serde_json::from_str(&value).ok()),
+        headers: row
+            .get::<_, Option<String>>(27)?
+            .and_then(|value| serde_json::from_str(&value).ok())
+            .unwrap_or_default(),
         discovered_at: row.get(18)?,
     })
 }
@@ -1182,6 +1212,9 @@ fn migrate(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_links_crawl_from ON links (crawl_id, from_id);
          CREATE INDEX IF NOT EXISTS idx_links_crawl_to ON links (crawl_id, to_id);",
     )?;
+    if version < 13 && !has_column(conn, "urls", "headers_json")? {
+        conn.execute("ALTER TABLE urls ADD COLUMN headers_json TEXT", [])?;
+    }
     if version < 12 {
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS lighthouse_reports (
@@ -1297,6 +1330,7 @@ mod tests {
             console_errors: Vec::new(),
             axe: Vec::new(),
             vitals: None,
+            headers: Vec::new(),
             content_type: Some("text/html".into()),
             title: Some("Example".into()),
             meta_description: None,
@@ -1567,6 +1601,7 @@ mod tests {
                     ttfb_ms: 900,
                     fcp_ms: 1200,
                 }),
+                headers: vec![("content-type".into(), "text/html".into())],
                 redirect_target: None,
                 redirect_chain: Vec::new(),
                 word_count: Some(500),
@@ -1594,6 +1629,8 @@ mod tests {
         assert_eq!(store.export_vitals_csv("c1", &vitals).unwrap(), 1);
         let console = dir.join("console.csv");
         assert_eq!(store.export_console_csv("c1", &console).unwrap(), 2);
+        let headers = dir.join("headers.csv");
+        assert_eq!(store.export_headers_csv("c1", &headers).unwrap(), 1);
         let text = std::fs::read_to_string(&accessibility).unwrap();
         assert!(text.contains("image-alt"));
         std::fs::remove_dir_all(dir).ok();
