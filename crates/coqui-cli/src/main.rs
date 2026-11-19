@@ -25,10 +25,11 @@ struct Args {
     accessibility: bool,
     web_vitals: bool,
     render_workers: u32,
+    resume: bool,
 }
 
 fn usage() -> &'static str {
-    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots]"
+    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]"
 }
 
 fn parse_args(values: &[String]) -> Result<Args, String> {
@@ -60,6 +61,7 @@ fn parse_args(values: &[String]) -> Result<Args, String> {
         accessibility: false,
         web_vitals: false,
         render_workers: 2,
+        resume: false,
     };
     let mut index = 4;
     while index < values.len() {
@@ -142,6 +144,56 @@ fn parse_args(values: &[String]) -> Result<Args, String> {
     Ok(args)
 }
 
+fn parse_resume(values: &[String]) -> Result<Args, String> {
+    let mut args = Args {
+        kind: String::new(),
+        seed: String::new(),
+        out: PathBuf::from("coqui-out"),
+        max_urls: 0,
+        depth: 0,
+        concurrency: 0,
+        respect_robots: true,
+        user_agent: None,
+        headers: Vec::new(),
+        auth: None,
+        timeout_ms: 20_000,
+        render: false,
+        screenshots: false,
+        accessibility: false,
+        web_vitals: false,
+        render_workers: 2,
+        resume: true,
+    };
+    let mut index = 2;
+    while index < values.len() {
+        match values[index].as_str() {
+            "--out" => {
+                index += 1;
+                args.out = PathBuf::from(values.get(index).ok_or("missing --out value")?);
+            }
+            "--max-urls" => {
+                index += 1;
+                args.max_urls = values
+                    .get(index)
+                    .ok_or("missing --max-urls value")?
+                    .parse()
+                    .map_err(|_| "invalid --max-urls".to_string())?;
+            }
+            "--concurrency" => {
+                index += 1;
+                args.concurrency = values
+                    .get(index)
+                    .ok_or("missing --concurrency value")?
+                    .parse()
+                    .map_err(|_| "invalid --concurrency".to_string())?;
+            }
+            other => return Err(format!("unknown option '{other}'\n{}", usage())),
+        }
+        index += 1;
+    }
+    Ok(args)
+}
+
 #[tokio::main]
 async fn main() {
     let values: Vec<String> = std::env::args().collect();
@@ -149,7 +201,12 @@ async fn main() {
         println!("coqui {}", env!("CARGO_PKG_VERSION"));
         return;
     }
-    let args = match parse_args(&values) {
+    let parsed = if values.get(1).map(String::as_str) == Some("resume") {
+        parse_resume(&values)
+    } else {
+        parse_args(&values)
+    };
+    let args = match parsed {
         Ok(args) => args,
         Err(message) => {
             eprintln!("{message}");
@@ -160,38 +217,55 @@ async fn main() {
     std::fs::create_dir_all(&args.out).expect("create output directory");
     let db = args.out.join("coqui.db");
     let store = Arc::new(Store::open(&db).expect("open crawl store"));
-    let crawl_id = format!("cli-{}", now_ms());
-    let mut config = CrawlConfig {
-        max_depth: args.depth,
-        max_urls: args.max_urls,
-        concurrency: args.concurrency,
-        respect_robots: args.respect_robots,
-        request_timeout_ms: args.timeout_ms,
-        custom_headers: args.headers.clone(),
-        render: args.render,
-        screenshots: args.screenshots,
-        accessibility: args.accessibility,
-        web_vitals: args.web_vitals,
-        render_workers: args.render_workers,
-        ..CrawlConfig::default()
+    let (crawl_id, kind, seed, config, checkpoint) = if args.resume {
+        let latest = store
+            .latest_crawl()
+            .expect("read crawls")
+            .expect("no crawl to resume");
+        let mut config = latest.config.clone();
+        if args.max_urls > 0 {
+            config.max_urls = args.max_urls;
+        }
+        if args.concurrency > 0 {
+            config.concurrency = args.concurrency;
+        }
+        let checkpoint = store.load_checkpoint(&latest.id).expect("load checkpoint");
+        println!("coqui: resuming {} in {}", latest.id, db.display());
+        (latest.id, latest.seed_kind, latest.seed, config, checkpoint)
+    } else {
+        let crawl_id = format!("cli-{}", now_ms());
+        let mut config = CrawlConfig {
+            max_depth: args.depth,
+            max_urls: args.max_urls,
+            concurrency: args.concurrency,
+            respect_robots: args.respect_robots,
+            request_timeout_ms: args.timeout_ms,
+            custom_headers: args.headers.clone(),
+            render: args.render,
+            screenshots: args.screenshots,
+            accessibility: args.accessibility,
+            web_vitals: args.web_vitals,
+            render_workers: args.render_workers,
+            ..CrawlConfig::default()
+        };
+        if let Some(user_agent) = &args.user_agent {
+            config.user_agent = user_agent.clone();
+        }
+        if let Some((user, password)) = &args.auth {
+            config.auth_user = Some(user.clone());
+            config.auth_password = Some(password.clone());
+        }
+        store
+            .create_crawl(&crawl_id, &args.seed, &args.kind, &config, now_ms())
+            .expect("create crawl");
+        println!(
+            "coqui: crawling {} ({}) into {}",
+            args.seed,
+            args.kind,
+            db.display()
+        );
+        (crawl_id, args.kind.clone(), args.seed.clone(), config, None)
     };
-    if let Some(user_agent) = &args.user_agent {
-        config.user_agent = user_agent.clone();
-    }
-    if let Some((user, password)) = &args.auth {
-        config.auth_user = Some(user.clone());
-        config.auth_password = Some(password.clone());
-    }
-    store
-        .create_crawl(&crawl_id, &args.seed, &args.kind, &config, now_ms())
-        .expect("create crawl");
-
-    println!(
-        "coqui: crawling {} ({}) into {}",
-        args.seed,
-        args.kind,
-        db.display()
-    );
     let started = std::time::Instant::now();
     let result = coqui_crawl::run_crawl(
         store.clone(),
@@ -308,5 +382,20 @@ mod tests {
     #[test]
     fn rejects_unknown_kind() {
         assert!(parse_args(&args(&["crawl", "ftp", "x"])).is_err());
+    }
+
+    #[test]
+    fn parses_resume() {
+        let parsed = parse_resume(&args(&[
+            "resume",
+            "--out",
+            "crawls/example",
+            "--max-urls",
+            "25",
+        ]))
+        .unwrap();
+        assert!(parsed.resume);
+        assert_eq!(parsed.out, PathBuf::from("crawls/example"));
+        assert_eq!(parsed.max_urls, 25);
     }
 }
