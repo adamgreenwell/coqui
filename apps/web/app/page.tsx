@@ -498,6 +498,17 @@ export default function Home() {
     })();
   }, [isTauri, crawl?.id, phase]);
 
+  const clearFilters = () => {
+    setQueryInput('');
+    setStatusFilter('');
+    setContentFilter('');
+    setMaxDepthFilter('');
+    setIndexFilter('');
+    setActiveIssue(null);
+    setPage(1);
+    if (crawl) void loadPage(crawl.id, 1, null);
+  };
+
   const openDetail = async (row: UrlRow) => {
     try {
       const { invoke } = await import('@tauri-apps/api/core');
@@ -930,6 +941,15 @@ export default function Home() {
     }
     return totals;
   }, [issues]);
+
+  const activeFilterCount = [
+    queryInput.trim(),
+    statusFilter,
+    contentFilter,
+    maxDepthFilter.trim(),
+    indexFilter,
+    activeIssue ?? '',
+  ].filter(Boolean).length;
 
   function cell(row: UrlRow, key: ColumnKey) {
     switch (key) {
@@ -2063,6 +2083,14 @@ export default function Home() {
                   disabled={!viewSelected}
                 >
                   Delete view
+                </button>
+                <button
+                  className="secondary"
+                  type="button"
+                  onClick={clearFilters}
+                  disabled={activeFilterCount === 0}
+                >
+                  Clear filters ({activeFilterCount})
                 </button>
                 <div className="columns-wrap">
                   <button
