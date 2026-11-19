@@ -30,6 +30,8 @@ The harness:
 
 Streaming CSV export: 50,000 rows in 0.044 s (2.12 MB output) from the 50k crawl database.
 
+Synthetic 1M-row export: a 1,000,000-row crawl database (176.3 MB) exported in **0.625 s** to a 42.7 MB CSV via `coqui export`. The exporter streams row-by-row, so memory stays bounded by the SQLite cursor rather than the result set.
+
 Node v26.13.1, debug build, concurrency 8. Rendered runs use `--render --screenshots --a11y --vitals`.
 
 ## Notes
