@@ -188,6 +188,33 @@ const ISSUE_LABELS: Record<string, string> = {
   long_blocking_time: 'Long blocking time',
 };
 
+const ISSUE_DESCRIPTIONS: Record<string, string> = {
+  missing_title: 'The page has no <title>.',
+  title_too_long: 'Title exceeds the recommended pixel width.',
+  title_too_short: 'Title is shorter than the recommended length.',
+  missing_meta_description: 'No meta description is present.',
+  meta_description_too_long: 'Meta description exceeds the recommended length.',
+  multiple_h1: 'More than one H1 heading was found.',
+  missing_h1: 'No H1 heading was found.',
+  thin_content: 'The page has very little body text.',
+  broken_internal_link: 'An internal link points to a 4xx/5xx response.',
+  canonical_mismatch: 'The canonical URL does not match the crawled URL.',
+  missing_canonical: 'No canonical link element was found.',
+  duplicate_title: 'Another page uses the same title.',
+  duplicate_meta_description: 'Another page uses the same meta description.',
+  hreflang_missing_return: 'The hreflang target does not link back.',
+  hreflang_invalid_target: 'An hreflang target could not be reached.',
+  pagination_broken: 'A pagination link is broken.',
+  jsonld_malformed: 'The JSON-LD block could not be parsed.',
+  jsonld_missing_required: 'Structured data is missing required properties.',
+  jsonld_missing: 'No JSON-LD structured data was found.',
+  accessibility_violations: 'axe reported accessibility violations.',
+  poor_lcp: 'Largest Contentful Paint is above the good threshold.',
+  layout_shift: 'Cumulative Layout Shift is above the good threshold.',
+  slow_ttfb: 'Time to First Byte is above the good threshold.',
+  long_blocking_time: 'Total Blocking Time is above the good threshold.',
+};
+
 const STATUS_LABEL: Record<string, string> = {
   idle: 'Ready',
   pending: 'Starting',
@@ -2022,6 +2049,7 @@ export default function Home() {
                       className={`issue-card ${issue.severity} ${
                         activeIssue === issue.rule ? 'active' : ''
                       }`}
+                      title={ISSUE_DESCRIPTIONS[issue.rule] ?? issue.rule}
                       onClick={() => filterByIssue(issue.rule)}
                     >
                       <span className="issue-count">{issue.count}</span>
