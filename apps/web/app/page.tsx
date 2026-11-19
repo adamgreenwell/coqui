@@ -179,6 +179,7 @@ const ISSUE_LABELS: Record<string, string> = {
   duplicate_content: 'Duplicate content',
   duplicate_h1: 'Duplicate H1',
   nofollow_internal_link: 'Nofollow internal link',
+  mixed_content: 'Mixed content',
   misspelling: 'Possible misspelling',
   title_too_short: 'Title too short',
   meta_description_too_long: 'Meta description too long',
@@ -240,6 +241,7 @@ const ISSUE_DESCRIPTIONS: Record<string, string> = {
   duplicate_content: 'Another page has near-identical body content.',
   duplicate_h1: 'Another page uses the same H1 heading.',
   nofollow_internal_link: 'An internal link is marked nofollow.',
+  mixed_content: 'An HTTPS page loads an HTTP image.',
   misspelling: 'Stored page text contains a common misspelling.',
   hreflang_missing_return: 'The hreflang target does not link back.',
   hreflang_invalid_target: 'An hreflang target could not be reached.',
@@ -3109,6 +3111,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 
