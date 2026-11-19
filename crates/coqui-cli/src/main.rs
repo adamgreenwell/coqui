@@ -329,6 +329,47 @@ fn run_report(values: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+const EXPORT_FAMILIES: &[&str] = &[
+    "urls",
+    "issues",
+    "links",
+    "headers",
+    "images",
+    "a11y",
+    "structured",
+    "vitals",
+    "console",
+    "text",
+    "markdown",
+    "extractions",
+    "custom-js",
+];
+
+fn export_one(
+    store: &Store,
+    crawl_id: &str,
+    family: &str,
+    path: &std::path::Path,
+) -> Result<u64, String> {
+    match family {
+        "urls" => store.export_urls_csv(crawl_id, path, &[], None),
+        "issues" => store.export_issues_csv(crawl_id, path),
+        "links" => store.export_links_csv(crawl_id, path),
+        "headers" => store.export_headers_csv(crawl_id, path),
+        "images" => store.export_images_csv(crawl_id, path),
+        "a11y" => store.export_accessibility_csv(crawl_id, path),
+        "structured" => store.export_structured_data_csv(crawl_id, path),
+        "vitals" => store.export_vitals_csv(crawl_id, path),
+        "console" => store.export_console_csv(crawl_id, path),
+        "text" => store.export_text_csv(crawl_id, path),
+        "markdown" => store.export_markdown_csv(crawl_id, path),
+        "extractions" => store.export_extractions_csv(crawl_id, path),
+        "custom-js" => store.export_custom_js_csv(crawl_id, path),
+        other => return Err(format!("unknown export family '{other}'")),
+    }
+    .map_err(|error| error.to_string())
+}
+
 fn run_export(values: &[String]) -> Result<(), String> {
     let mut out = PathBuf::from("coqui-out");
     let mut family = "urls".to_string();
@@ -356,48 +397,17 @@ fn run_export(values: &[String]) -> Result<(), String> {
     let started = std::time::Instant::now();
     let write = |family: &str| -> Result<(PathBuf, u64), String> {
         let path = out.join(format!("{family}-{stamp}.csv"));
-        let rows = match family {
-            "urls" => store.export_urls_csv(&crawl.id, &path, &[], None),
-            "issues" => store.export_issues_csv(&crawl.id, &path),
-            "links" => store.export_links_csv(&crawl.id, &path),
-            "headers" => store.export_headers_csv(&crawl.id, &path),
-            "images" => store.export_images_csv(&crawl.id, &path),
-            "a11y" => store.export_accessibility_csv(&crawl.id, &path),
-            "structured" => store.export_structured_data_csv(&crawl.id, &path),
-            "vitals" => store.export_vitals_csv(&crawl.id, &path),
-            "console" => store.export_console_csv(&crawl.id, &path),
-            "text" => store.export_text_csv(&crawl.id, &path),
-            "markdown" => store.export_markdown_csv(&crawl.id, &path),
-            "extractions" => store.export_extractions_csv(&crawl.id, &path),
-            "custom-js" => store.export_custom_js_csv(&crawl.id, &path),
-            other => return Err(format!("unknown export family '{other}'")),
-        }
-        .map_err(|error| error.to_string())?;
+        let rows = export_one(&store, &crawl.id, family, &path)?;
         Ok((path, rows))
     };
-    const FAMILIES: &[&str] = &[
-        "urls",
-        "issues",
-        "links",
-        "headers",
-        "images",
-        "a11y",
-        "structured",
-        "vitals",
-        "console",
-        "text",
-        "markdown",
-        "extractions",
-        "custom-js",
-    ];
     if family == "all" {
-        for name in FAMILIES {
+        for name in EXPORT_FAMILIES {
             let (path, rows) = write(name)?;
             println!("export {name}: {} ({rows} rows)", path.display());
         }
         println!(
             "export all: {} families in {:.3}s",
-            FAMILIES.len(),
+            EXPORT_FAMILIES.len(),
             started.elapsed().as_secs_f64()
         );
         return Ok(());
@@ -847,23 +857,20 @@ fn call_tool(
                 .and_then(|value| value.as_str())
                 .map(PathBuf::from)
                 .unwrap_or_else(|| out.join(format!("{family}-{}.csv", now_ms())));
-            let rows = match family {
-                "urls" => store.export_urls_csv(&crawl_id_value, &path, &[], None),
-                "issues" => store.export_issues_csv(&crawl_id_value, &path),
-                "links" => store.export_links_csv(&crawl_id_value, &path),
-                "headers" => store.export_headers_csv(&crawl_id_value, &path),
-                "images" => store.export_images_csv(&crawl_id_value, &path),
-                "a11y" => store.export_accessibility_csv(&crawl_id_value, &path),
-                "structured" => store.export_structured_data_csv(&crawl_id_value, &path),
-                "vitals" => store.export_vitals_csv(&crawl_id_value, &path),
-                "console" => store.export_console_csv(&crawl_id_value, &path),
-                "text" => store.export_text_csv(&crawl_id_value, &path),
-                "markdown" => store.export_markdown_csv(&crawl_id_value, &path),
-                "extractions" => store.export_extractions_csv(&crawl_id_value, &path),
-                "custom-js" => store.export_custom_js_csv(&crawl_id_value, &path),
-                other => return Err(format!("unknown export family '{other}'")),
+            if family == "all" {
+                let mut results = Vec::new();
+                for name in EXPORT_FAMILIES {
+                    let path = out.join(format!("{name}-{}.csv", now_ms()));
+                    let rows = export_one(&store, &crawl_id_value, name, &path)?;
+                    results.push(serde_json::json!({
+                        "family": name,
+                        "path": path.to_string_lossy(),
+                        "rows": rows,
+                    }));
+                }
+                return Ok(serde_json::json!({"families": results}));
             }
-            .map_err(|error| error.to_string())?;
+            let rows = export_one(&store, &crawl_id_value, family, &path)?;
             Ok(serde_json::json!({
                 "path": path.to_string_lossy(),
                 "rows": rows,
