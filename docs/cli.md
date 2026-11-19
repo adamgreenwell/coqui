@@ -7,7 +7,8 @@ Headless crawler using the same engine, store and audit rules as the desktop app
 ```bash
 coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots] [--user-agent UA] [--header "Name: value"] [--auth user:pass] [--timeout-ms N] [--render] [--screenshots] [--a11y] [--vitals] [--render-workers N]
 coqui resume [--out DIR] [--max-urls N] [--concurrency N]
-coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR] [--top N] [--status CODE]
+coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR]
+coqui report compare --with <crawl id> [--out DIR] [--top N] [--status CODE]
 coqui reports
 coqui export [--out DIR]
 coqui extractions [--out DIR]
@@ -118,6 +119,7 @@ Supports URL/sitemap/list seeds, crawl limits, user agent, custom headers, basic
 ## Custom JavaScript
 
 `--js EXPR` (repeatable) evaluates JavaScript in each rendered page after load; requires `--render`. Results are stored per URL and exported as Custom JS results (`custom-js`) in the app. Verified: `--js "document.title"` returned "Rendered title" on the JS fixture.
+
 
 
 
