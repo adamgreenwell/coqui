@@ -584,6 +584,40 @@ impl Store {
         Ok((0..limit).map(|index| urls[index * step].clone()).collect())
     }
 
+    pub fn export_screenshots(&self, crawl_id: &str, directory: impl AsRef<Path>) -> Result<u64> {
+        let directory = directory.as_ref();
+        std::fs::create_dir_all(directory)?;
+        let rows: Vec<(String, i64, String)> = {
+            let conn = self.lock()?;
+            let mut stmt = conn.prepare(
+                "SELECT u.url, s.url_id, s.path FROM screenshot_files s
+                 JOIN urls u ON u.id = s.url_id AND u.crawl_id = s.crawl_id
+                 WHERE s.crawl_id = ?1 ORDER BY s.url_id",
+            )?;
+            let rows = stmt
+                .query_map(params![crawl_id], |row| {
+                    Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+                })?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            rows
+        };
+        let mut manifest = csv::Writer::from_path(directory.join("screenshots.csv"))?;
+        manifest.write_record(["url", "file"])?;
+        let mut copied = 0u64;
+        for (url, url_id, relative) in rows {
+            let source = self.root.join(&relative);
+            if !source.exists() {
+                continue;
+            }
+            let file = format!("{url_id}.jpg");
+            std::fs::copy(&source, directory.join(&file))?;
+            manifest.write_record([url, file])?;
+            copied += 1;
+        }
+        manifest.flush()?;
+        Ok(copied)
+    }
+
     pub fn save_lighthouse(&self, crawl_id: &str, url_id: i64, summary_json: &str) -> Result<()> {
         self.lock()?.execute(
             "INSERT OR REPLACE INTO lighthouse_reports (crawl_id, url_id, summary_json, created_at)
@@ -1463,6 +1497,10 @@ mod tests {
             Some(bytes.as_slice())
         );
         assert!(dir.join("screenshots/c1/7.jpg").exists());
+        let bundle = dir.join("bundle");
+        assert_eq!(store.export_screenshots("c1", &bundle).unwrap(), 1);
+        assert!(bundle.join("7.jpg").exists());
+        assert!(bundle.join("screenshots.csv").exists());
         std::fs::remove_dir_all(dir).ok();
     }
 
