@@ -183,6 +183,8 @@ const ISSUE_LABELS: Record<string, string> = {
   meta_description_too_short: 'Meta description too short',
   url_too_long: 'URL too long',
   image_missing_alt: 'Image missing alt text',
+  noindex_page: 'Noindex page',
+  non_https: 'Non-HTTPS URL',
   hreflang_missing_return: 'Hreflang missing return link',
   hreflang_invalid_target: 'Hreflang target not reachable',
   pagination_broken: 'Broken pagination link',
@@ -205,6 +207,8 @@ const ISSUE_DESCRIPTIONS: Record<string, string> = {
   meta_description_too_short: 'Meta description is shorter than the recommended length.',
   url_too_long: 'URL exceeds the recommended length.',
   image_missing_alt: 'One or more images have no alt text.',
+  noindex_page: 'The page is blocked from indexing by meta robots.',
+  non_https: 'The URL uses HTTP rather than HTTPS.',
   multiple_h1: 'More than one H1 heading was found.',
   missing_h1: 'No H1 heading was found.',
   thin_content: 'The page has very little body text.',
@@ -3083,6 +3087,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 

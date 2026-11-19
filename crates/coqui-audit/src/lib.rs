@@ -136,6 +136,16 @@ pub const RULES: &[RuleDef] = &[
         severity: IssueSeverity::Warning,
     },
     RuleDef {
+        id: "noindex_page",
+        label: "Noindex page",
+        severity: IssueSeverity::Warning,
+    },
+    RuleDef {
+        id: "non_https",
+        label: "Non-HTTPS URL",
+        severity: IssueSeverity::Opportunity,
+    },
+    RuleDef {
         id: "hreflang_missing_return",
         label: "Hreflang missing return link",
         severity: IssueSeverity::Warning,
@@ -406,6 +416,21 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
                         Some(format!("{} pages share this description", group.len())),
                     )?;
                 }
+            }
+        }
+
+        if url.url.starts_with("http://") {
+            issue(store, crawl_id, &url.url, "non_https", None)?;
+        }
+        if let Some(robots) = url.meta_robots.as_deref() {
+            if robots.to_ascii_lowercase().contains("noindex") {
+                issue(
+                    store,
+                    crawl_id,
+                    &url.url,
+                    "noindex_page",
+                    Some(robots.to_string()),
+                )?;
             }
         }
 
@@ -975,6 +1000,32 @@ mod tests {
         let counts = analyze_crawl(&store, id).unwrap();
         let by_rule: HashMap<_, _> = counts.iter().map(|c| (c.rule.as_str(), c.count)).collect();
         assert_eq!(by_rule.get("image_missing_alt"), Some(&1));
+    }
+
+    #[test]
+    fn flags_http_urls() {
+        let store = Store::open_in_memory().unwrap();
+        let id = "http";
+        store
+            .create_crawl(
+                id,
+                "http://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        add_url(
+            &store,
+            id,
+            "http://example.com/page",
+            Some("A perfectly reasonable title"),
+            1,
+            600,
+        );
+        let counts = analyze_crawl(&store, id).unwrap();
+        let by_rule: HashMap<_, _> = counts.iter().map(|c| (c.rule.as_str(), c.count)).collect();
+        assert_eq!(by_rule.get("non_https"), Some(&1));
     }
 }
 
