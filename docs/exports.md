@@ -13,6 +13,7 @@ Coqui exports the current results grid and the crawl's bulk data.
 | Images | CSV |
 | Page text | CSV (requires store text) |
 | Page Markdown | CSV (requires store text) |
+| Custom JS results | CSV (url, script index, JSON value; requires render + custom JS) |
 | Custom extraction | CSV; `selector` or `selector@attr` (e.g. `a@href`); multiple matches joined with ` \| ` |
 | Accessibility violations | CSV |
 | Structured data | CSV |
@@ -59,6 +60,7 @@ With **Skip empty** enabled, an export with zero rows is discarded and no path i
 Sitemaps include `<lastmod>` parsed from each page's `Last-Modified` header when present. Bundles split at 50,000 URLs, write `sitemap-index.xml` pointing at `sitemap-N.xml.gz`, and gzip each part. Single sitemap generation includes only 200 responses without `noindex`, caps at 50,000 URLs, and emits `<image:image>` entries from the image inventory.
 
 URL CSV exports stream row-by-row from SQLite, so they do not hold the crawl in memory. XLSX exports and the data exports (headers, images, a11y, structured, vitals, console) still materialise their rows.
+
 
 
 

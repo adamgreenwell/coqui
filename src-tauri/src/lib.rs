@@ -822,6 +822,10 @@ fn export_view(
             .store
             .export_text_csv(&crawl_id, &path)
             .map_err(|error| error.to_string())?,
+        ("custom-js", _) => state
+            .store
+            .export_custom_js_csv(&crawl_id, &path)
+            .map_err(|error| error.to_string())?,
         ("extractions", _) => state
             .store
             .export_extractions_csv(&crawl_id, &path)

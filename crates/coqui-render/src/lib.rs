@@ -43,6 +43,7 @@ pub struct RenderOptions {
     pub wait_dom: bool,
     pub block_patterns: Vec<String>,
     pub accessibility: bool,
+    pub custom_js: Vec<String>,
     pub web_vitals: bool,
 }
 
@@ -53,6 +54,7 @@ pub struct RenderOutput {
     pub console: Vec<String>,
     pub axe: Vec<AxeViolation>,
     pub vitals: Option<WebVitals>,
+    pub custom_js: Vec<Value>,
 }
 
 /// A multiplexed CDP connection: concurrent calls are correlated by id, events are broadcast.
@@ -459,12 +461,53 @@ impl Renderer {
             .and_then(Value::as_str)
             .map(str::to_string)
             .ok_or_else(|| RenderError::Protocol("no rendered HTML".into()))?;
+        let mut custom_js = Vec::new();
+        for (index, expression) in self.options.custom_js.iter().enumerate() {
+            let value = self
+                .client
+                .call(
+                    "Runtime.evaluate",
+                    json!({
+                        "expression": expression,
+                        "returnByValue": true,
+                        "awaitPromise": true
+                    }),
+                    Some(&session),
+                )
+                .await;
+            match value {
+                Ok(value) => {
+                    if let Some(exception) = value.get("exceptionDetails") {
+                        custom_js.push(json!({
+                            "index": index,
+                            "error": exception
+                                .get("text")
+                                .cloned()
+                                .unwrap_or_else(|| json!("exception")),
+                        }));
+                    } else {
+                        custom_js.push(
+                            value
+                                .get("result")
+                                .and_then(|result| result.get("value"))
+                                .cloned()
+                                .unwrap_or(Value::Null),
+                        );
+                    }
+                }
+                Err(error) => custom_js.push(json!({
+                    "index": index,
+                    "error": error.to_string(),
+                })),
+            }
+        }
         Ok(RenderOutput {
             html,
             screenshot,
             console,
             axe,
             vitals,
+            custom_js,
         })
     }
 }

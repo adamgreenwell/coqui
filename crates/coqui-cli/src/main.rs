@@ -61,6 +61,7 @@ impl Args {
             render_workers: config.render_workers.unwrap_or(2),
             store_text: false,
             extractors: Vec::new(),
+            custom_js: Vec::new(),
             resume: false,
         }
     }
@@ -86,6 +87,7 @@ struct Args {
     render_workers: u32,
     store_text: bool,
     extractors: Vec<(String, String)>,
+    custom_js: Vec<String>,
     resume: bool,
 }
 
@@ -160,6 +162,11 @@ fn parse_args(values: &[String], config: &FileConfig) -> Result<Args, String> {
             "--a11y" => args.accessibility = true,
             "--vitals" => args.web_vitals = true,
             "--store-text" => args.store_text = true,
+            "--js" => {
+                index += 1;
+                args.custom_js
+                    .push(values.get(index).ok_or("missing --js value")?.clone());
+            }
             "--extract" => {
                 index += 1;
                 let value = values.get(index).ok_or("missing --extract value")?;
@@ -1156,6 +1163,7 @@ async fn main() {
             accessibility: args.accessibility,
             web_vitals: args.web_vitals,
             store_text: args.store_text,
+            custom_js: args.custom_js.clone(),
             render_workers: args.render_workers,
             ..CrawlConfig::default()
         };

@@ -73,6 +73,7 @@ struct FetchOutcome {
     axe: Vec<coqui_core::AxeViolation>,
     vitals: Option<coqui_core::WebVitals>,
     headers: Vec<(String, String)>,
+    custom_js: Vec<serde_json::Value>,
 }
 
 /// Run a crawl to completion (or cancellation).
@@ -261,6 +262,7 @@ pub async fn run_crawl(
             wait_dom: config.render_early,
             block_patterns: config.render_block_patterns.clone(),
             accessibility: config.accessibility,
+            custom_js: config.custom_js.clone(),
             web_vitals: config.web_vitals,
         };
         Some(
@@ -427,6 +429,9 @@ pub async fn run_crawl(
                     for (name, value) in extract::apply_extractors(body, &extractors) {
                         store.save_extraction(&crawl_id, page_id, &name, &value)?;
                     }
+                }
+                if !outcome.custom_js.is_empty() {
+                    store.save_custom_js(&crawl_id, page_id, &outcome.custom_js)?;
                 }
                 if let Some(page) = extracted {
                     store.replace_images(&crawl_id, page_id, &page.images)?;
@@ -630,6 +635,7 @@ async fn fetch(
                     screenshot: None,
                     axe: Vec::new(),
                     vitals: None,
+                    custom_js: Vec::new(),
                     headers: Vec::new(),
                 };
             }
@@ -717,6 +723,7 @@ async fn fetch(
                         screenshot: None,
                         axe: Vec::new(),
                         vitals: None,
+                        custom_js: Vec::new(),
                         headers: header_pairs,
                     };
                 }
@@ -726,6 +733,7 @@ async fn fetch(
         let mut console = Vec::new();
         let mut screenshot = None;
         let mut axe = Vec::new();
+        let mut custom_js: Vec<serde_json::Value> = Vec::new();
         let mut vitals = None;
         let blocked = looks_blocked(status, &response_headers, body.as_deref());
         if !blocked {
@@ -738,6 +746,7 @@ async fn fetch(
                             console = rendered.console;
                             screenshot = rendered.screenshot;
                             axe = rendered.axe;
+                            custom_js = rendered.custom_js;
                             vitals = rendered.vitals;
                         }
                         Err(error) => {
@@ -764,6 +773,7 @@ async fn fetch(
             axe,
             vitals,
             headers: header_pairs,
+            custom_js,
         };
     }
 
@@ -781,6 +791,7 @@ async fn fetch(
         screenshot: None,
         axe: Vec::new(),
         vitals: None,
+        custom_js: Vec::new(),
         headers: Vec::new(),
     }
 }

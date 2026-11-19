@@ -742,6 +742,52 @@ impl Store {
         Ok(changed)
     }
 
+    pub fn save_custom_js(
+        &self,
+        crawl_id: &str,
+        url_id: i64,
+        values: &[serde_json::Value],
+    ) -> Result<()> {
+        let conn = self.lock()?;
+        conn.execute(
+            "DELETE FROM custom_js WHERE crawl_id = ?1 AND url_id = ?2",
+            params![crawl_id, url_id],
+        )?;
+        let mut stmt = conn.prepare(
+            "INSERT OR REPLACE INTO custom_js (crawl_id, url_id, script_index, value_json)
+             VALUES (?1, ?2, ?3, ?4)",
+        )?;
+        for (index, value) in values.iter().enumerate() {
+            stmt.execute(params![crawl_id, url_id, index as i64, value.to_string()])?;
+        }
+        Ok(())
+    }
+
+    pub fn export_custom_js_csv(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT u.url, c.script_index, c.value_json FROM custom_js c
+             JOIN urls u ON u.id = c.url_id AND u.crawl_id = c.crawl_id
+             WHERE c.crawl_id = ?1 ORDER BY u.url, c.script_index",
+        )?;
+        let mut writer = csv::Writer::from_path(path)?;
+        writer.write_record(["url", "script", "value"])?;
+        let mut rows = 0u64;
+        let mut records = stmt.query(params![crawl_id])?;
+        while let Some(row) = records.next()? {
+            let url: String = row.get(0)?;
+            let index: i64 = row.get(1)?;
+            let value: String = row.get(2)?;
+            writer.write_record([url, index.to_string(), value])?;
+            rows += 1;
+        }
+        writer.flush()?;
+        Ok(rows)
+    }
+
     pub fn save_extraction(
         &self,
         crawl_id: &str,
@@ -1609,6 +1655,7 @@ impl Store {
         let _ = std::fs::remove_dir_all(self.root.join("screenshots").join(id));
         conn.execute("DELETE FROM screenshots WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM images WHERE crawl_id = ?1", params![id])?;
+        conn.execute("DELETE FROM custom_js WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM page_text WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM extractions WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM extractors WHERE crawl_id = ?1", params![id])?;
@@ -1715,6 +1762,17 @@ fn migrate(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_links_crawl_from ON links (crawl_id, from_id);
          CREATE INDEX IF NOT EXISTS idx_links_crawl_to ON links (crawl_id, to_id);",
     )?;
+    if version < 19 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS custom_js (
+                crawl_id     TEXT NOT NULL,
+                url_id       INTEGER NOT NULL,
+                script_index INTEGER NOT NULL,
+                value_json   TEXT NOT NULL,
+                PRIMARY KEY (crawl_id, url_id, script_index)
+            );",
+        )?;
+    }
     if version < 18 {
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS schedules (
@@ -1761,6 +1819,14 @@ CREATE TABLE IF NOT EXISTS extractions (
     name     TEXT NOT NULL,
     value    TEXT NOT NULL,
     PRIMARY KEY (crawl_id, url_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS custom_js (
+    crawl_id     TEXT NOT NULL,
+    url_id       INTEGER NOT NULL,
+    script_index INTEGER NOT NULL,
+    value_json   TEXT NOT NULL,
+    PRIMARY KEY (crawl_id, url_id, script_index)
 );
 
 CREATE TABLE IF NOT EXISTS page_text (

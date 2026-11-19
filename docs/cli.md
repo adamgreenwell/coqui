@@ -113,3 +113,8 @@ Supports URL/sitemap/list seeds, crawl limits, user agent, custom headers, basic
 
 
 
+
+
+## Custom JavaScript
+
+`--js EXPR` (repeatable) evaluates JavaScript in each rendered page after load; requires `--render`. Results are stored per URL and exported as Custom JS results (`custom-js`) in the app. Verified: `--js "document.title"` returned "Rendered title" on the JS fixture.
