@@ -17,6 +17,12 @@ Coqui exports the current results grid and the crawl's bulk data.
 | Console errors | CSV |
 | Screenshots | folder bundle (JPEGs + `screenshots.csv`) |
 
+## Catalogue
+
+`coqui exports` lists the named export catalogue (`id`, `format`, `label`, description). The same catalogue is exposed to the app as the `export_catalog` Tauri command, so menus can be generated instead of hard-coded.
+
+IDs currently include: `urls-csv`, `urls-xlsx`, `issues-csv`, `issues-xlsx`, `links-csv`, `links-xlsx`, `headers-csv`, `images-csv`, `accessibility-csv`, `structured-csv`, `vitals-csv`, `console-csv`, `screenshots`.
+
 ## Filename patterns
 
 The pattern field accepts:
@@ -44,4 +50,5 @@ With **Skip empty** enabled, an export with zero rows is discarded and no path i
 ## Limits
 
 URL CSV exports stream row-by-row from SQLite, so they do not hold the crawl in memory. XLSX exports and the data exports (headers, images, a11y, structured, vitals, console) still materialise their rows.
+
 

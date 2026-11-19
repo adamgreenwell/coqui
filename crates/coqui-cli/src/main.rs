@@ -242,6 +242,15 @@ async fn main() {
         println!("coqui {}", env!("CARGO_PKG_VERSION"));
         return;
     }
+    if values.get(1).map(String::as_str) == Some("exports") {
+        for entry in coqui_core::export_catalog() {
+            println!(
+                "{}\\t{}\\t{}\\t{}",
+                entry.id, entry.format, entry.label, entry.description
+            );
+        }
+        return;
+    }
     let explicit_config = values.windows(2).any(|pair| pair[0] == "--config");
     let config_path = values
         .windows(2)
@@ -324,12 +333,12 @@ async fn main() {
     let result = coqui_crawl::run_crawl(
         store.clone(),
         crawl_id.clone(),
-        args.kind.clone(),
-        args.seed.clone(),
+        kind.clone(),
+        seed.clone(),
         config,
         CancellationToken::new(),
         Arc::new(AtomicBool::new(false)),
-        None,
+        checkpoint,
         Arc::new(|progress: CrawlProgress| {
             if progress.crawled % 250 == 0 {
                 println!(
