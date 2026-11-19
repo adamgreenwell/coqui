@@ -204,6 +204,11 @@ pub struct Store {
 }
 
 impl Store {
+    /// Directory holding the database and crawl artifacts.
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         let root = path
