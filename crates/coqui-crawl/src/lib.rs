@@ -253,6 +253,8 @@ pub async fn run_crawl(
             headers,
             cookies,
             screenshot: config.screenshots,
+            block_assets: config.render_block_assets,
+            wait_dom: config.render_early,
         };
         Some(
             RenderPool::connect(

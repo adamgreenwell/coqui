@@ -75,6 +75,8 @@ async fn applies_session_headers_and_cookies() {
         headers: vec![("X-Test".into(), "yes".to_string())],
         cookies: vec![("session".into(), "ok".to_string())],
         screenshot: false,
+        block_assets: false,
+        wait_dom: false,
     };
     let renderer = Renderer::connect(None, 200, options)
         .await

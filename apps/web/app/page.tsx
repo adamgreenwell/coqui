@@ -49,6 +49,7 @@ interface CrawlConfig {
   renderWaitMs: number;
   renderWorkers: number;
   screenshots: boolean;
+  renderBlockAssets: boolean;
 }
 
 interface CrawlSummary {
@@ -220,6 +221,7 @@ export default function Home() {
   const [renderWaitMs, setRenderWaitMs] = useState(500);
   const [renderWorkers, setRenderWorkers] = useState(2);
   const [screenshots, setScreenshots] = useState(false);
+  const [renderBlockAssets, setRenderBlockAssets] = useState(false);
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
 
   const [crawl, setCrawl] = useState<CrawlSummary | null>(null);
@@ -337,6 +339,7 @@ export default function Home() {
         renderWaitMs,
         renderWorkers,
         screenshots,
+        renderBlockAssets,
       };
       const summary = await invoke<CrawlSummary>('create_crawl', {
         seedKind,
@@ -717,15 +720,26 @@ export default function Home() {
                 </div>
               )}
               {render && (
-                <label className="checkbox">
-                  <input
-                    type="checkbox"
-                    checked={screenshots}
-                    onChange={(event) => setScreenshots(event.target.checked)}
-                    disabled={isRunning}
-                  />
-                  Capture a screenshot per rendered page
-                </label>
+                <>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={screenshots}
+                      onChange={(event) => setScreenshots(event.target.checked)}
+                      disabled={isRunning}
+                    />
+                    Capture a screenshot per rendered page
+                  </label>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={renderBlockAssets}
+                      onChange={(event) => setRenderBlockAssets(event.target.checked)}
+                      disabled={isRunning}
+                    />
+                    Block fonts and media while rendering
+                  </label>
+                </>
               )}
             </details>
             <label className="checkbox">
@@ -1030,6 +1044,8 @@ export default function Home() {
     </div>
   );
 }
+
+
 
 
 

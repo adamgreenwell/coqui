@@ -109,6 +109,10 @@ async fn main() {
     let mut config = config;
     config.render = std::env::var_os("COQUI_RENDER").is_some();
     config.screenshots = std::env::var_os("COQUI_SCREENSHOTS").is_some();
+    config.render_early = std::env::var_os("COQUI_RENDER_EARLY").is_some();
+    config.render_block_assets = std::env::var("COQUI_BLOCK_ASSETS")
+        .map(|value| value != "0")
+        .unwrap_or(true);
     config.render_workers = std::env::var("COQUI_RENDER_WORKERS")
         .ok()
         .and_then(|value| value.parse().ok())

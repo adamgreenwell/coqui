@@ -58,6 +58,12 @@ pub struct CrawlConfig {
     /// Capture a JPEG screenshot for each rendered page.
     #[serde(default)]
     pub screenshots: bool,
+    /// Block fonts and media during rendering.
+    #[serde(default)]
+    pub render_block_assets: bool,
+    /// Continue at DOMContentLoaded instead of waiting for full load.
+    #[serde(default)]
+    pub render_early: bool,
     /// Only crawl discovered URLs matching at least one pattern (empty = all).
     #[serde(default)]
     pub include_patterns: Vec<String>,
@@ -105,6 +111,8 @@ impl Default for CrawlConfig {
             render_wait_ms: 500,
             render_workers: 2,
             screenshots: false,
+            render_block_assets: false,
+            render_early: false,
             include_patterns: Vec::new(),
             exclude_patterns: Vec::new(),
             auth_user: None,

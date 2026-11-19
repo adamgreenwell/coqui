@@ -40,6 +40,8 @@ pub struct RenderOptions {
     pub headers: Vec<(String, String)>,
     pub cookies: Vec<(String, String)>,
     pub screenshot: bool,
+    pub block_assets: bool,
+    pub wait_dom: bool,
 }
 
 /// Rendered HTML plus page evidence.
@@ -119,6 +121,7 @@ impl Renderer {
     }
 
     async fn render_target(&self, target_id: &str, url: &str) -> Result<RenderOutput, RenderError> {
+        let started = tokio::time::Instant::now();
         let attached = self
             .call(
                 "Target.attachToTarget",
@@ -134,6 +137,25 @@ impl Renderer {
         self.call("Page.enable", json!({}), Some(&session)).await?;
         self.call("Network.enable", json!({}), Some(&session))
             .await?;
+        if self.options.block_assets {
+            self.call(
+                "Network.setBlockedURLs",
+                json!({
+                    "urls": [
+                        "*://*/*.woff",
+                        "*://*/*.woff2",
+                        "*://*/*.ttf",
+                        "*://*/*.otf",
+                        "*://*/*.mp4",
+                        "*://*/*.webm",
+                        "*://*/*.mp3",
+                        "*://*/*.ogg"
+                    ]
+                }),
+                Some(&session),
+            )
+            .await?;
+        }
         if let Some(user_agent) = &self.options.user_agent {
             self.call(
                 "Emulation.setUserAgentOverride",
@@ -187,13 +209,21 @@ impl Renderer {
                 .and_then(|value| value.get("value"))
                 .and_then(Value::as_str)
                 .unwrap_or("");
-            if ready == "complete" {
+            let ready_enough = if self.options.wait_dom {
+                ready == "interactive" || ready == "complete"
+            } else {
+                ready == "complete"
+            };
+            if ready_enough {
                 break;
             }
             if tokio::time::Instant::now() >= deadline {
                 return Err(RenderError::Timeout(20_000));
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        if std::env::var_os("COQUI_DEBUG_RENDER").is_some() {
+            eprintln!("render: ready for {url} in {:?}", started.elapsed());
         }
         if self.wait_ms > 0 {
             tokio::time::sleep(Duration::from_millis(self.wait_ms)).await;
@@ -268,6 +298,9 @@ impl Renderer {
             None
         };
 
+        if std::env::var_os("COQUI_DEBUG_RENDER").is_some() {
+            eprintln!("render: evidence for {url} in {:?}", started.elapsed());
+        }
         let html = self
             .call(
                 "Runtime.evaluate",
@@ -433,8 +466,8 @@ fn find_browser(configured: Option<&str>) -> Option<PathBuf> {
 /// A fixed-size pool of renderer browsers with session material applied to each.
 pub struct RenderPool {
     workers: Vec<Arc<Renderer>>,
-    next: AtomicU64,
-    permits: tokio::sync::Semaphore,
+    available: tokio::sync::mpsc::Sender<usize>,
+    slots: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<usize>>,
 }
 
 impl RenderPool {
@@ -449,10 +482,14 @@ impl RenderPool {
         for _ in 0..workers {
             pool.push(Renderer::connect(browser_path, wait_ms, options.clone()).await?);
         }
+        let (available, slots) = tokio::sync::mpsc::channel(workers);
+        for index in 0..workers {
+            let _ = available.try_send(index);
+        }
         Ok(Arc::new(Self {
             workers: pool,
-            next: AtomicU64::new(0),
-            permits: tokio::sync::Semaphore::new(workers),
+            available,
+            slots: tokio::sync::Mutex::new(slots),
         }))
     }
 
@@ -461,12 +498,15 @@ impl RenderPool {
     }
 
     pub async fn render_page(&self, url: &str) -> Result<RenderOutput, RenderError> {
-        let _permit = self
-            .permits
-            .acquire()
+        let index = self
+            .slots
+            .lock()
             .await
-            .map_err(|_| RenderError::Other("render pool closed".into()))?;
-        let index = (self.next.fetch_add(1, Ordering::Relaxed) as usize) % self.workers.len();
-        self.workers[index].render_page(url).await
+            .recv()
+            .await
+            .ok_or_else(|| RenderError::Other("render pool closed".into()))?;
+        let result = self.workers[index].render_page(url).await;
+        let _ = self.available.send(index).await;
+        result
     }
 }

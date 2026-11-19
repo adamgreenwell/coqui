@@ -20,6 +20,8 @@ Coqui can render pages in an external headless Chrome/Edge before extraction. Th
 | `renderWaitMs` | Extra delay after load (default 500 ms) |
 | `renderWorkers` | Number of browser workers (1–8, default 2) |
 | `screenshots` | Capture a JPEG screenshot per rendered page |
+| `renderBlockAssets` | Block fonts/media (default off; no measured gain) |
+| `renderEarly` | Continue at DOMContentLoaded instead of full load (default off) |
 
 Environment overrides for the CLI/harness: `COQUI_BROWSER_PATH`, `COQUI_CDP_ENDPOINT`, `COQUI_RENDER=1`, `COQUI_RENDER_WAIT`, `COQUI_RENDER_WORKERS`, `COQUI_SCREENSHOTS=1`.
 
@@ -41,6 +43,19 @@ Custom headers, cookies and the configured user agent are pushed into each brows
 - `Cookie` headers are split into `Network.setCookie` calls for the page URL.
 - Other headers go through `Network.setExtraHTTPHeaders`; basic auth becomes an `Authorization` header.
 - User agent is applied with `Emulation.setUserAgentOverride`.
+
+## Performance
+
+Measured on `stage.landscapemanagement.net` (heavy third-party pages):
+
+| Scenario | 50 pages |
+| --- | --- |
+| 4 workers, full load | 85–93 s (~0.6 URLs/s) |
+| 4 workers, early DOM | 79.7 s (~0.63 URLs/s) |
+| 8 workers, early DOM | 115 s (~0.4 URLs/s) |
+| Blocking fonts/media | no gain (93 s vs 85 s) |
+
+A single stage homepage took **14.6 s** to reach `readyState=complete`. Rendering throughput is dominated by the site's own page load, not Coqui overhead. More than four browsers hurts through CPU contention; a shared browser with multiple tabs is the next architectural lever, not more processes.
 
 ## Limits
 
