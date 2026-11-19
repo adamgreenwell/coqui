@@ -876,6 +876,59 @@ fn read_resource(store: &Store, uri: &str) -> Result<String, String> {
     .to_string())
 }
 
+fn prompt_definitions() -> serde_json::Value {
+    serde_json::json!({
+        "prompts": [
+            {
+                "name": "audit-crawl",
+                "description": "Review a crawl and prioritise fixes.",
+                "arguments": [{"name": "crawl_id", "description": "Crawl id", "required": true}]
+            },
+            {
+                "name": "summarize-issues",
+                "description": "Summarise a crawl's issues by rule.",
+                "arguments": [{"name": "crawl_id", "description": "Crawl id", "required": true}]
+            },
+            {
+                "name": "export-crawl",
+                "description": "Export a crawl's URLs to CSV.",
+                "arguments": [{"name": "crawl_id", "description": "Crawl id", "required": true}]
+            }
+        ]
+    })
+}
+
+fn get_prompt(message: &serde_json::Value) -> Result<serde_json::Value, String> {
+    let params = message
+        .get("params")
+        .ok_or_else(|| "missing params".to_string())?;
+    let name = params
+        .get("name")
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| "missing prompt name".to_string())?;
+    let crawl_id = params
+        .get("arguments")
+        .and_then(|arguments| arguments.get("crawl_id"))
+        .and_then(|value| value.as_str())
+        .unwrap_or("<crawl-id>");
+    let text = match name {
+        "audit-crawl" => format!(
+            "Audit Coqui crawl {crawl_id}. Call get_crawl, issue_counts and list_urls, then summarise the most important issues with concrete fixes."
+        ),
+        "summarize-issues" => format!(
+            "Summarise the issues for Coqui crawl {crawl_id} using issue_counts. Prioritise by affected URLs and explain likely causes."
+        ),
+        "export-crawl" => format!(
+            "Export Coqui crawl {crawl_id} with export_urls and report the CSV path and row count."
+        ),
+        other => return Err(format!("unknown prompt '{other}'")),
+    };
+    Ok(serde_json::json!({
+        "description": format!("Coqui prompt {name}"),
+        "messages": [{"role": "user", "content": {"type": "text", "text": text}}]
+    }))
+}
+
 fn run_mcp(values: &[String]) -> Result<(), String> {
     let mut out = PathBuf::from("coqui-out");
     let mut index = 0;
@@ -917,12 +970,17 @@ fn run_mcp(values: &[String]) -> Result<(), String> {
                 id,
                 serde_json::json!({
                     "protocolVersion": "2025-06-18",
-                    "capabilities": {"tools": {}, "resources": {}},
+                    "capabilities": {"tools": {}, "resources": {}, "prompts": {}},
                     "serverInfo": {"name": "coqui", "version": env!("CARGO_PKG_VERSION")},
                 }),
             ),
             "ping" => rpc_result(id, serde_json::json!({})),
             "tools/list" => rpc_result(id, serde_json::json!({"tools": tool_definitions()})),
+            "prompts/list" => rpc_result(id, prompt_definitions()),
+            "prompts/get" => match get_prompt(&message) {
+                Ok(value) => rpc_result(id, value),
+                Err(error) => rpc_error(id, -32602, &error),
+            },
             "resources/list" => rpc_result(id, resource_definitions()),
             "resources/templates/list" => rpc_result(id, resource_templates()),
             "resources/read" => {
