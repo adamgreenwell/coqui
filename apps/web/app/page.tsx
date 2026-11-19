@@ -276,6 +276,8 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [exportPath, setExportPath] = useState<string | null>(null);
   const [bulkView, setBulkView] = useState('accessibility');
+  const [exportPattern, setExportPattern] = useState('');
+  const [skipEmpty, setSkipEmpty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [columns, setColumns] = useState<Record<ColumnKey, boolean>>(DEFAULT_COLUMNS);
   const [columnsOpen, setColumnsOpen] = useState(false);
@@ -435,6 +437,8 @@ export default function Home() {
       const { invoke } = await import('@tauri-apps/api/core');
       const path = await invoke<string>('export_view', {
         crawlId: crawl.id,
+                        pattern: exportPattern.trim() || null,
+                        skipEmpty,
         view: 'urls',
         issue: activeIssue,
         columns: Object.entries(columns)
@@ -453,6 +457,8 @@ export default function Home() {
       const { invoke } = await import('@tauri-apps/api/core');
       const path = await invoke<string>('export_view', {
         crawlId: crawl.id,
+                        pattern: exportPattern.trim() || null,
+                        skipEmpty,
         view: 'issues',
         issue: null,
         columns: [],
@@ -1057,7 +1063,9 @@ export default function Home() {
                         const { invoke } = await import('@tauri-apps/api/core');
                         const reports = await invoke<LighthouseSummary[]>(
                           'run_lighthouse_sample',
-                          { crawlId: crawl.id, sample: 3 },
+                          { crawlId: crawl.id,
+                        pattern: exportPattern.trim() || null,
+                        skipEmpty, sample: 3 },
                         );
                         setLighthouseSample(reports.length);
                         setLighthouse(reports[0] ?? null);
@@ -1163,6 +1171,8 @@ export default function Home() {
                       const { invoke } = await import('@tauri-apps/api/core');
                       const path = await invoke<string>('export_view', {
                         crawlId: crawl.id,
+                        pattern: exportPattern.trim() || null,
+                        skipEmpty,
                         view: 'links',
                         issue: null,
                         columns: [],

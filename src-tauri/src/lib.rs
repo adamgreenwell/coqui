@@ -418,12 +418,35 @@ fn export_view(
     issue: Option<String>,
     columns: Vec<String>,
     format: Option<String>,
+    pattern: Option<String>,
+    skip_empty: Option<bool>,
 ) -> Result<String, String> {
     let dir = state.data_dir.join("exports");
     std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+    if view == "screenshots" {
+        let target = dir.join(format!("{crawl_id}-screenshots-{}", now_ms()));
+        state
+            .store
+            .export_screenshots(&crawl_id, &target)
+            .map_err(|error| error.to_string())?;
+        return Ok(target.to_string_lossy().to_string());
+    }
     let format = format.unwrap_or_else(|| "csv".to_string());
-    let path = dir.join(format!("{crawl_id}-{view}-{}.{format}", now_ms()));
-    match (view.as_str(), format.as_str()) {
+    let crawl = state
+        .store
+        .get_crawl(&crawl_id)
+        .map_err(|error| error.to_string())?;
+    let domain = seed_domain(&crawl.seed);
+    let filename = coqui_core::export_filename(
+        pattern.as_deref().unwrap_or(""),
+        &domain,
+        &view,
+        &crawl_id,
+        now_ms(),
+        &format,
+    );
+    let path = dir.join(filename);
+    let rows = match (view.as_str(), format.as_str()) {
         ("issues", "xlsx") => state
             .store
             .export_issues_xlsx(&crawl_id, &path)
@@ -436,13 +459,13 @@ fn export_view(
             .store
             .export_urls_xlsx(&crawl_id, &path, &columns, issue.as_deref())
             .map_err(|error| error.to_string())?,
-        ("images", _) => state
-            .store
-            .export_images_csv(&crawl_id, &path)
-            .map_err(|error| error.to_string())?,
         ("headers", _) => state
             .store
             .export_headers_csv(&crawl_id, &path)
+            .map_err(|error| error.to_string())?,
+        ("images", _) => state
+            .store
+            .export_images_csv(&crawl_id, &path)
             .map_err(|error| error.to_string())?,
         ("accessibility", _) => state
             .store
@@ -473,7 +496,21 @@ fn export_view(
             .export_urls_csv(&crawl_id, &path, &columns, issue.as_deref())
             .map_err(|error| error.to_string())?,
     };
+    if skip_empty.unwrap_or(false) && rows == 0 {
+        let _ = std::fs::remove_file(&path);
+        return Ok(String::new());
+    }
     Ok(path.to_string_lossy().to_string())
+}
+
+fn seed_domain(seed: &str) -> String {
+    seed.split("://")
+        .nth(1)
+        .unwrap_or(seed)
+        .split('/')
+        .next()
+        .unwrap_or(seed)
+        .to_string()
 }
 
 pub fn run() {

@@ -441,3 +441,126 @@ mod tests {
         assert!(json.contains("maxUrls"));
     }
 }
+
+/// Resolve a filename pattern for an export.
+///
+/// Tokens: {date}, {datetime}, {domain}, {crawl}, {view}, {report}.
+/// Values are sanitised; the extension is appended when missing.
+pub fn export_filename(
+    pattern: &str,
+    domain: &str,
+    view: &str,
+    crawl_id: &str,
+    now_ms: i64,
+    extension: &str,
+) -> String {
+    let (date, datetime) = timestamp_tokens(now_ms);
+    let pattern = if pattern.trim().is_empty() {
+        "{crawl}-{view}-{datetime}"
+    } else {
+        pattern
+    };
+    let mut name = pattern.to_string();
+    for (token, value) in [
+        ("{date}", date),
+        ("{datetime}", datetime),
+        ("{domain}", sanitize_token(domain)),
+        ("{crawl}", sanitize_token(crawl_id)),
+        ("{view}", sanitize_token(view)),
+        ("{report}", sanitize_token(view)),
+    ] {
+        name = name.replace(token, &value);
+    }
+    name = sanitize_filename(&name);
+    let suffix = format!(".{}", extension.trim_start_matches('.'));
+    if !name.to_ascii_lowercase().ends_with(&suffix) {
+        name.push_str(&suffix);
+    }
+    if name.trim_matches('.').is_empty() {
+        name = format!("{crawl_id}-{view}{suffix}");
+    }
+    name
+}
+
+fn sanitize_token(value: &str) -> String {
+    value
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.') {
+                character
+            } else {
+                '-'
+            }
+        })
+        .collect()
+}
+
+fn sanitize_filename(value: &str) -> String {
+    let cleaned: String = value
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.' | ' ') {
+                character
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    cleaned
+        .trim_start_matches(['.', '-'])
+        .trim()
+        .replace(' ', "-")
+}
+
+fn timestamp_tokens(now_ms: i64) -> (String, String) {
+    let seconds = now_ms.div_euclid(1000);
+    let days = seconds.div_euclid(86_400);
+    let day_seconds = seconds.rem_euclid(86_400);
+    let (year, month, day) = civil_from_days(days);
+    let hours = day_seconds / 3600;
+    let minutes = (day_seconds % 3600) / 60;
+    let secs = day_seconds % 60;
+    (
+        format!("{year:04}-{month:02}-{day:02}"),
+        format!("{year:04}{month:02}{day:02}-{hours:02}{minutes:02}{secs:02}"),
+    )
+}
+
+fn civil_from_days(days: i64) -> (i64, u32, u32) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    (if m <= 2 { y + 1 } else { y }, m as u32, d as u32)
+}
+
+#[cfg(test)]
+mod export_filename_tests {
+    use super::*;
+
+    #[test]
+    fn resolves_tokens_and_extension() {
+        let name = export_filename(
+            "{domain}-{view}-{date}",
+            "example.com",
+            "urls",
+            "c1",
+            1_700_000_000_000,
+            "csv",
+        );
+        assert_eq!(name, "example.com-urls-2023-11-14.csv");
+    }
+
+    #[test]
+    fn default_pattern_and_sanitising() {
+        let name = export_filename("../bad/{view}", "example.com", "issues", "c1", 0, "xlsx");
+        assert!(!name.contains('/'));
+        assert!(name.ends_with(".xlsx"));
+        assert!(name.starts_with("bad-"));
+    }
+}
