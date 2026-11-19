@@ -143,6 +143,12 @@ CREATE TABLE IF NOT EXISTS saved_views (
     indexability  TEXT,
     created_at    INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS issue_suppressions (
+    crawl_id TEXT NOT NULL,
+    rule     TEXT NOT NULL,
+    PRIMARY KEY (crawl_id, rule)
+);
 "#;
 
 #[derive(Debug, thiserror::Error)]
@@ -505,7 +511,9 @@ impl Store {
     pub fn issue_counts(&self, crawl_id: &str) -> Result<Vec<IssueCount>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
-            "SELECT rule, severity, COUNT(*) FROM issues WHERE crawl_id = ?1
+            "SELECT rule, severity, COUNT(*) FROM issues
+             WHERE crawl_id = ?1
+               AND rule NOT IN (SELECT rule FROM issue_suppressions WHERE crawl_id = ?1)
              GROUP BY rule, severity ORDER BY COUNT(*) DESC, rule",
         )?;
         let rows = stmt
