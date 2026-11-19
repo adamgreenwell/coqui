@@ -28,4 +28,5 @@ apps/web/out/
 .idea/
 
 # Generated benchmark output
-bench/
+/bench/
+
