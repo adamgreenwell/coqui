@@ -54,7 +54,7 @@ render_workers = 2
 
 ## MCP server
 
-`coqui mcp --out DIR` runs a stdio MCP server (JSON-RPC, newline-delimited) over `DIR/coqui.db`. Tools: `list_crawls`, `get_crawl`, `list_urls`, `issue_counts`, `export_urls`. Implements `initialize`, `ping`, `tools/list`, `tools/call`. Verified with a piped session (initialize + tools/list + list_urls).
+`coqui mcp --out DIR` runs a stdio MCP server (JSON-RPC, newline-delimited) over `DIR/coqui.db`. Tools: `list_crawls`, `get_crawl`, `list_urls`, `issue_counts`, `export_urls`, `start_crawl`, `run_schedule_due`. Implements `initialize`, `ping`, `tools/list`, `tools/call`. Verified with a piped session (initialize + tools/list + list_urls).
 
 ## Schedules
 
@@ -100,6 +100,7 @@ Schedules are interval-based (seconds) and stored in the crawl DB. `run-due` run
 ## Current limits
 
 Supports URL/sitemap/list seeds, crawl limits, user agent, custom headers, basic auth, timeout, and rendering with screenshots/axe/Web Vitals. Export formats, config files, profiles and checkpoint/resume flags are next.
+
 
 
 
