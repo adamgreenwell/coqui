@@ -11,7 +11,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const SCHEMA_VERSION: i32 = 14;
+pub const SCHEMA_VERSION: i32 = 15;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -92,6 +92,12 @@ CREATE TABLE IF NOT EXISTS issues (
 );
 
 CREATE INDEX IF NOT EXISTS idx_issues_crawl_rule ON issues (crawl_id, rule);
+
+CREATE TABLE IF NOT EXISTS profiles (
+    name        TEXT PRIMARY KEY,
+    config_json TEXT NOT NULL,
+    updated_at  INTEGER NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS images (
     crawl_id TEXT NOT NULL,
@@ -1321,6 +1327,44 @@ impl Store {
     }
 
     /// Delete a crawl and all of its rows.
+    pub fn save_profile(&self, name: &str, config_json: &str) -> Result<()> {
+        self.lock()?.execute(
+            "INSERT INTO profiles (name, config_json, updated_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(name) DO UPDATE SET config_json = excluded.config_json,
+                                            updated_at = excluded.updated_at",
+            params![name, config_json, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_profiles(&self) -> Result<Vec<(String, i64)>> {
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare("SELECT name, updated_at FROM profiles ORDER BY name")?;
+        let rows = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn get_profile(&self, name: &str) -> Result<Option<String>> {
+        let conn = self.lock()?;
+        let json = conn
+            .query_row(
+                "SELECT config_json FROM profiles WHERE name = ?1",
+                params![name],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(json)
+    }
+
+    pub fn delete_profile(&self, name: &str) -> Result<usize> {
+        let changed = self
+            .lock()?
+            .execute("DELETE FROM profiles WHERE name = ?1", params![name])?;
+        Ok(changed)
+    }
+
     pub fn delete_crawl(&self, id: &str) -> Result<()> {
         let conn = self.lock()?;
         conn.execute("DELETE FROM issues WHERE crawl_id = ?1", params![id])?;
@@ -1445,9 +1489,24 @@ fn migrate(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_links_crawl_from ON links (crawl_id, from_id);
          CREATE INDEX IF NOT EXISTS idx_links_crawl_to ON links (crawl_id, to_id);",
     )?;
+    if version < 15 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS profiles (
+                name        TEXT PRIMARY KEY,
+                config_json TEXT NOT NULL,
+                updated_at  INTEGER NOT NULL
+            );",
+        )?;
+    }
     if version < 14 {
         conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS images (
+            "CREATE TABLE IF NOT EXISTS profiles (
+    name        TEXT PRIMARY KEY,
+    config_json TEXT NOT NULL,
+    updated_at  INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS images (
                 crawl_id TEXT NOT NULL,
                 url_id   INTEGER NOT NULL,
                 src      TEXT NOT NULL,
@@ -1967,6 +2026,25 @@ mod tests {
         assert_eq!(store.export_sitemap_bundle("c1", &gz, true).unwrap(), 2);
         let bytes = std::fs::read(gz.join("sitemap-1.xml.gz")).unwrap();
         assert_eq!(&bytes[..2], &[0x1f, 0x8b]);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn profiles_round_trip() {
+        let dir = std::env::temp_dir().join(format!("coqui-profiles-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        store.save_profile("fast", "{\"maxUrls\":10}").unwrap();
+        store.save_profile("fast", "{\"maxUrls\":20}").unwrap();
+        let profiles = store.list_profiles().unwrap();
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0].0, "fast");
+        assert_eq!(
+            store.get_profile("fast").unwrap().as_deref(),
+            Some("{\"maxUrls\":20}")
+        );
+        assert_eq!(store.delete_profile("fast").unwrap(), 1);
+        assert!(store.get_profile("fast").unwrap().is_none());
         std::fs::remove_dir_all(dir).ok();
     }
 
