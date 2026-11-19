@@ -483,6 +483,7 @@ fn export_html_report(
     report: Option<String>,
     top: Option<u32>,
     status: Option<u16>,
+    title: Option<String>,
 ) -> Result<String, String> {
     let dir = state.data_dir.join("exports");
     std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
@@ -502,6 +503,7 @@ fn export_html_report(
     let options = coqui_report::ReportOptions {
         top: top.map(|value| value as usize),
         status,
+        title,
     };
     coqui_report::write_report_with(
         &state.store,
@@ -652,6 +654,7 @@ async fn export_pdf_report(
     report: Option<String>,
     top: Option<u32>,
     status: Option<u16>,
+    title: Option<String>,
 ) -> Result<String, String> {
     let browser =
         browser_path().ok_or_else(|| "No Chrome or Edge found; set CHROME_PATH".to_string())?;
@@ -674,6 +677,7 @@ async fn export_pdf_report(
     let options = coqui_report::ReportOptions {
         top: top.map(|value| value as usize),
         status,
+        title,
     };
     coqui_report::write_report_with(
         &state.store,
