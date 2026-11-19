@@ -2707,6 +2707,25 @@ export default function Home() {
                 })}
               </div>
             )}
+            {depthBuckets.some((value) => value > 0) && (
+              <div className="overview-bars" style={{ flexBasis: '100%' }}>
+                {depthBuckets.map((count, index) => {
+                  const max = Math.max(1, ...depthBuckets);
+                  return (
+                    <div className="bar-row" key={`depth-bar-${index}`}>
+                      <span>{index === 3 ? 'Depth 3+' : `Depth ${index}`}</span>
+                      <div className="bar-track">
+                        <div
+                          className="bar-fill"
+                          style={{ width: `${Math.round((count / max) * 100)}%` }}
+                        />
+                      </div>
+                      <strong>{count}</strong>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </section>
 
           <section className="panel results">
