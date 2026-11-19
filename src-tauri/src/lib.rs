@@ -96,6 +96,7 @@ fn list_urls(
     issue: Option<String>,
     query: Option<String>,
     status: Option<u16>,
+    status_class: Option<u16>,
 ) -> Result<UrlPage, String> {
     state
         .store
@@ -106,6 +107,7 @@ fn list_urls(
             issue.as_deref(),
             query.as_deref(),
             status,
+            status_class,
         )
         .map_err(|error| error.to_string())
 }
