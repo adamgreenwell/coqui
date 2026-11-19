@@ -564,3 +564,152 @@ mod export_filename_tests {
         assert!(name.starts_with("bad-"));
     }
 }
+
+/// A named export that the app and CLI can offer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportDefinition {
+    pub id: String,
+    pub label: String,
+    pub group: String,
+    pub view: String,
+    pub format: String,
+    pub description: String,
+}
+
+/// Every export currently implemented, in catalogue order.
+pub fn export_catalog() -> Vec<ExportDefinition> {
+    let entry =
+        |id: &str, label: &str, group: &str, view: &str, format: &str, description: &str| {
+            ExportDefinition {
+                id: id.to_string(),
+                label: label.to_string(),
+                group: group.to_string(),
+                view: view.to_string(),
+                format: format.to_string(),
+                description: description.to_string(),
+            }
+        };
+    vec![
+        entry(
+            "urls-csv",
+            "URLs (CSV)",
+            "Views",
+            "urls",
+            "csv",
+            "Every URL with the selected columns and active issue filter.",
+        ),
+        entry(
+            "urls-xlsx",
+            "URLs (XLSX)",
+            "Views",
+            "urls",
+            "xlsx",
+            "Every URL as an Excel workbook.",
+        ),
+        entry(
+            "issues-csv",
+            "Issues (CSV)",
+            "Views",
+            "issues",
+            "csv",
+            "One row per issue with url, rule, severity and detail.",
+        ),
+        entry(
+            "issues-xlsx",
+            "Issues (XLSX)",
+            "Views",
+            "issues",
+            "xlsx",
+            "Issues as an Excel workbook.",
+        ),
+        entry(
+            "links-csv",
+            "Links (CSV)",
+            "Bulk",
+            "links",
+            "csv",
+            "The crawl's link graph.",
+        ),
+        entry(
+            "links-xlsx",
+            "Links (XLSX)",
+            "Bulk",
+            "links",
+            "xlsx",
+            "The link graph as an Excel workbook.",
+        ),
+        entry(
+            "headers-csv",
+            "Response headers",
+            "Bulk",
+            "headers",
+            "csv",
+            "Final response headers per URL.",
+        ),
+        entry(
+            "images-csv",
+            "Images",
+            "Bulk",
+            "images",
+            "csv",
+            "Every image reference with alt and dimensions.",
+        ),
+        entry(
+            "accessibility-csv",
+            "Accessibility",
+            "Bulk",
+            "accessibility",
+            "csv",
+            "One row per axe violation.",
+        ),
+        entry(
+            "structured-csv",
+            "Structured data",
+            "Bulk",
+            "structured",
+            "csv",
+            "JSON-LD types and validation errors.",
+        ),
+        entry(
+            "vitals-csv",
+            "Web Vitals",
+            "Bulk",
+            "vitals",
+            "csv",
+            "LCP, CLS, TBT, TTFB and FCP per URL.",
+        ),
+        entry(
+            "console-csv",
+            "Console errors",
+            "Bulk",
+            "console",
+            "csv",
+            "Captured console and network errors.",
+        ),
+        entry(
+            "screenshots",
+            "Screenshots",
+            "Bulk",
+            "screenshots",
+            "folder",
+            "JPEGs plus screenshots.csv in a folder.",
+        ),
+    ]
+}
+
+#[cfg(test)]
+mod export_catalog_tests {
+    use super::*;
+
+    #[test]
+    fn catalogue_is_unique_and_non_empty() {
+        let catalogue = export_catalog();
+        assert!(catalogue.len() >= 10);
+        let mut ids: Vec<_> = catalogue.iter().map(|entry| entry.id.as_str()).collect();
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), catalogue.len());
+        assert!(catalogue.iter().all(|entry| !entry.view.is_empty()));
+    }
+}
