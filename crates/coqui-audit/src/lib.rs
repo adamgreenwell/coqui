@@ -116,6 +116,11 @@ pub const RULES: &[RuleDef] = &[
         severity: IssueSeverity::Warning,
     },
     RuleDef {
+        id: "mixed_content",
+        label: "Mixed content",
+        severity: IssueSeverity::Warning,
+    },
+    RuleDef {
         id: "misspelling",
         label: "Possible misspelling",
         severity: IssueSeverity::Opportunity,
@@ -1508,6 +1513,38 @@ mod tests {
         let counts = analyze_crawl(&store, id).unwrap();
         let by_rule: HashMap<_, _> = counts.iter().map(|c| (c.rule.as_str(), c.count)).collect();
         assert_eq!(by_rule.get("nofollow_internal_link"), Some(&1));
+    }
+
+    #[test]
+    fn flags_mixed_content() {
+        let store = Store::open_in_memory().unwrap();
+        let id = "mixed";
+        store
+            .create_crawl(
+                id,
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        add_url(&store, id, "https://example.com/", Some("Home"), 1, 600);
+        let url_id = store.url_id(id, "https://example.com/").unwrap().unwrap();
+        store
+            .replace_images(
+                id,
+                url_id,
+                &[coqui_core::ImageRef {
+                    src: "http://example.com/a.png".into(),
+                    alt: Some("A".into()),
+                    width: Some(10),
+                    height: Some(10),
+                }],
+            )
+            .unwrap();
+        let counts = analyze_crawl(&store, id).unwrap();
+        let by_rule: HashMap<_, _> = counts.iter().map(|c| (c.rule.as_str(), c.count)).collect();
+        assert_eq!(by_rule.get("mixed_content"), Some(&1));
     }
 
     #[test]

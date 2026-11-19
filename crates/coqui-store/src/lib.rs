@@ -609,6 +609,23 @@ impl Store {
         Ok(rows)
     }
 
+    /// HTTPS pages referencing HTTP images, and how many.
+    pub fn http_images(&self, crawl_id: &str) -> Result<Vec<(String, i64)>> {
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT urls.url, COUNT(*) FROM images
+             JOIN urls ON urls.id = images.url_id
+             WHERE images.crawl_id = ?1
+               AND urls.url LIKE 'https://%'
+               AND images.src LIKE 'http://%'
+             GROUP BY urls.url",
+        )?;
+        let rows = stmt
+            .query_map(params![crawl_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     /// URLs with images missing alt text, and how many.
     pub fn images_missing_alt(&self, crawl_id: &str) -> Result<Vec<(String, i64)>> {
         let conn = self.lock()?;
