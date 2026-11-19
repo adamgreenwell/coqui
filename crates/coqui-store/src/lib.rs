@@ -1467,6 +1467,88 @@ mod tests {
     }
 
     #[test]
+    fn bulk_data_exports_flatten_evidence() {
+        use coqui_core::{AxeViolation, HreflangLink, StructuredData, WebVitals};
+        let dir = std::env::temp_dir().join(format!("coqui-bulk-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        store
+            .create_crawl(
+                "c1",
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        store
+            .insert_url(&NewUrl {
+                crawl_id: "c1".into(),
+                url: "https://example.com/".into(),
+                status: Some(200),
+                blocked: false,
+                content_type: Some("text/html".into()),
+                title: Some("Example".into()),
+                meta_description: None,
+                h1: Some("Example".into()),
+                h1_count: 1,
+                canonical: None,
+                meta_robots: None,
+                hreflang: Vec::<HreflangLink>::new(),
+                pagination_next: None,
+                pagination_prev: None,
+                structured_data: StructuredData {
+                    types: vec!["Article".into()],
+                    errors: vec!["missing headline for Article".into()],
+                },
+                console_errors: vec!["js: boom".into(), "network: 404".into()],
+                axe: vec![AxeViolation {
+                    id: "image-alt".into(),
+                    impact: Some("critical".into()),
+                    help: "Images must have alternate text".into(),
+                    help_url: "https://example.com/rule".into(),
+                    nodes: 2,
+                }],
+                vitals: Some(WebVitals {
+                    lcp_ms: 3000,
+                    cls: 0.2,
+                    tbt_ms: 250,
+                    ttfb_ms: 900,
+                    fcp_ms: 1200,
+                }),
+                redirect_target: None,
+                redirect_chain: Vec::new(),
+                word_count: Some(500),
+                depth: 0,
+                response_time_ms: Some(10),
+                size_bytes: Some(100),
+                error: None,
+                discovered_at: now_ms(),
+            })
+            .unwrap();
+
+        let accessibility = dir.join("a11y.csv");
+        assert_eq!(
+            store
+                .export_accessibility_csv("c1", &accessibility)
+                .unwrap(),
+            1
+        );
+        let structured = dir.join("structured.csv");
+        assert_eq!(
+            store.export_structured_data_csv("c1", &structured).unwrap(),
+            1
+        );
+        let vitals = dir.join("vitals.csv");
+        assert_eq!(store.export_vitals_csv("c1", &vitals).unwrap(), 1);
+        let console = dir.join("console.csv");
+        assert_eq!(store.export_console_csv("c1", &console).unwrap(), 2);
+        let text = std::fs::read_to_string(&accessibility).unwrap();
+        assert!(text.contains("image-alt"));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
     fn lighthouse_reports_round_trip() {
         let store = Store::open_in_memory().unwrap();
         let summary = r#"{"performance":0.72,"accessibility":0.95,"bestPractices":0.57,"seo":0.42,"audits":[],"finalUrl":null,"fetchTime":null}"#;
