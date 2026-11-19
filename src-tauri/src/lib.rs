@@ -783,6 +783,9 @@ fn list_views(state: State<'_, AppState>) -> Result<Vec<serde_json::Value>, Stri
                 "search": view.search,
                 "status": view.status,
                 "issue": view.issue,
+                "contentClass": view.content_class,
+                "maxDepth": view.max_depth,
+                "indexability": view.indexability,
             })
         })
         .collect())
@@ -795,10 +798,21 @@ fn save_view(
     search: Option<String>,
     status: Option<u16>,
     issue: Option<String>,
+    content_class: Option<String>,
+    max_depth: Option<u32>,
+    indexability: Option<String>,
 ) -> Result<(), String> {
     state
         .store
-        .save_view(&name, search.as_deref(), status, issue.as_deref())
+        .save_view(
+            &name,
+            search.as_deref(),
+            status,
+            issue.as_deref(),
+            content_class.as_deref(),
+            max_depth,
+            indexability.as_deref(),
+        )
         .map_err(|error| error.to_string())
 }
 
