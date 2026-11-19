@@ -11,7 +11,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const SCHEMA_VERSION: i32 = 21;
+pub const SCHEMA_VERSION: i32 = 22;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -474,6 +474,32 @@ impl Store {
         self.lock()?
             .execute("DELETE FROM issues WHERE crawl_id = ?1", params![crawl_id])?;
         Ok(())
+    }
+
+    pub fn suppress_rule(&self, crawl_id: &str, rule: &str) -> Result<()> {
+        self.lock()?.execute(
+            "INSERT OR IGNORE INTO issue_suppressions (crawl_id, rule) VALUES (?1, ?2)",
+            params![crawl_id, rule],
+        )?;
+        Ok(())
+    }
+
+    pub fn restore_rule(&self, crawl_id: &str, rule: &str) -> Result<usize> {
+        let changed = self.lock()?.execute(
+            "DELETE FROM issue_suppressions WHERE crawl_id = ?1 AND rule = ?2",
+            params![crawl_id, rule],
+        )?;
+        Ok(changed)
+    }
+
+    pub fn suppressed_rules(&self, crawl_id: &str) -> Result<Vec<String>> {
+        let conn = self.lock()?;
+        let mut stmt =
+            conn.prepare("SELECT rule FROM issue_suppressions WHERE crawl_id = ?1 ORDER BY rule")?;
+        let rows = stmt
+            .query_map(params![crawl_id], |row| row.get(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
     }
 
     pub fn issue_counts(&self, crawl_id: &str) -> Result<Vec<IssueCount>> {
@@ -2858,6 +2884,38 @@ mod tests {
             .insert_link("c1", id, id, Some("self"), None, true)
             .unwrap();
         assert_eq!(store.link_counts("c1", id).unwrap(), (1, 1));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn suppressed_rules_hide_issue_counts() {
+        let dir = std::env::temp_dir().join(format!("coqui-suppress-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        store
+            .create_crawl(
+                "c1",
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        store
+            .insert_issue(&Issue {
+                crawl_id: "c1".into(),
+                url: "https://example.com/".into(),
+                rule: "missing_title".into(),
+                severity: IssueSeverity::Error,
+                detail: None,
+            })
+            .unwrap();
+        assert_eq!(store.issue_counts("c1").unwrap().len(), 1);
+        store.suppress_rule("c1", "missing_title").unwrap();
+        assert_eq!(store.suppressed_rules("c1").unwrap(), vec!["missing_title"]);
+        assert!(store.issue_counts("c1").unwrap().is_empty());
+        assert_eq!(store.restore_rule("c1", "missing_title").unwrap(), 1);
+        assert_eq!(store.issue_counts("c1").unwrap().len(), 1);
         std::fs::remove_dir_all(dir).ok();
     }
 

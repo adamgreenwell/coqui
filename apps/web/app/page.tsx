@@ -305,6 +305,7 @@ export default function Home() {
   const [page, setPage] = useState(1);
   const [progress, setProgress] = useState<CrawlProgress | null>(null);
   const [issues, setIssues] = useState<IssueCount[]>([]);
+  const [suppressed, setSuppressed] = useState<string[]>([]);
   const [statusCounts, setStatusCounts] = useState<{ status: number | null; count: number }[]>([]);
   const [activeIssue, setActiveIssue] = useState<string | null>(null);
   const [queryInput, setQueryInput] = useState('');
@@ -367,6 +368,8 @@ export default function Home() {
     const { invoke } = await import('@tauri-apps/api/core');
     const counts = await invoke<IssueCount[]>('get_issue_counts', { crawlId });
     setIssues(counts);
+    const ignored = await invoke<string[]>('suppressed_rules', { crawlId });
+    setSuppressed(ignored);
   }, []);
 
   useEffect(() => {
@@ -497,6 +500,20 @@ export default function Home() {
       }
     })();
   }, [isTauri, crawl?.id, phase]);
+
+  const ignoreIssue = async (rule: string) => {
+    if (!crawl) return;
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('suppress_rule', { crawlId: crawl.id, rule });
+    await loadIssues(crawl.id);
+  };
+
+  const restoreIssue = async (rule: string) => {
+    if (!crawl) return;
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('restore_rule', { crawlId: crawl.id, rule });
+    await loadIssues(crawl.id);
+  };
 
   const applyTab = (content: string, status: string) => {
     setContentFilter(content);
@@ -1919,22 +1936,50 @@ export default function Home() {
               </div>
               <div className="issue-grid">
                 {issues.map((issue) => (
-                  <button
-                    key={`${issue.rule}-${issue.severity}`}
-                    type="button"
-                    className={`issue-card ${issue.severity} ${
-                      activeIssue === issue.rule ? 'active' : ''
-                    }`}
-                    onClick={() => filterByIssue(issue.rule)}
-                  >
-                    <span className="issue-count">{issue.count}</span>
-                    <span className="issue-label">
-                      {ISSUE_LABELS[issue.rule] ?? issue.rule}
-                    </span>
-                    <span className="issue-sev">{issue.severity}</span>
-                  </button>
+                  <div key={`${issue.rule}-${issue.severity}`} className="issue-card-wrap">
+                    <button
+                      type="button"
+                      className={`issue-card ${issue.severity} ${
+                        activeIssue === issue.rule ? 'active' : ''
+                      }`}
+                      onClick={() => filterByIssue(issue.rule)}
+                    >
+                      <span className="issue-count">{issue.count}</span>
+                      <span className="issue-label">
+                        {ISSUE_LABELS[issue.rule] ?? issue.rule}
+                      </span>
+                      <span className="issue-sev">{issue.severity}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="issue-ignore"
+                      title="Ignore this rule"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void ignoreIssue(issue.rule);
+                      }}
+                    >
+                      Ignore
+                    </button>
+                  </div>
                 ))}
               </div>
+              {suppressed.length > 0 && (
+                <div className="suppressed-rules">
+                  <span className="muted">Ignored:</span>
+                  {suppressed.map((rule) => (
+                    <button
+                      key={rule}
+                      type="button"
+                      className="suppressed-rule"
+                      title="Restore this rule"
+                      onClick={() => void restoreIssue(rule)}
+                    >
+                      {ISSUE_LABELS[rule] ?? rule} ×
+                    </button>
+                  ))}
+                </div>
+              )}
             </section>
           )}
 

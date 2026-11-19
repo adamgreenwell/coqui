@@ -883,3 +883,46 @@ tbody tr:hover {
   background: #e8f5ef;
   color: #1f6b4f;
 }
+
+.issue-card-wrap {
+  position: relative;
+}
+
+.issue-ignore {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  padding: 1px 6px;
+  border: 1px solid var(--border, #d8e2df);
+  border-radius: 999px;
+  background: #fff;
+  font: inherit;
+  font-size: 10px;
+  color: #8a4b4b;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.issue-card-wrap:hover .issue-ignore {
+  opacity: 1;
+}
+
+.suppressed-rules {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+.suppressed-rule {
+  padding: 2px 8px;
+  border: 1px dashed var(--border, #d8e2df);
+  border-radius: 999px;
+  background: #fff;
+  font: inherit;
+  font-size: 11px;
+  color: #6b7c78;
+  cursor: pointer;
+}
