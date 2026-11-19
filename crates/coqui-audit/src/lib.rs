@@ -682,6 +682,25 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
             }
         }
 
+        if let Some(h1) = url
+            .h1
+            .as_deref()
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+        {
+            if let Some(group) = duplicate_h1.get(&h1.to_ascii_lowercase()) {
+                if group.len() > 1 {
+                    issue(
+                        store,
+                        crawl_id,
+                        &url.url,
+                        "duplicate_h1",
+                        Some(format!("{} pages share this H1", group.len())),
+                    )?;
+                }
+            }
+        }
+
         if url.h1_count > 1 {
             issue(
                 store,
