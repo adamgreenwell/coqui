@@ -11,7 +11,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const SCHEMA_VERSION: i32 = 14;
+pub const SCHEMA_VERSION: i32 = 21;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -132,6 +132,17 @@ CREATE TABLE IF NOT EXISTS checkpoints (
     state_json TEXT NOT NULL,
     updated_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS saved_views (
+    name          TEXT PRIMARY KEY,
+    search        TEXT,
+    status        INTEGER,
+    issue         TEXT,
+    content_class TEXT,
+    max_depth     INTEGER,
+    indexability  TEXT,
+    created_at    INTEGER NOT NULL
+);
 "#;
 
 #[derive(Debug, thiserror::Error)]
@@ -162,6 +173,9 @@ pub struct SavedView {
     pub search: Option<String>,
     pub status: Option<u16>,
     pub issue: Option<String>,
+    pub content_class: Option<String>,
+    pub max_depth: Option<u32>,
+    pub indexability: Option<String>,
 }
 
 /// A scheduled crawl.
@@ -1612,23 +1626,41 @@ impl Store {
         search: Option<&str>,
         status: Option<u16>,
         issue: Option<&str>,
+        content_class: Option<&str>,
+        max_depth: Option<u32>,
+        indexability: Option<&str>,
     ) -> Result<()> {
         self.lock()?.execute(
-            "INSERT INTO saved_views (name, search, status, issue, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)
+            "INSERT INTO saved_views (name, search, status, issue, content_class, max_depth,
+                                      indexability, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
              ON CONFLICT(name) DO UPDATE SET search = excluded.search,
                                             status = excluded.status,
                                             issue = excluded.issue,
+                                            content_class = excluded.content_class,
+                                            max_depth = excluded.max_depth,
+                                            indexability = excluded.indexability,
                                             created_at = excluded.created_at",
-            params![name, search, status, issue, now_ms()],
+            params![
+                name,
+                search,
+                status,
+                issue,
+                content_class,
+                max_depth.map(i64::from),
+                indexability,
+                now_ms()
+            ],
         )?;
         Ok(())
     }
 
     pub fn saved_views(&self) -> Result<Vec<SavedView>> {
         let conn = self.lock()?;
-        let mut stmt =
-            conn.prepare("SELECT name, search, status, issue FROM saved_views ORDER BY name")?;
+        let mut stmt = conn.prepare(
+            "SELECT name, search, status, issue, content_class, max_depth, indexability
+             FROM saved_views ORDER BY name",
+        )?;
         let rows = stmt
             .query_map([], |row| {
                 Ok(SavedView {
@@ -1636,6 +1668,9 @@ impl Store {
                     search: row.get(1)?,
                     status: row.get::<_, Option<i64>>(2)?.map(|value| value as u16),
                     issue: row.get(3)?,
+                    content_class: row.get(4)?,
+                    max_depth: row.get::<_, Option<i64>>(5)?.map(|value| value as u32),
+                    indexability: row.get(6)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -1899,6 +1934,17 @@ fn migrate(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_links_crawl_from ON links (crawl_id, from_id);
          CREATE INDEX IF NOT EXISTS idx_links_crawl_to ON links (crawl_id, to_id);",
     )?;
+    if version < 21 {
+        if !has_column(conn, "saved_views", "content_class")? {
+            conn.execute("ALTER TABLE saved_views ADD COLUMN content_class TEXT", [])?;
+        }
+        if !has_column(conn, "saved_views", "max_depth")? {
+            conn.execute("ALTER TABLE saved_views ADD COLUMN max_depth INTEGER", [])?;
+        }
+        if !has_column(conn, "saved_views", "indexability")? {
+            conn.execute("ALTER TABLE saved_views ADD COLUMN indexability TEXT", [])?;
+        }
+    }
     if version < 20 {
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS saved_views (
@@ -1913,11 +1959,14 @@ fn migrate(conn: &Connection) -> Result<()> {
     if version < 19 {
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS saved_views (
-    name       TEXT PRIMARY KEY,
-    search     TEXT,
-    status     INTEGER,
-    issue      TEXT,
-    created_at INTEGER NOT NULL
+    name          TEXT PRIMARY KEY,
+    search        TEXT,
+    status        INTEGER,
+    issue         TEXT,
+    content_class TEXT,
+    max_depth     INTEGER,
+    indexability  TEXT,
+    created_at    INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS custom_js (
@@ -1978,11 +2027,14 @@ CREATE TABLE IF NOT EXISTS extractions (
 );
 
 CREATE TABLE IF NOT EXISTS saved_views (
-    name       TEXT PRIMARY KEY,
-    search     TEXT,
-    status     INTEGER,
-    issue      TEXT,
-    created_at INTEGER NOT NULL
+    name          TEXT PRIMARY KEY,
+    search        TEXT,
+    status        INTEGER,
+    issue         TEXT,
+    content_class TEXT,
+    max_depth     INTEGER,
+    indexability  TEXT,
+    created_at    INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS custom_js (
@@ -2013,6 +2065,17 @@ CREATE TABLE IF NOT EXISTS page_text (
     next_run_at      INTEGER NOT NULL,
     last_run_at      INTEGER,
     enabled          INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS saved_views (
+    name          TEXT PRIMARY KEY,
+    search        TEXT,
+    status        INTEGER,
+    issue         TEXT,
+    content_class TEXT,
+    max_depth     INTEGER,
+    indexability  TEXT,
+    created_at    INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS profiles (
@@ -2712,16 +2775,27 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let store = Store::open(dir.join("coqui.db")).unwrap();
         store
-            .save_view("broken", Some("Missing"), Some(404), None)
+            .save_view("broken", Some("Missing"), Some(404), None, None, None, None)
             .unwrap();
         store
-            .save_view("broken", Some("Gone"), Some(410), Some("missing_title"))
+            .save_view(
+                "broken",
+                Some("Gone"),
+                Some(410),
+                Some("missing_title"),
+                Some("html"),
+                Some(3),
+                Some("indexable"),
+            )
             .unwrap();
         let views = store.saved_views().unwrap();
         assert_eq!(views.len(), 1);
         assert_eq!(views[0].search.as_deref(), Some("Gone"));
         assert_eq!(views[0].status, Some(410));
         assert_eq!(views[0].issue.as_deref(), Some("missing_title"));
+        assert_eq!(views[0].content_class.as_deref(), Some("html"));
+        assert_eq!(views[0].max_depth, Some(3));
+        assert_eq!(views[0].indexability.as_deref(), Some("indexable"));
         assert_eq!(store.delete_view("broken").unwrap(), 1);
         assert!(store.saved_views().unwrap().is_empty());
         std::fs::remove_dir_all(dir).ok();

@@ -302,7 +302,15 @@ export default function Home() {
   const [maxDepthFilter, setMaxDepthFilter] = useState('');
   const [indexFilter, setIndexFilter] = useState('');
   const [views, setViews] = useState<
-    { name: string; search: string | null; status: number | null; issue: string | null }[]
+    {
+      name: string;
+      search: string | null;
+      status: number | null;
+      issue: string | null;
+      contentClass: string | null;
+      maxDepth: number | null;
+      indexability: string | null;
+    }[]
   >([]);
   const [viewName, setViewName] = useState('');
   const [viewSelected, setViewSelected] = useState('');
@@ -401,7 +409,15 @@ export default function Home() {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
         const rows = await invoke<
-          { name: string; search: string | null; status: number | null; issue: string | null }[]
+          {
+            name: string;
+            search: string | null;
+            status: number | null;
+            issue: string | null;
+            contentClass: string | null;
+            maxDepth: number | null;
+            indexability: string | null;
+          }[]
         >('list_views');
         setViews(rows);
       } catch {
@@ -413,7 +429,15 @@ export default function Home() {
   const loadViews = async () => {
     const { invoke } = await import('@tauri-apps/api/core');
     const rows = await invoke<
-      { name: string; search: string | null; status: number | null; issue: string | null }[]
+      {
+            name: string;
+            search: string | null;
+            status: number | null;
+            issue: string | null;
+            contentClass: string | null;
+            maxDepth: number | null;
+            indexability: string | null;
+          }[]
     >('list_views');
     setViews(rows);
   };
