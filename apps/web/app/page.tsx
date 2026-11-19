@@ -392,6 +392,7 @@ export default function Home() {
   const [progress, setProgress] = useState<CrawlProgress | null>(null);
   const [issues, setIssues] = useState<IssueCount[]>([]);
   const [suppressed, setSuppressed] = useState<string[]>([]);
+  const [overrides, setOverrides] = useState<Record<string, string>>({});
   const [issueDetails, setIssueDetails] = useState<
     { id: number; url: string; detail: string | null }[]
   >([]);
@@ -522,6 +523,8 @@ export default function Home() {
     setIssues(counts);
     const ignored = await invoke<string[]>('suppressed_rules', { crawlId });
     setSuppressed(ignored);
+    const rules = await invoke<{ rule: string; severity: string }[]>('overrides', { crawlId });
+    setOverrides(Object.fromEntries(rules.map((row) => [row.rule, row.severity])));
   }, []);
 
   useEffect(() => {
@@ -713,6 +716,17 @@ export default function Home() {
     if (!crawl) return;
     const { invoke } = await import('@tauri-apps/api/core');
     await invoke('restore_rule', { crawlId: crawl.id, rule });
+    await loadIssues(crawl.id);
+  };
+
+  const setIssueSeverity = async (rule: string, severity: string) => {
+    if (!crawl) return;
+    const { invoke } = await import('@tauri-apps/api/core');
+    if (severity) {
+      await invoke('set_override', { crawlId: crawl.id, rule, severity });
+    } else {
+      await invoke('clear_override', { crawlId: crawl.id, rule });
+    }
     await loadIssues(crawl.id);
   };
 
@@ -2563,6 +2577,16 @@ export default function Home() {
                 <div className="issue-details">
                   <h4>
                     {ISSUE_LABELS[activeIssue] ?? activeIssue} ({issueDetails.length})
+                    <select
+                      value={overrides[activeIssue] ?? ''}
+                      onChange={(event) => void setIssueSeverity(activeIssue, event.target.value)}
+                      aria-label="Severity override"
+                    >
+                      <option value="">Default severity</option>
+                      <option value="error">Error</option>
+                      <option value="warning">Warning</option>
+                      <option value="opportunity">Opportunity</option>
+                    </select>
                   </h4>
                   <ul className="settings-reference">
                     {issueDetails.slice(0, 50).map((row) => (
