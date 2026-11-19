@@ -495,6 +495,33 @@ impl Store {
         Ok(rows)
     }
 
+    pub fn url_extractions(&self, crawl_id: &str, url_id: i64) -> Result<Vec<(String, String)>> {
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT name, value FROM extractions WHERE crawl_id = ?1 AND url_id = ?2 ORDER BY name",
+        )?;
+        let rows = stmt
+            .query_map(params![crawl_id, url_id], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn url_custom_js(&self, crawl_id: &str, url_id: i64) -> Result<Vec<(i64, String)>> {
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT script_index, value_json FROM custom_js
+             WHERE crawl_id = ?1 AND url_id = ?2 ORDER BY script_index",
+        )?;
+        let rows = stmt
+            .query_map(params![crawl_id, url_id], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     pub fn status_counts(&self, crawl_id: &str) -> Result<Vec<(Option<u16>, i64)>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
@@ -2782,6 +2809,36 @@ mod tests {
                 .total,
             2
         );
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn url_detail_helpers_return_rows() {
+        let dir = std::env::temp_dir().join(format!("coqui-detail-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        store
+            .create_crawl(
+                "c1",
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        store
+            .insert_url(&sample_record("c1", "https://example.com/"))
+            .unwrap();
+        let id = store.url_id("c1", "https://example.com/").unwrap().unwrap();
+        store.add_extractor("c1", "h1", "h1").unwrap();
+        store.save_extraction("c1", id, "h1", "Hello").unwrap();
+        store
+            .save_custom_js("c1", id, &[serde_json::json!("Rendered title")])
+            .unwrap();
+        assert_eq!(store.url_extractions("c1", id).unwrap().len(), 1);
+        let custom = store.url_custom_js("c1", id).unwrap();
+        assert_eq!(custom.len(), 1);
+        assert!(custom[0].1.contains("Rendered title"));
         std::fs::remove_dir_all(dir).ok();
     }
 

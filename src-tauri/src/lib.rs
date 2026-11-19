@@ -770,6 +770,38 @@ fn remove_schedule(state: State<'_, AppState>, id: i64) -> Result<usize, String>
 }
 
 #[tauri::command]
+fn get_url_detail(
+    state: State<'_, AppState>,
+    crawl_id: String,
+    url_id: i64,
+) -> Result<serde_json::Value, String> {
+    let url = state
+        .store
+        .get_url(&crawl_id, url_id)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "URL not found".to_string())?;
+    let extractions = state
+        .store
+        .url_extractions(&crawl_id, url_id)
+        .map_err(|error| error.to_string())?;
+    let custom_js = state
+        .store
+        .url_custom_js(&crawl_id, url_id)
+        .map_err(|error| error.to_string())?;
+    Ok(serde_json::json!({
+        "url": url,
+        "extractions": extractions
+            .into_iter()
+            .map(|(name, value)| serde_json::json!({"name": name, "value": value}))
+            .collect::<Vec<_>>(),
+        "customJs": custom_js
+            .into_iter()
+            .map(|(index, value)| serde_json::json!({"index": index, "value": value}))
+            .collect::<Vec<_>>(),
+    }))
+}
+
+#[tauri::command]
 fn status_counts(
     state: State<'_, AppState>,
     crawl_id: String,
@@ -1021,6 +1053,7 @@ pub fn run() {
             run_lighthouse_sample,
             test_connection,
             status_counts,
+            get_url_detail,
             export_pdf_report,
             run_due_schedules,
             list_schedules,

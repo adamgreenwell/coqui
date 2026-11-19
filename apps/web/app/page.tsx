@@ -56,6 +56,12 @@ interface CrawlConfig {
   customJs?: string[];
 }
 
+interface UrlDetail {
+  url: Record<string, unknown>;
+  extractions: { name: string; value: string }[];
+  customJs: { index: number; value: string }[];
+}
+
 interface LighthouseAudit {
   id: string;
   title: string;
@@ -283,6 +289,8 @@ export default function Home() {
   const [probeError, setProbeError] = useState<string | null>(null);
   const [probeBusy, setProbeBusy] = useState(false);
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
+  const [detail, setDetail] = useState<UrlDetail | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
   const [lighthouse, setLighthouse] = useState<LighthouseSummary | null>(null);
   const [lighthouseBusy, setLighthouseBusy] = useState(false);
   const [lighthouseError, setLighthouseError] = useState<string | null>(null);
@@ -487,6 +495,20 @@ export default function Home() {
       }
     })();
   }, [isTauri, crawl?.id, phase]);
+
+  const openDetail = async (row: UrlRow) => {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const data = await invoke<UrlDetail>('get_url_detail', {
+        crawlId: row.crawlId,
+        urlId: row.id,
+      });
+      setDetail(data);
+      setDetailError(null);
+    } catch (cause) {
+      setDetailError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
 
   async function startCrawl(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1617,6 +1639,87 @@ export default function Home() {
             </div>
           )}
 
+          {detail && (
+            <div
+              className="modal-backdrop"
+              role="presentation"
+              onClick={() => setDetail(null)}
+            >
+              <div
+                className="modal"
+                role="dialog"
+                aria-label="URL detail"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <h3>{String(detail.url.url ?? '')}</h3>
+                <ul className="settings-reference">
+                  <li>Status: {String(detail.url.status ?? '—')}</li>
+                  <li>Title: {String(detail.url.title ?? '—')}</li>
+                  <li>H1: {String(detail.url.h1 ?? '—')}</li>
+                  <li>Canonical: {String(detail.url.canonical ?? '—')}</li>
+                  <li>Robots: {String(detail.url.metaRobots ?? '—')}</li>
+                  <li>Depth: {String(detail.url.depth ?? '—')}</li>
+                  <li>Response: {String(detail.url.responseTimeMs ?? '—')} ms</li>
+                  <li>Words: {String(detail.url.wordCount ?? '—')}</li>
+                </ul>
+                {Array.isArray(detail.url.axe) && detail.url.axe.length > 0 && (
+                  <>
+                    <h4>Axe</h4>
+                    <ul className="settings-reference">
+                      {(detail.url.axe as { id: string; help: string; impact?: string }[]).map(
+                        (violation) => (
+                          <li key={violation.id}>
+                            {violation.id} ({violation.impact ?? 'n/a'}): {violation.help}
+                          </li>
+                        ),
+                      )}
+                    </ul>
+                  </>
+                )}
+                {Array.isArray(detail.url.headers) && detail.url.headers.length > 0 && (
+                  <>
+                    <h4>Headers</h4>
+                    <ul className="settings-reference">
+                      {(detail.url.headers as [string, string][]).map(([name, value]) => (
+                        <li key={name}>
+                          {name}: {value}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+                {detail.extractions.length > 0 && (
+                  <>
+                    <h4>Extractions</h4>
+                    <ul className="settings-reference">
+                      {detail.extractions.map((entry) => (
+                        <li key={entry.name}>
+                          {entry.name}: {entry.value}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+                {detail.customJs.length > 0 && (
+                  <>
+                    <h4>Custom JS</h4>
+                    <ul className="settings-reference">
+                      {detail.customJs.map((entry) => (
+                        <li key={entry.index}>
+                          #{entry.index}: {entry.value}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+                {detailError && <p className="settings-errors">{detailError}</p>}
+                <button className="secondary" type="button" onClick={() => setDetail(null)}>
+                  Close
+                </button>
+              </div>
+            </div>
+          )}
+
           {screenshotUrl && (
             <div
               className="modal-backdrop"
@@ -2128,7 +2231,7 @@ export default function Home() {
                   </thead>
                   <tbody>
                     {rows.map((row) => (
-                      <tr key={row.id}>
+                      <tr key={row.id} onClick={() => void openDetail(row)} style={{ cursor: 'pointer' }}>
                         {COLUMNS.filter((column) => columns[column.key]).map((column) => (
                           <td
                             key={column.key}
@@ -2181,6 +2284,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 
