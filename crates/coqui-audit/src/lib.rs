@@ -289,6 +289,16 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
         status_by_url.insert(url.url.as_str(), url);
     }
 
+    for (url, count) in store.http_images(crawl_id)?.into_iter().collect::<Vec<_>>() {
+        issue(
+            store,
+            crawl_id,
+            &url,
+            "mixed_content",
+            Some(format!("{count} images")),
+        )?;
+    }
+
     let mut nofollow_links: HashMap<String, i64> = HashMap::new();
     for link in &links {
         let nofollow = link
