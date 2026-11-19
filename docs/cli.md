@@ -6,6 +6,7 @@ Headless crawler using the same engine, store and audit rules as the desktop app
 
 ```bash
 coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots] [--user-agent UA] [--header "Name: value"] [--auth user:pass] [--timeout-ms N] [--render] [--screenshots] [--a11y] [--vitals] [--render-workers N]
+coqui resume [--out DIR] [--max-urls N] [--concurrency N]
 ```
 
 Examples:
@@ -20,6 +21,10 @@ coqui crawl url https://example.com/ --render --screenshots --a11y --vitals --ou
 ## Rendered output
 
 With `--render`, pages are rendered in headless Chrome/Edge before extraction. `--screenshots` writes JPEGs to `DIR/screenshots/<crawl-id>/`, `--a11y` stores axe violations, and `--vitals` stores LCP/CLS/TBT/TTFB/FCP. Verified against the local fixture: rendered title/H1, one screenshot, console errors, axe violations and vitals all captured.
+
+## Resume
+
+`coqui resume --out DIR` reloads the latest crawl and its checkpoint from `DIR/coqui.db`, then continues. `--max-urls` and `--concurrency` override the stored config for the resumed run. If no checkpoint exists, the command exits with an error.
 
 ## Output
 
@@ -38,5 +43,6 @@ With `--render`, pages are rendered in headless Chrome/Edge before extraction. `
 ## Current limits
 
 Supports URL/sitemap/list seeds, crawl limits, user agent, custom headers, basic auth, timeout, and rendering with screenshots/axe/Web Vitals. Export formats, config files, profiles and checkpoint/resume flags are next.
+
 
 
