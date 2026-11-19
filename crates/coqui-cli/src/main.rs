@@ -688,6 +688,14 @@ fn call_tool(
                 .get("contentClass")
                 .and_then(|value| value.as_str())
                 .map(str::to_string);
+            let max_depth = arguments
+                .get("maxDepth")
+                .and_then(|value| value.as_u64())
+                .map(|value| value as u32);
+            let indexability = arguments
+                .get("indexability")
+                .and_then(|value| value.as_str())
+                .map(str::to_string);
             let query = arguments
                 .get("query")
                 .and_then(|value| value.as_str())
@@ -702,6 +710,8 @@ fn call_tool(
                     status,
                     status_class,
                     content_class.as_deref(),
+                    max_depth,
+                    indexability.as_deref(),
                 )
                 .map_err(|error| error.to_string())?;
             let rows: Vec<_> = result
