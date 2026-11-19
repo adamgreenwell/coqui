@@ -18,3 +18,4 @@ tokio.workspace = true
 tokio-util.workspace = true
 toml = "1.2.1"
 serde = { workspace = true, features = ["derive"] }
+coqui-report = { version = "0.1.0", path = "../coqui-report" }
