@@ -333,6 +333,12 @@ export default function Home() {
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [history, setHistory] = useState<CrawlSummary[]>([]);
+  const [compareLeft, setCompareLeft] = useState('');
+  const [compareRight, setCompareRight] = useState('');
+  const [compareRows, setCompareRows] = useState<
+    { rule: string; left: number; right: number }[]
+  >([]);
+  const [compareError, setCompareError] = useState<string | null>(null);
   const [detail, setDetail] = useState<UrlDetail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
@@ -790,6 +796,38 @@ export default function Home() {
     anchor.download = `links-${String(detail.url.id)}.csv`;
     anchor.click();
     URL.revokeObjectURL(url);
+  };
+
+  const runCompare = async () => {
+    if (!compareLeft || !compareRight) return;
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const [left, right] = await Promise.all([
+        invoke<IssueCount[]>('get_issue_counts', { crawlId: compareLeft }),
+        invoke<IssueCount[]>('get_issue_counts', { crawlId: compareRight }),
+      ]);
+      const merged = new Map<string, { left: number; right: number }>();
+      for (const issue of left) {
+        merged.set(issue.rule, { left: issue.count, right: 0 });
+      }
+      for (const issue of right) {
+        const entry = merged.get(issue.rule) ?? { left: 0, right: 0 };
+        entry.right = issue.count;
+        merged.set(issue.rule, entry);
+      }
+      setCompareRows(
+        [...merged.entries()]
+          .map(([rule, value]) => ({ rule, ...value }))
+          .sort(
+            (a, b) =>
+              Math.abs(b.left - b.right) - Math.abs(a.left - a.right) ||
+              a.rule.localeCompare(b.rule),
+          ),
+      );
+      setCompareError(null);
+    } catch (cause) {
+      setCompareError(cause instanceof Error ? cause.message : String(cause));
+    }
   };
 
   const openDetail = async (row: UrlRow) => {
@@ -1947,6 +1985,72 @@ export default function Home() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {history.length > 1 && (
+            <div className="history compare-panel">
+              <h3>Compare crawls</h3>
+              <div className="compare-controls">
+                <select
+                  value={compareLeft}
+                  onChange={(event) => setCompareLeft(event.target.value)}
+                  aria-label="Left crawl"
+                >
+                  <option value="">Left crawl…</option>
+                  {history.map((entry) => (
+                    <option key={entry.id} value={entry.id}>
+                      {seedLabel(entry)}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={compareRight}
+                  onChange={(event) => setCompareRight(event.target.value)}
+                  aria-label="Right crawl"
+                >
+                  <option value="">Right crawl…</option>
+                  {history.map((entry) => (
+                    <option key={entry.id} value={entry.id}>
+                      {seedLabel(entry)}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  className="secondary"
+                  type="button"
+                  onClick={() => void runCompare()}
+                  disabled={!compareLeft || !compareRight}
+                >
+                  Compare
+                </button>
+              </div>
+              {compareError && <p className="settings-errors">{compareError}</p>}
+              {compareRows.length > 0 && (
+                <table className="compare-table">
+                  <thead>
+                    <tr>
+                      <th>Rule</th>
+                      <th>Left</th>
+                      <th>Right</th>
+                      <th>Δ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {compareRows.map((row) => {
+                      const delta = row.right - row.left;
+                      return (
+                        <tr key={row.rule}>
+                          <td>{ISSUE_LABELS[row.rule] ?? row.rule}</td>
+                          <td>{row.left}</td>
+                          <td>{row.right}</td>
+                          <td>{delta > 0 ? `+${delta}` : delta}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
             </div>
           )}
 
