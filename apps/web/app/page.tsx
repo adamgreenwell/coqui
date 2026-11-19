@@ -336,6 +336,7 @@ export default function Home() {
   const [exportPattern, setExportPattern] = useState('');
   const [skipEmpty, setSkipEmpty] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [columnsOpen, setColumnsOpen] = useState(false);
   const [columns, setColumns] = useState<Record<ColumnKey, boolean>>(() => {
     const fallback = { ...DEFAULT_COLUMNS };
     if (typeof window === 'undefined') return fallback;
@@ -348,19 +349,23 @@ export default function Home() {
       return fallback;
     }
   });
-  const [columnsOpen, setColumnsOpen] = useState(false);
+  const [pageSize, setPageSize] = useState(() => {
+    if (typeof window === 'undefined') return PAGE_SIZE;
+    const stored = Number(window.localStorage.getItem('coqui.pageSize'));
+    return [25, 50, 100, 200].includes(stored) ? stored : PAGE_SIZE;
+  });
 
   useEffect(() => {
     setIsTauri(typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window);
   }, []);
 
   const loadPage = useCallback(
-    async (crawlId: string, pageNumber: number, issue: string | null) => {
+    async (crawlId: string, pageNumber: number, issue: string | null, size = pageSize) => {
       const { invoke } = await import('@tauri-apps/api/core');
       const data = await invoke<UrlPage>('list_urls', {
         crawlId,
         page: pageNumber,
-        pageSize: PAGE_SIZE,
+        pageSize: size,
         issue,
         query: queryInput.trim() || null,
         status: /^\d{3}$/.test(statusFilter) ? Number(statusFilter) : null,
@@ -372,7 +377,7 @@ export default function Home() {
       setRows(data.rows);
       setTotal(data.total);
     },
-    [queryInput, statusFilter],
+    [queryInput, statusFilter, pageSize],
   );
 
   const loadIssues = useCallback(async (crawlId: string) => {
@@ -541,6 +546,14 @@ export default function Home() {
       // storage may be unavailable
     }
   }, [columns]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('coqui.pageSize', String(pageSize));
+    } catch {
+      // storage may be unavailable
+    }
+  }, [pageSize]);
 
   const clearFilters = () => {
     setQueryInput('');
@@ -714,7 +727,7 @@ export default function Home() {
     }
   }
 
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const isRunning = phase === 'running' || phase === 'pending';
   const settingsSnapshot = () => ({
     seed,
@@ -2451,6 +2464,25 @@ export default function Home() {
                 Page {page} of {totalPages}
               </span>
               <div className="pager-controls">
+                <label className="page-size">
+                  Rows
+                  <select
+                    value={pageSize}
+                    aria-label="Rows per page"
+                    onChange={(event) => {
+                      const next = Number(event.target.value);
+                      setPageSize(next);
+                      setPage(1);
+                      if (crawl) void loadPage(crawl.id, 1, activeIssue, next);
+                    }}
+                  >
+                    {[25, 50, 100, 200].map((size) => (
+                      <option key={size} value={size}>
+                        {size}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <button
                   className="secondary"
                   type="button"
@@ -2481,6 +2513,8 @@ export default function Home() {
     </div>
   );
 }
+
+
 
 
 
