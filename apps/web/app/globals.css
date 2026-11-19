@@ -926,3 +926,11 @@ tbody tr:hover {
   color: #6b7c78;
   cursor: pointer;
 }
+
+.page-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #6b7c78;
+}
