@@ -1037,7 +1037,7 @@ fn issues_for_rule(
         .map_err(|error| error.to_string())?;
     Ok(rows
         .into_iter()
-        .map(|(url, detail)| serde_json::json!({"url": url, "detail": detail}))
+        .map(|(id, url, detail)| serde_json::json!({"id": id, "url": url, "detail": detail}))
         .collect())
 }
 
