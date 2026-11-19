@@ -770,6 +770,26 @@ fn remove_schedule(state: State<'_, AppState>, id: i64) -> Result<usize, String>
 }
 
 #[tauri::command]
+fn status_counts(
+    state: State<'_, AppState>,
+    crawl_id: String,
+) -> Result<Vec<serde_json::Value>, String> {
+    let counts = state
+        .store
+        .status_counts(&crawl_id)
+        .map_err(|error| error.to_string())?;
+    Ok(counts
+        .into_iter()
+        .map(|(status, count)| {
+            serde_json::json!({
+                "status": status,
+                "count": count,
+            })
+        })
+        .collect())
+}
+
+#[tauri::command]
 fn list_views(state: State<'_, AppState>) -> Result<Vec<serde_json::Value>, String> {
     let views = state
         .store
@@ -1000,6 +1020,7 @@ pub fn run() {
             run_lighthouse,
             run_lighthouse_sample,
             test_connection,
+            status_counts,
             export_pdf_report,
             run_due_schedules,
             list_schedules,

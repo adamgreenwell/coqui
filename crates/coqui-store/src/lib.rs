@@ -495,6 +495,22 @@ impl Store {
         Ok(rows)
     }
 
+    pub fn status_counts(&self, crawl_id: &str) -> Result<Vec<(Option<u16>, i64)>> {
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT status, COUNT(*) FROM urls WHERE crawl_id = ?1 GROUP BY status ORDER BY status",
+        )?;
+        let rows = stmt
+            .query_map(params![crawl_id], |row| {
+                Ok((
+                    row.get::<_, Option<i64>>(0)?.map(|value| value as u16),
+                    row.get(1)?,
+                ))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     pub fn total_urls(&self, crawl_id: &str) -> Result<i64> {
         let count = self.lock()?.query_row(
             "SELECT COUNT(*) FROM urls WHERE crawl_id = ?1",
@@ -2766,6 +2782,33 @@ mod tests {
                 .total,
             2
         );
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn status_counts_group_by_code() {
+        let dir = std::env::temp_dir().join(format!("coqui-counts-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        store
+            .create_crawl(
+                "c1",
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        store
+            .insert_url(&sample_record("c1", "https://example.com/"))
+            .unwrap();
+        let mut missing = sample_record("c1", "https://example.com/missing");
+        missing.status = Some(404);
+        store.insert_url(&missing).unwrap();
+        let counts = store.status_counts("c1").unwrap();
+        assert_eq!(counts.len(), 2);
+        assert!(counts.contains(&(Some(200), 1)));
+        assert!(counts.contains(&(Some(404), 1)));
         std::fs::remove_dir_all(dir).ok();
     }
 

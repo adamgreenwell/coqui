@@ -816,3 +816,32 @@ tbody tr:hover {
   line-height: 1.5;
   color: #ff9b9b;
 }
+
+.overview-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.overview-strip > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 88px;
+  padding: 10px 14px;
+  border: 1px solid var(--border, #d8e2df);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.overview-strip span {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7c78;
+}
+
+.overview-strip strong {
+  font-size: 18px;
+}

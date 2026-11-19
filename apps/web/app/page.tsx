@@ -295,6 +295,7 @@ export default function Home() {
   const [page, setPage] = useState(1);
   const [progress, setProgress] = useState<CrawlProgress | null>(null);
   const [issues, setIssues] = useState<IssueCount[]>([]);
+  const [statusCounts, setStatusCounts] = useState<{ status: number | null; count: number }[]>([]);
   const [activeIssue, setActiveIssue] = useState<string | null>(null);
   const [queryInput, setQueryInput] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -470,6 +471,22 @@ export default function Home() {
     setViewSelected('');
     await loadViews();
   };
+
+  useEffect(() => {
+    if (!isTauri || !crawl) return;
+    void (async () => {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const rows = await invoke<{ status: number | null; count: number }[]>(
+          'status_counts',
+          { crawlId: crawl.id },
+        );
+        setStatusCounts(rows);
+      } catch {
+        // overview is best-effort
+      }
+    })();
+  }, [isTauri, crawl?.id, phase]);
 
   async function startCrawl(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -863,6 +880,25 @@ export default function Home() {
     () => issues.reduce((sum, issue) => sum + issue.count, 0),
     [issues],
   );
+
+  const classCounts = useMemo(() => {
+    const totals: Record<string, number> = {
+      '2xx': 0,
+      '3xx': 0,
+      '4xx': 0,
+      '5xx': 0,
+      other: 0,
+    };
+    for (const row of statusCounts) {
+      if (!row.status) {
+        totals.other += row.count;
+        continue;
+      }
+      const key = `${Math.floor(row.status / 100)}xx`;
+      totals[key] = (totals[key] ?? 0) + row.count;
+    }
+    return totals;
+  }, [statusCounts]);
 
   function cell(row: UrlRow, key: ColumnKey) {
     switch (key) {
@@ -1709,6 +1745,23 @@ export default function Home() {
               </div>
             </section>
           )}
+
+          <section className="overview-strip">
+            <div>
+              <span>Crawled</span>
+              <strong>{crawl?.totalUrls ?? 0}</strong>
+            </div>
+            {(['2xx', '3xx', '4xx', '5xx', 'other'] as const).map((key) => (
+              <div key={key}>
+                <span>{key === 'other' ? 'No response' : key}</span>
+                <strong>{classCounts[key] ?? 0}</strong>
+              </div>
+            ))}
+            <div>
+              <span>Issues</span>
+              <strong>{issueTotal}</strong>
+            </div>
+          </section>
 
           <section className="panel results">
             <div className="results-head">
