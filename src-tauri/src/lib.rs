@@ -410,6 +410,43 @@ async fn run_lighthouse_sample(
     Ok(summaries)
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ConnectionProbe {
+    status: u16,
+    ms: u64,
+    final_url: String,
+    content_type: Option<String>,
+}
+
+#[tauri::command]
+async fn test_connection(seed: String, headers: Vec<String>) -> Result<ConnectionProbe, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .user_agent("Coqui/0.1 connection test")
+        .build()
+        .map_err(|error| error.to_string())?;
+    let mut request = client.get(&seed);
+    for header in headers {
+        if let Some((name, value)) = header.split_once(':') {
+            request = request.header(name.trim(), value.trim());
+        }
+    }
+    let started = std::time::Instant::now();
+    let response = request.send().await.map_err(|error| error.to_string())?;
+    let ms = started.elapsed().as_millis() as u64;
+    Ok(ConnectionProbe {
+        status: response.status().as_u16(),
+        ms,
+        final_url: response.url().to_string(),
+        content_type: response
+            .headers()
+            .get("content-type")
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string),
+    })
+}
+
 #[tauri::command]
 fn export_catalog() -> Vec<coqui_core::ExportDefinition> {
     coqui_core::export_catalog()
@@ -569,6 +606,7 @@ pub fn run() {
             get_screenshot,
             run_lighthouse,
             run_lighthouse_sample,
+            test_connection,
             export_catalog,
             export_view
         ])
