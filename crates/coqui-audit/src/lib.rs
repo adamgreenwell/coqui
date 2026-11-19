@@ -1011,6 +1011,15 @@ mod tests {
     }
 
     #[test]
+    fn rule_ids_are_unique() {
+        let mut seen = std::collections::HashSet::new();
+        for rule in RULES {
+            assert!(seen.insert(rule.id), "duplicate rule id {}", rule.id);
+        }
+        assert!(RULES.len() >= 43, "expected the full rule catalogue");
+    }
+
+    #[test]
     fn finds_the_expected_issues() {
         let store = Store::open_in_memory().unwrap();
         let id = "audit";
