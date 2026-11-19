@@ -34,7 +34,7 @@ Auto-detection order: `COQUI_BROWSER_PATH`, configured path, then Edge/Chrome in
 
 With `screenshots` enabled, each rendered page also captures:
 
-- a JPEG screenshot (`Page.captureScreenshot`, quality 60) stored in the `screenshots` table keyed by crawl and URL id;
+- a JPEG screenshot (`Page.captureScreenshot`, quality 60) written under `<crawl-dir>/screenshots/<crawl-id>/<url-id>.jpg`; the database stores only the relative path in `screenshot_files`;
 - browser console errors and uncaught exceptions, collected from CDP `Runtime.consoleAPICalled`, `Runtime.exceptionThrown` and `Log.entryAdded` events and stored as `urls.console_json`, prefixed `console:`, `js:` and `network:` so JS exceptions can be separated from resource-load failures.
 
 The app exposes `get_screenshot(crawlId, urlId)` returning a data URL, shows a `JS n` badge on rows with console errors, and opens screenshots in a modal.

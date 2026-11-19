@@ -138,7 +138,7 @@ A live render of `https://www.landscapemanagement.net/` returned ~274 KB of rend
 | --- | --- |
 | Time | 711 s (0.7 URLs/s) |
 | Status | 500 × 200, 0 blocked |
-| Screenshots | 500 (15.8 MB, ~31.5 KB/page) |
+| Screenshots | 500 (~31.5 KB/page, now written to disk instead of the DB) |
 | Console errors | 470 pages / 2,390 entries |
 | DB | 28.4 MB (screenshots 56%) |
 | Canonicals | 0 (staging currently emits none) |

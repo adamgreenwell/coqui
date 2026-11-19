@@ -11,7 +11,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const SCHEMA_VERSION: i32 = 10;
+pub const SCHEMA_VERSION: i32 = 11;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -93,6 +93,14 @@ CREATE TABLE IF NOT EXISTS issues (
 
 CREATE INDEX IF NOT EXISTS idx_issues_crawl_rule ON issues (crawl_id, rule);
 
+CREATE TABLE IF NOT EXISTS screenshot_files (
+    crawl_id   TEXT NOT NULL,
+    url_id     INTEGER NOT NULL,
+    path       TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (crawl_id, url_id)
+);
+
 CREATE TABLE IF NOT EXISTS screenshots (
     crawl_id   TEXT NOT NULL,
     url_id     INTEGER NOT NULL,
@@ -130,27 +138,37 @@ pub type Result<T> = std::result::Result<T, StoreError>;
 pub struct Store {
     conn: Mutex<Connection>,
     ids: Mutex<std::collections::HashMap<(String, String), i64>>,
+    root: std::path::PathBuf,
 }
 
 impl Store {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
-        if let Some(parent) = path.as_ref().parent() {
+        let path = path.as_ref();
+        let root = path
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
         let conn = Connection::open(path)?;
-        Self::from_connection(conn)
+        Self::from_connection(conn, root)
     }
 
     pub fn open_in_memory() -> Result<Self> {
-        Self::from_connection(Connection::open_in_memory()?)
+        Self::from_connection(
+            Connection::open_in_memory()?,
+            std::env::temp_dir().join("coqui-memory"),
+        )
     }
 
-    fn from_connection(conn: Connection) -> Result<Self> {
+    fn from_connection(conn: Connection, root: std::path::PathBuf) -> Result<Self> {
         conn.execute_batch(SCHEMA)?;
         migrate(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
             ids: Mutex::new(std::collections::HashMap::new()),
+            root,
         })
     }
 
@@ -481,16 +499,37 @@ impl Store {
     }
 
     pub fn save_screenshot(&self, crawl_id: &str, url_id: i64, data: &[u8]) -> Result<()> {
+        let directory = self.root.join("screenshots").join(crawl_id);
+        std::fs::create_dir_all(&directory)?;
+        let file = directory.join(format!("{url_id}.jpg"));
+        std::fs::write(&file, data)?;
+        let relative = file
+            .strip_prefix(&self.root)
+            .unwrap_or(&file)
+            .to_string_lossy()
+            .to_string();
         self.lock()?.execute(
-            "INSERT OR REPLACE INTO screenshots (crawl_id, url_id, data, created_at)
+            "INSERT OR REPLACE INTO screenshot_files (crawl_id, url_id, path, created_at)
              VALUES (?1, ?2, ?3, ?4)",
-            params![crawl_id, url_id, data, now_ms()],
+            params![crawl_id, url_id, relative, now_ms()],
         )?;
         Ok(())
     }
 
     pub fn get_screenshot(&self, crawl_id: &str, url_id: i64) -> Result<Option<Vec<u8>>> {
-        let data = self
+        let relative: Option<String> = self
+            .lock()?
+            .query_row(
+                "SELECT path FROM screenshot_files WHERE crawl_id = ?1 AND url_id = ?2",
+                params![crawl_id, url_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if let Some(relative) = relative {
+            let file = self.root.join(relative);
+            return Ok(std::fs::read(file).ok());
+        }
+        let legacy: Option<Vec<u8>> = self
             .lock()?
             .query_row(
                 "SELECT data FROM screenshots WHERE crawl_id = ?1 AND url_id = ?2",
@@ -498,7 +537,7 @@ impl Store {
                 |row| row.get(0),
             )
             .optional()?;
-        Ok(data)
+        Ok(legacy)
     }
 
     pub fn all_links(&self, crawl_id: &str) -> Result<Vec<LinkRecord>> {
@@ -620,6 +659,21 @@ impl Store {
         let conn = self.lock()?;
         conn.execute("DELETE FROM issues WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM checkpoints WHERE crawl_id = ?1", params![id])?;
+        let paths: Vec<String> = {
+            let mut stmt = conn.prepare("SELECT path FROM screenshot_files WHERE crawl_id = ?1")?;
+            let rows = stmt
+                .query_map(params![id], |row| row.get::<_, String>(0))?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            rows
+        };
+        for relative in paths {
+            let _ = std::fs::remove_file(self.root.join(relative));
+        }
+        conn.execute(
+            "DELETE FROM screenshot_files WHERE crawl_id = ?1",
+            params![id],
+        )?;
+        let _ = std::fs::remove_dir_all(self.root.join("screenshots").join(id));
         conn.execute("DELETE FROM screenshots WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM links WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM url_map WHERE crawl_id = ?1", params![id])?;
@@ -720,6 +774,17 @@ fn migrate(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_links_crawl_from ON links (crawl_id, from_id);
          CREATE INDEX IF NOT EXISTS idx_links_crawl_to ON links (crawl_id, to_id);",
     )?;
+    if version < 11 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS screenshot_files (
+                crawl_id   TEXT NOT NULL,
+                url_id     INTEGER NOT NULL,
+                path       TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                PRIMARY KEY (crawl_id, url_id)
+            );",
+        )?;
+    }
     if version < 10 && !has_column(conn, "urls", "vitals_json")? {
         conn.execute("ALTER TABLE urls ADD COLUMN vitals_json TEXT", [])?;
     }
@@ -972,6 +1037,21 @@ mod tests {
         assert!(text.lines().next().unwrap().starts_with("url,status"));
         assert!(text.contains("redirect_target"));
         std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn screenshots_round_trip_through_files() {
+        let dir = std::env::temp_dir().join(format!("coqui-shots-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        let bytes = b"\xff\xd8fake-jpeg";
+        store.save_screenshot("c1", 7, bytes).unwrap();
+        assert_eq!(
+            store.get_screenshot("c1", 7).unwrap().as_deref(),
+            Some(bytes.as_slice())
+        );
+        assert!(dir.join("screenshots/c1/7.jpg").exists());
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]
