@@ -2481,6 +2481,7 @@ export default function Home() {
                   <option value="performance">Performance</option>
                   <option value="redirects">Redirects</option>
                   <option value="broken-links">Broken links</option>
+                  <option value="overview">Crawl overview</option>
                 </select>
                 <input
                   type="number"
@@ -2711,6 +2712,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 

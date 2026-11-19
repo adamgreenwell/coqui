@@ -22,7 +22,7 @@ Coqui exports the current results grid and the crawl's bulk data.
 | Screenshots | folder bundle (JPEGs + `screenshots.csv`) |
 | Sitemap | XML (indexable URLs + image entries) |
 | Sitemap bundle | folder of split gzipped sitemaps + sitemap-index.xml |
-| HTML report | self-contained report; types: summary, issues, status, performance, redirects, broken links |
+| HTML report | self-contained report; types: summary, issues, status, performance, redirects, broken links, crawl overview |
 | PDF report | HTML report printed via Chrome/Edge `--print-to-pdf` |
 
 ## Catalogue
@@ -78,3 +78,4 @@ URL CSV exports stream row-by-row from SQLite, so they do not hold the crawl in 
 ## CLI
 
 `coqui export --out DIR --family <name>` writes the latest crawl to `DIR/<family>-<timestamp>.csv`. Families: urls, issues, links, headers, images, a11y, structured, vitals, console, text, markdown, extractions, custom-js.
+
