@@ -78,6 +78,7 @@ async fn applies_session_headers_and_cookies() {
         block_assets: false,
         wait_dom: false,
         block_patterns: Vec::new(),
+        accessibility: false,
     };
     let renderer = Renderer::connect(None, 200, options)
         .await
@@ -120,4 +121,43 @@ async fn pool_renders_two_pages() {
     let (first, second) = tokio::join!(first, second);
     assert!(first.expect("first").contains("Pooled"));
     assert!(second.expect("second").contains("Pooled"));
+}
+
+#[tokio::test]
+#[ignore = "requires a local Chrome/Edge installation"]
+async fn runs_axe_accessibility_audit() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(serve_once(
+        listener,
+        "<!doctype html><html><body><img src=\"/missing.png\"><h1>Accessibility</h1></body></html>",
+        false,
+    ));
+
+    let renderer = Renderer::connect(
+        None,
+        100,
+        RenderOptions {
+            accessibility: true,
+            ..RenderOptions::default()
+        },
+    )
+    .await
+    .expect("a local Chrome/Edge is required");
+    let output = renderer
+        .render_page(&format!("http://{address}/"))
+        .await
+        .expect("render");
+    assert!(
+        output
+            .axe
+            .iter()
+            .any(|violation| violation.id == "image-alt"),
+        "axe did not report image-alt: {:?}",
+        output
+            .axe
+            .iter()
+            .map(|violation| &violation.id)
+            .collect::<Vec<_>>()
+    );
 }

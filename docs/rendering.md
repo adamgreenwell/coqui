@@ -22,6 +22,7 @@ Coqui can render pages in an external headless Chrome/Edge before extraction. Th
 | `screenshots` | Capture a JPEG screenshot per rendered page |
 | `renderBlockAssets` | Block fonts/media (default off; no measured gain) |
 | `renderBlockPatterns` | Extra URL patterns blocked while rendering (JSON/harness) |
+| `accessibility` | Run axe-core on each rendered page |
 | `renderEarly` | Continue at DOMContentLoaded instead of full load (default off) |
 
 Environment overrides for the CLI/harness: `COQUI_BROWSER_PATH`, `COQUI_CDP_ENDPOINT`, `COQUI_RENDER=1`, `COQUI_RENDER_WAIT`, `COQUI_RENDER_WORKERS`, `COQUI_SCREENSHOTS=1`.
@@ -44,6 +45,12 @@ Custom headers, cookies and the configured user agent are pushed into each brows
 - `Cookie` headers are split into `Network.setCookie` calls for the page URL.
 - Other headers go through `Network.setExtraHTTPHeaders`; basic auth becomes an `Authorization` header.
 - User agent is applied with `Emulation.setUserAgentOverride`.
+
+## Accessibility (axe)
+
+With `accessibility` enabled, each rendered tab also gets axe-core (vendored 4.10.2, MPL-2.0) injected and run against the document. Violations are stored per URL as `axe_json` and surfaced through the `accessibility_violations` audit rule.
+
+Stored fields per violation: rule id, impact, help text, help URL, node count. A 50-page staging run found 315 nodes across 5 rules — mostly `color-contrast` (199) and `region` (100) — and added ~13% to render time.
 
 ## Performance
 

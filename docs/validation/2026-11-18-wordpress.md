@@ -147,6 +147,18 @@ Console errors are dominated by `ERR_BLOCKED_BY_CLIENT` resource failures and a 
 
 The pool launched four separate browsers, which spawned ~144 OS processes. A follow-up benchmark on 50 pages showed four separate browsers at 85–93 s / ~144 processes; one browser with four tabs at 64.1 s / 34 processes; eight tabs at 63.1 s. Blocking fonts/media or third-party scripts gave no further gain. A single stage homepage took 14.6 s to reach full load, so remaining throughput is site-bound.
 
+### Accessibility audit (staging)
+
+Fifty rendered staging pages with axe-core enabled:
+
+| Metric | Value |
+| --- | --- |
+| Pages with violations | 50 |
+| Rules | 5 |
+| Nodes | 315 |
+| Top rules | color-contrast 199, region 100, heading-order 14, link-name 1, empty-heading 1 |
+| Time | 72.5 s vs 64.1 s without axe (~13% overhead) |
+
 ## Scale test (synthetic, local)
 
 | URLs | Crawl time | Rate | DB |

@@ -70,6 +70,7 @@ struct FetchOutcome {
     blocked: bool,
     console: Vec<String>,
     screenshot: Option<Vec<u8>>,
+    axe: Vec<coqui_core::AxeViolation>,
 }
 
 /// Run a crawl to completion (or cancellation).
@@ -256,6 +257,7 @@ pub async fn run_crawl(
             block_assets: config.render_block_assets,
             wait_dom: config.render_early,
             block_patterns: config.render_block_patterns.clone(),
+            accessibility: config.accessibility,
         };
         Some(
             RenderPool::connect(
@@ -311,6 +313,7 @@ pub async fn run_crawl(
                         status: outcome.status,
                         blocked: outcome.blocked,
                         console_errors: outcome.console.clone(),
+                        axe: outcome.axe.clone(),
                         hreflang: Vec::new(),
                         pagination_next: None,
                         pagination_prev: None,
@@ -362,6 +365,7 @@ pub async fn run_crawl(
                     status: outcome.status,
                     blocked: outcome.blocked,
                     console_errors: outcome.console.clone(),
+                    axe: outcome.axe.clone(),
                     hreflang: extracted
                         .as_ref()
                         .map(|page| page.hreflang.clone())
@@ -606,6 +610,7 @@ async fn fetch(
                     blocked: false,
                     console: Vec::new(),
                     screenshot: None,
+                    axe: Vec::new(),
                 };
             }
         };
@@ -681,6 +686,7 @@ async fn fetch(
                         blocked: looks_blocked(status, &response_headers, body.as_deref()),
                         console: Vec::new(),
                         screenshot: None,
+                        axe: Vec::new(),
                     };
                 }
             }
@@ -688,6 +694,7 @@ async fn fetch(
         let mut body = body;
         let mut console = Vec::new();
         let mut screenshot = None;
+        let mut axe = Vec::new();
         let blocked = looks_blocked(status, &response_headers, body.as_deref());
         if !blocked {
             if let Some(renderer) = renderer {
@@ -698,6 +705,7 @@ async fn fetch(
                             body = Some(rendered.html);
                             console = rendered.console;
                             screenshot = rendered.screenshot;
+                            axe = rendered.axe;
                         }
                         Err(error) => {
                             if std::env::var_os("COQUI_DEBUG_CRAWL").is_some() {
@@ -720,6 +728,7 @@ async fn fetch(
             blocked,
             console,
             screenshot,
+            axe,
         };
     }
 
@@ -735,6 +744,7 @@ async fn fetch(
         blocked: false,
         console: Vec::new(),
         screenshot: None,
+        axe: Vec::new(),
     }
 }
 

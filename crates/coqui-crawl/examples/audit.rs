@@ -120,6 +120,7 @@ async fn main() {
                 .collect()
         })
         .unwrap_or_default();
+    config.accessibility = std::env::var_os("COQUI_A11Y").is_some();
     config.render_block_assets = std::env::var("COQUI_BLOCK_ASSETS")
         .map(|value| value != "0")
         .unwrap_or(true);

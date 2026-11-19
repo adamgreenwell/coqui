@@ -4,6 +4,7 @@
 //! tab, with up to `render_workers` tabs in flight. Session cookies, headers and user agent are
 //! applied per tab before navigation.
 
+use coqui_core::AxeViolation;
 use futures::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -41,6 +42,7 @@ pub struct RenderOptions {
     pub block_assets: bool,
     pub wait_dom: bool,
     pub block_patterns: Vec<String>,
+    pub accessibility: bool,
 }
 
 /// Rendered HTML plus page evidence.
@@ -48,6 +50,7 @@ pub struct RenderOutput {
     pub html: String,
     pub screenshot: Option<Vec<u8>>,
     pub console: Vec<String>,
+    pub axe: Vec<AxeViolation>,
 }
 
 /// A multiplexed CDP connection: concurrent calls are correlated by id, events are broadcast.
@@ -340,6 +343,35 @@ impl Renderer {
         }
 
         let console = drain_console(events, &session);
+        let axe = if self.options.accessibility {
+            self.client
+                .call(
+                    "Runtime.evaluate",
+                    json!({"expression": include_str!("../assets/axe.min.js")}),
+                    Some(&session),
+                )
+                .await?;
+            let result = self
+                .client
+                .call(
+                    "Runtime.evaluate",
+                    json!({
+                        "expression": "(async () => { const r = await axe.run(document, { resultTypes: ['violations'] }); return JSON.stringify(r.violations.map(v => ({ id: v.id, impact: v.impact, help: v.help, helpUrl: v.helpUrl, nodes: v.nodes.length }))); })()",
+                        "awaitPromise": true,
+                        "returnByValue": true
+                    }),
+                    Some(&session),
+                )
+                .await?;
+            result
+                .get("result")
+                .and_then(|value| value.get("value"))
+                .and_then(Value::as_str)
+                .and_then(|value| serde_json::from_str::<Vec<AxeViolation>>(value).ok())
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
         let screenshot = if self.options.screenshot {
             let shot = self
                 .client
@@ -377,6 +409,7 @@ impl Renderer {
             html,
             screenshot,
             console,
+            axe,
         })
     }
 }

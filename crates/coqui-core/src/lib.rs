@@ -67,6 +67,9 @@ pub struct CrawlConfig {
     /// Extra URL patterns to block while rendering (for example third-party scripts).
     #[serde(default)]
     pub render_block_patterns: Vec<String>,
+    /// Run the axe-core accessibility audit on rendered pages.
+    #[serde(default)]
+    pub accessibility: bool,
     /// Only crawl discovered URLs matching at least one pattern (empty = all).
     #[serde(default)]
     pub include_patterns: Vec<String>,
@@ -117,6 +120,7 @@ impl Default for CrawlConfig {
             render_block_assets: false,
             render_early: false,
             render_block_patterns: Vec::new(),
+            accessibility: false,
             include_patterns: Vec::new(),
             exclude_patterns: Vec::new(),
             auth_user: None,
@@ -206,6 +210,7 @@ pub struct UrlRecord {
     pub pagination_prev: Option<String>,
     pub structured_data: StructuredData,
     pub console_errors: Vec<String>,
+    pub axe: Vec<AxeViolation>,
     pub redirect_target: Option<String>,
     pub redirect_chain: Vec<String>,
     pub word_count: Option<u32>,
@@ -255,6 +260,7 @@ pub struct NewUrl {
     pub pagination_prev: Option<String>,
     pub structured_data: StructuredData,
     pub console_errors: Vec<String>,
+    pub axe: Vec<AxeViolation>,
     pub redirect_target: Option<String>,
     pub redirect_chain: Vec<String>,
     pub word_count: Option<u32>,
@@ -317,6 +323,17 @@ pub struct CrawlCheckpoint {
     pub blocked_by_robots: u64,
     #[serde(default)]
     pub blocked: u64,
+}
+
+/// One axe-core accessibility violation.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AxeViolation {
+    pub id: String,
+    pub impact: Option<String>,
+    pub help: String,
+    pub help_url: String,
+    pub nodes: u32,
 }
 
 /// An hreflang alternate declared by a page.

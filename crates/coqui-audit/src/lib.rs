@@ -111,6 +111,11 @@ pub const RULES: &[RuleDef] = &[
         label: "No structured data",
         severity: IssueSeverity::Opportunity,
     },
+    RuleDef {
+        id: "accessibility_violations",
+        label: "Accessibility violations",
+        severity: IssueSeverity::Warning,
+    },
 ];
 
 pub fn rule_label(rule: &str) -> &str {
@@ -327,6 +332,28 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
             )?;
         }
 
+        if !url.axe.is_empty() {
+            let total: u32 = url.axe.iter().map(|violation| violation.nodes).sum();
+            let top: Vec<String> = url
+                .axe
+                .iter()
+                .take(3)
+                .map(|violation| format!("{} ({})", violation.id, violation.nodes))
+                .collect();
+            issue(
+                store,
+                crawl_id,
+                &url.url,
+                "accessibility_violations",
+                Some(format!(
+                    "{} rules / {} nodes: {}",
+                    url.axe.len(),
+                    total,
+                    top.join(", ")
+                )),
+            )?;
+        }
+
         let structured = &url.structured_data;
         let malformed: Vec<&str> = structured
             .errors
@@ -492,6 +519,7 @@ mod tests {
 
                 structured_data: Default::default(),
                 console_errors: Vec::new(),
+                axe: Vec::new(),
                 content_type: Some("text/html".into()),
                 title: title.map(str::to_string),
                 meta_description: None,
@@ -549,6 +577,7 @@ mod tests {
 
                 structured_data: Default::default(),
                 console_errors: Vec::new(),
+                axe: Vec::new(),
                 content_type: Some("text/html".into()),
                 title: Some("Not found".into()),
                 meta_description: Some("missing".into()),
@@ -591,6 +620,7 @@ mod tests {
 
                 structured_data: Default::default(),
                 console_errors: Vec::new(),
+                axe: Vec::new(),
                 content_type: Some("text/html".into()),
                 title: Some("Just a moment...".into()),
                 meta_description: None,
@@ -657,6 +687,7 @@ mod wordpress_rules {
 
                 structured_data: Default::default(),
                 console_errors: Vec::new(),
+                axe: Vec::new(),
                 content_type: Some("text/html".into()),
                 title: Some(title.into()),
                 meta_description: Some(meta.into()),
@@ -696,6 +727,7 @@ mod wordpress_rules {
 
                 structured_data: Default::default(),
                 console_errors: Vec::new(),
+                axe: Vec::new(),
                 content_type: Some("text/html".into()),
                 title: Some("A reasonably unique title".into()),
                 meta_description: Some("A reasonably unique description".into()),
@@ -733,6 +765,7 @@ mod wordpress_rules {
                 pagination_next: None,
                 pagination_prev: None,
                 console_errors: Vec::new(),
+                axe: Vec::new(),
                 structured_data: coqui_core::StructuredData {
                     types: types.into_iter().map(str::to_string).collect(),
                     errors: errors.into_iter().map(str::to_string).collect(),

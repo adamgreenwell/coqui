@@ -50,6 +50,7 @@ interface CrawlConfig {
   renderWorkers: number;
   screenshots: boolean;
   renderBlockAssets: boolean;
+  accessibility: boolean;
 }
 
 interface CrawlSummary {
@@ -137,6 +138,7 @@ const ISSUE_LABELS: Record<string, string> = {
   jsonld_malformed: 'Malformed structured data',
   jsonld_missing_required: 'Structured data missing required fields',
   jsonld_missing: 'No structured data',
+  accessibility_violations: 'Accessibility violations',
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -222,6 +224,7 @@ export default function Home() {
   const [renderWorkers, setRenderWorkers] = useState(2);
   const [screenshots, setScreenshots] = useState(false);
   const [renderBlockAssets, setRenderBlockAssets] = useState(false);
+  const [accessibility, setAccessibility] = useState(false);
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
 
   const [crawl, setCrawl] = useState<CrawlSummary | null>(null);
@@ -340,6 +343,7 @@ export default function Home() {
         renderWorkers,
         screenshots,
         renderBlockAssets,
+        accessibility,
       };
       const summary = await invoke<CrawlSummary>('create_crawl', {
         seedKind,
@@ -532,7 +536,7 @@ export default function Home() {
           <h2>New crawl</h2>
           <p className="hint">
             Crawl from a URL, sitemap or URL list with regex scope, basic auth, robots.txt,
-            optional Chromium rendering, screenshots and 19 audit rules. Every row lands in a
+            optional Chromium rendering, screenshots, axe accessibility and 20 audit rules. Every row lands in a
             portable SQLite crawl file.
           </p>
           <form onSubmit={startCrawl}>
@@ -739,6 +743,15 @@ export default function Home() {
                       disabled={isRunning}
                     />
                     Block fonts and media while rendering
+                  </label>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={accessibility}
+                      onChange={(event) => setAccessibility(event.target.checked)}
+                      disabled={isRunning}
+                    />
+                    Run axe accessibility audit
                   </label>
                 </>
               )}
@@ -1038,7 +1051,7 @@ export default function Home() {
 
           <p className="footer-note">
             M4 scope: URL/sitemap/list seeds, regex scope, auth, robots.txt, redirects, Chromium
-            rendering with screenshots and console capture, structured data, 19 audit rules and
+            rendering with screenshots and console capture, structured data, axe accessibility, 20 audit rules and
             pause/resume. Next: Lighthouse and axe audits.
           </p>
         </main>
@@ -1046,6 +1059,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 
