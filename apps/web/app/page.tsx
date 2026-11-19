@@ -177,6 +177,7 @@ const ISSUE_LABELS: Record<string, string> = {
   duplicate_title: 'Duplicate title',
   duplicate_meta_description: 'Duplicate meta description',
   duplicate_content: 'Duplicate content',
+  misspelling: 'Possible misspelling',
   title_too_short: 'Title too short',
   meta_description_too_long: 'Meta description too long',
   hreflang_missing_return: 'Hreflang missing return link',
@@ -207,6 +208,7 @@ const ISSUE_DESCRIPTIONS: Record<string, string> = {
   duplicate_title: 'Another page uses the same title.',
   duplicate_meta_description: 'Another page uses the same meta description.',
   duplicate_content: 'Another page has near-identical body content.',
+  misspelling: 'Stored page text contains a common misspelling.',
   hreflang_missing_return: 'The hreflang target does not link back.',
   hreflang_invalid_target: 'An hreflang target could not be reached.',
   pagination_broken: 'A pagination link is broken.',
@@ -3075,6 +3077,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 
