@@ -11,7 +11,7 @@ use axum::{
     response::Response,
     routing::get,
 };
-use coqui_core::{CrawlSummary, IssueCount, UrlPage};
+use coqui_core::{CrawlConfig, CrawlStatus, CrawlSummary, IssueCount, UrlPage, now_ms};
 use coqui_store::Store;
 use serde::Deserialize;
 
@@ -24,7 +24,7 @@ struct AppState {
 /// requires `Authorization: Bearer <token>`.
 pub fn router(store: Arc<Store>, token: Option<String>) -> Router {
     let protected = Router::new()
-        .route("/crawls", get(list_crawls))
+        .route("/crawls", get(list_crawls).post(start_crawl))
         .route("/crawls/{id}", get(get_crawl))
         .route("/crawls/{id}/issues", get(issue_counts))
         .route("/crawls/{id}/issues/{rule}", get(issue_rule))
@@ -82,6 +82,66 @@ async fn list_crawls(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<CrawlSummary>>, (StatusCode, String)> {
     state.store.list_crawls().map(Json).map_err(internal)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StartCrawl {
+    seed: String,
+    seed_kind: Option<String>,
+    max_urls: Option<u32>,
+}
+
+async fn start_crawl(
+    State(state): State<AppState>,
+    Json(body): Json<StartCrawl>,
+) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, String)> {
+    let seed = body.seed.trim().to_string();
+    if seed.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "seed is required".into()));
+    }
+    let kind = body.seed_kind.unwrap_or_else(|| "url".into());
+    if !["url", "sitemap", "list"].contains(&kind.as_str()) {
+        return Err((StatusCode::BAD_REQUEST, "invalid seedKind".into()));
+    }
+    let mut config = CrawlConfig::default();
+    if let Some(max_urls) = body.max_urls {
+        config.max_urls = max_urls;
+    }
+    let id = format!("api-{}", now_ms());
+    state
+        .store
+        .create_crawl(&id, &seed, &kind, &config, now_ms())
+        .map_err(internal)?;
+    state.store.mark_running(&id, now_ms()).map_err(internal)?;
+    let store = state.store.clone();
+    let task_id = id.clone();
+    tokio::spawn(async move {
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let pause = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let result = coqui_crawl::run_crawl(
+            store.clone(),
+            task_id.clone(),
+            kind,
+            seed,
+            config,
+            cancel,
+            pause,
+            None,
+            std::sync::Arc::new(|_| {}),
+        )
+        .await;
+        match result {
+            Ok(_) => {
+                let _ = store.mark_finished(&task_id, CrawlStatus::Completed, now_ms());
+                let _ = coqui_audit::analyze_crawl(&store, &task_id);
+            }
+            Err(_) => {
+                let _ = store.mark_finished(&task_id, CrawlStatus::Failed, now_ms());
+            }
+        }
+    });
+    Ok((StatusCode::ACCEPTED, Json(serde_json::json!({"id": id}))))
 }
 
 async fn get_crawl(
