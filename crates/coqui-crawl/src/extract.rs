@@ -193,6 +193,29 @@ fn extract_structured_data(document: &Html) -> StructuredData {
 }
 
 /// Extract the current field set and the crawlable outlinks of a document.
+fn image_source(src: Option<&str>, data_src: Option<&str>, srcset: Option<&str>) -> Option<String> {
+    let clean = |value: &str| value.trim().to_string();
+    if let Some(value) = src.map(clean).filter(|value| {
+        !value.is_empty() && !value.starts_with("data:") && !value.starts_with("about:")
+    }) {
+        return Some(value);
+    }
+    if let Some(value) = data_src
+        .map(clean)
+        .filter(|value| !value.is_empty() && !value.starts_with("data:"))
+    {
+        return Some(value);
+    }
+    srcset.and_then(|value| {
+        value
+            .split(',')
+            .next()
+            .and_then(|candidate| candidate.split_whitespace().next())
+            .map(str::to_string)
+            .filter(|value| !value.is_empty())
+    })
+}
+
 pub fn extract_page(html: &str, base_url: &str) -> ExtractedPage {
     let document = Html::parse_document(html);
 
@@ -260,11 +283,15 @@ pub fn extract_page(html: &str, base_url: &str) -> ExtractedPage {
     let structured_data = extract_structured_data(&document);
 
     let mut images = Vec::new();
-    for image in document.select(&selector("img[src]")) {
-        let Some(src) = image.value().attr("src") else {
+    for image in document.select(&selector("img")) {
+        let Some(src) = image_source(
+            image.value().attr("src"),
+            image.value().attr("data-src"),
+            image.value().attr("srcset"),
+        ) else {
             continue;
         };
-        let Ok(url) = resolve_url(base_url, src) else {
+        let Ok(url) = resolve_url(base_url, &src) else {
             continue;
         };
         images.push(ImageRef {
@@ -339,6 +366,25 @@ pub fn extract_page(html: &str, base_url: &str) -> ExtractedPage {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resolves_srcset_and_lazy_images() {
+        let html = r#"<html><body>
+            <img srcset="/a.png 1x, /b.png 2x">
+            <img data-src="/lazy.png">
+            <img src="data:image/gif;base64,AAAA" srcset="/real.png 1x">
+        </body></html>"#;
+        let page = extract_page(html, "https://example.com/page");
+        let sources: Vec<&str> = page.images.iter().map(|image| image.src.as_str()).collect();
+        assert_eq!(
+            sources,
+            vec![
+                "https://example.com/a.png",
+                "https://example.com/lazy.png",
+                "https://example.com/real.png"
+            ]
+        );
+    }
 
     const HTML: &str = r##"
         <!doctype html>
