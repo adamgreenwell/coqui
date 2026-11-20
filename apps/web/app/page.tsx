@@ -2825,7 +2825,26 @@ export default function Home() {
                 {segments.slice(0, 8).map((row) => {
                   const max = Math.max(1, ...segments.map((entry) => entry.count));
                   return (
-                    <div className="bar-row" key={`segment-${row.segment}`}>
+                    <div
+                      className="bar-row"
+                      key={`segment-${row.segment}`}
+                      role="button"
+                      tabIndex={0}
+                      title={
+                        row.segment === '(root)'
+                          ? 'Clear URL filter'
+                          : `Filter URLs to /${row.segment}`
+                      }
+                      style={{ cursor: 'pointer' }}
+                      onClick={() =>
+                        setQueryInput(row.segment === '(root)' ? '' : `/${row.segment}/`)
+                      }
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          setQueryInput(row.segment === '(root)' ? '' : `/${row.segment}/`);
+                        }
+                      }}
+                    >
                       <span>{row.segment}</span>
                       <div className="bar-track">
                         <div
