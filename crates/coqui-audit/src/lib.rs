@@ -838,24 +838,27 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
             }
         }
 
-        if !url.axe.is_empty() {
-            let total: u32 = url.axe.iter().map(|violation| violation.nodes).sum();
-            let top: Vec<String> = url
-                .axe
-                .iter()
-                .take(3)
-                .map(|violation| format!("{} ({})", violation.id, violation.nodes))
-                .collect();
-            issue(
+        for violation in &url.axe {
+            let rule = format!("axe_{}", violation.id.replace('-', "_"));
+            let severity = match violation.impact.as_deref() {
+                Some("critical") | Some("serious") => IssueSeverity::Error,
+                Some("minor") => IssueSeverity::Opportunity,
+                _ => IssueSeverity::Warning,
+            };
+            issue_with_severity(
                 store,
                 crawl_id,
                 &url.url,
-                "accessibility_violations",
+                &rule,
+                severity,
                 Some(format!(
-                    "{} rules / {} nodes: {}",
-                    url.axe.len(),
-                    total,
-                    top.join(", ")
+                    "{} nodes: {}",
+                    violation.nodes,
+                    if violation.help.is_empty() {
+                        violation.id.clone()
+                    } else {
+                        violation.help.clone()
+                    }
                 )),
             )?;
         }
@@ -987,6 +990,17 @@ fn issue(
         .find(|definition| definition.id == rule)
         .map(|definition| definition.severity)
         .unwrap_or(IssueSeverity::Warning);
+    issue_with_severity(store, crawl_id, url, rule, severity, detail)
+}
+
+fn issue_with_severity(
+    store: &Store,
+    crawl_id: &str,
+    url: &str,
+    rule: &str,
+    severity: IssueSeverity,
+    detail: Option<String>,
+) -> Result<()> {
     store.insert_issue(&Issue {
         crawl_id: crawl_id.to_string(),
         url: url.to_string(),

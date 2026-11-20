@@ -265,6 +265,16 @@ const ISSUE_DESCRIPTIONS: Record<string, string> = {
   long_blocking_time: 'Total Blocking Time is above the good threshold.',
 };
 
+const issueLabel = (rule: string): string => {
+  const known = ISSUE_LABELS[rule];
+  if (known) return known;
+  if (rule.startsWith('axe_')) {
+    const name = rule.slice(4).replace(/_/g, ' ');
+    return `Axe: ${name.charAt(0).toUpperCase()}${name.slice(1)}`;
+  }
+  return rule;
+};
+
 const STATUS_LABEL: Record<string, string> = {
   idle: 'Ready',
   pending: 'Starting',
@@ -2507,7 +2517,7 @@ export default function Home() {
                       const delta = row.right - row.left;
                       return (
                         <tr key={row.rule}>
-                          <td>{ISSUE_LABELS[row.rule] ?? row.rule}</td>
+                          <td>{issueLabel(row.rule)}</td>
                           <td>{row.left}</td>
                           <td>{row.right}</td>
                           <td>{delta > 0 ? `+${delta}` : delta}</td>
@@ -2967,7 +2977,7 @@ export default function Home() {
                     >
                       <span className="issue-count">{issue.count}</span>
                       <span className="issue-label">
-                        {ISSUE_LABELS[issue.rule] ?? issue.rule}
+                        {issueLabel(issue.rule)}
                       </span>
                       <span className="issue-sev">{issue.severity}</span>
                     </button>
@@ -2996,7 +3006,7 @@ export default function Home() {
                       title={entry.reason ? `Restore: ${entry.reason}` : 'Restore this rule'}
                       onClick={() => void restoreIssue(entry.rule)}
                     >
-                      {ISSUE_LABELS[entry.rule] ?? entry.rule} ×
+                      {issueLabel(entry.rule)} ×
                     </button>
                   ))}
                 </div>
@@ -3008,7 +3018,7 @@ export default function Home() {
                     {auditLog.slice(0, 8).map((entry, index) => (
                       <li key={`${entry.createdAt}-${index}`}>
                         {new Date(entry.createdAt).toLocaleString()} — {entry.action}{' '}
-                        {ISSUE_LABELS[entry.rule] ?? entry.rule}
+                        {issueLabel(entry.rule)}
                         {entry.reason ? ` (${entry.reason})` : ''}
                         {entry.actor ? ` — ${entry.actor}` : ''}
                       </li>
@@ -3019,7 +3029,7 @@ export default function Home() {
               {activeIssue && issueDetails.length > 0 && (
                 <div className="issue-details">
                   <h4>
-                    {ISSUE_LABELS[activeIssue] ?? activeIssue} ({issueDetails.length})
+                    {issueLabel(activeIssue)} ({issueDetails.length})
                     <select
                       value={overrides[activeIssue] ?? ''}
                       onChange={(event) => void setIssueSeverity(activeIssue, event.target.value)}
@@ -3323,7 +3333,7 @@ export default function Home() {
                 URLs <span className="count">{total.toLocaleString()}</span>
                 {activeIssue && (
                   <span className="filter-chip">
-                    {ISSUE_LABELS[activeIssue] ?? activeIssue}
+                    {issueLabel(activeIssue)}
                     <button type="button" onClick={() => filterByIssue(null)} aria-label="Clear filter">
                       ×
                     </button>
