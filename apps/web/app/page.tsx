@@ -47,6 +47,7 @@ interface CrawlConfig {
   render: boolean;
   browserPath: string | null;
   renderWaitMs: number;
+  renderWaitSelector?: string | null;
   renderWorkers: number;
   screenshots: boolean;
   renderBlockAssets: boolean;
@@ -351,6 +352,7 @@ export default function Home() {
   const [render, setRender] = useState(false);
   const [browserPath, setBrowserPath] = useState('');
   const [renderWaitMs, setRenderWaitMs] = useState(500);
+  const [renderWaitSelector, setRenderWaitSelector] = useState('');
   const [renderWorkers, setRenderWorkers] = useState(2);
   const [screenshots, setScreenshots] = useState(false);
   const [renderBlockAssets, setRenderBlockAssets] = useState(false);
@@ -1163,6 +1165,7 @@ export default function Home() {
         render,
         browserPath: browserPath.trim() || null,
         renderWaitMs,
+        renderWaitSelector: renderWaitSelector.trim() || null,
         renderWorkers,
         screenshots,
         renderBlockAssets,
@@ -1309,6 +1312,7 @@ export default function Home() {
     render,
     browserPath,
     renderWaitMs,
+    renderWaitSelector,
     renderWorkers,
     screenshots,
     renderBlockAssets,
@@ -1340,6 +1344,8 @@ export default function Home() {
     if (typeof value.render === 'boolean') setRender(value.render);
     if (typeof value.browserPath === 'string') setBrowserPath(value.browserPath);
     if (typeof value.renderWaitMs === 'number') setRenderWaitMs(value.renderWaitMs);
+    if (typeof value.renderWaitSelector === 'string')
+      setRenderWaitSelector(value.renderWaitSelector);
     if (typeof value.renderWorkers === 'number') setRenderWorkers(value.renderWorkers);
     if (typeof value.screenshots === 'boolean') setScreenshots(value.screenshots);
     if (typeof value.renderBlockAssets === 'boolean') setRenderBlockAssets(value.renderBlockAssets);
@@ -1475,6 +1481,7 @@ export default function Home() {
     { label: 'Respect robots.txt', help: 'Honour robots.txt directives.', value: respectRobots ? 'on' : 'off', changed: !respectRobots },
     { label: 'Render with Chromium', help: 'Run JavaScript pages before extraction.', value: render ? 'on' : 'off', changed: render },
     { label: 'Render wait', help: 'Milliseconds to wait after load.', value: `${renderWaitMs} ms`, changed: renderWaitMs !== 500 },
+    { label: 'Render wait selector', help: 'CSS selector to wait for after load.', value: renderWaitSelector || 'none', changed: renderWaitSelector.length > 0 },
     { label: 'Render workers', help: 'Concurrent rendering tabs.', value: String(renderWorkers), changed: renderWorkers !== 2 },
     { label: 'Screenshots', help: 'Save a JPEG per rendered page.', value: screenshots ? 'on' : 'off', changed: screenshots },
     { label: 'Block third-party assets', help: 'Skip third-party requests while rendering.', value: renderBlockAssets ? 'on' : 'off', changed: renderBlockAssets },

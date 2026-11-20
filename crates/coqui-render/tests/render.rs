@@ -97,6 +97,7 @@ async fn applies_session_headers_and_cookies() {
         accessibility: false,
         custom_js: Vec::new(),
         web_vitals: false,
+        wait_selector: None,
     };
     let renderer = Renderer::connect(None, 200, options)
         .await
