@@ -11,7 +11,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const SCHEMA_VERSION: i32 = 32;
+pub const SCHEMA_VERSION: i32 = 33;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -181,6 +181,13 @@ CREATE TABLE IF NOT EXISTS issue_url_suppressions (
     created_at INTEGER NOT NULL,
     expires_at INTEGER,
     PRIMARY KEY (crawl_id, rule, url)
+);
+
+CREATE TABLE IF NOT EXISTS render_errors (
+    crawl_id TEXT NOT NULL,
+    url_id   INTEGER NOT NULL,
+    message  TEXT NOT NULL,
+    PRIMARY KEY (crawl_id, url_id)
 );
 
 CREATE TABLE IF NOT EXISTS page_text (
@@ -1702,6 +1709,26 @@ impl Store {
         Ok(html.flatten())
     }
 
+    pub fn save_render_error(&self, crawl_id: &str, url_id: i64, message: &str) -> Result<()> {
+        self.lock()?.execute(
+            "INSERT INTO render_errors (crawl_id, url_id, message) VALUES (?1, ?2, ?3)
+             ON CONFLICT(crawl_id, url_id) DO UPDATE SET message = excluded.message",
+            params![crawl_id, url_id, message],
+        )?;
+        Ok(())
+    }
+
+    pub fn render_error(&self, crawl_id: &str, url_id: i64) -> Result<Option<String>> {
+        Ok(self
+            .lock()?
+            .query_row(
+                "SELECT message FROM render_errors WHERE crawl_id = ?1 AND url_id = ?2",
+                params![crawl_id, url_id],
+                |row| row.get(0),
+            )
+            .optional()?)
+    }
+
     pub fn export_text_csv(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {
         self.export_page_text(crawl_id, path, "text")
     }
@@ -2762,6 +2789,7 @@ impl Store {
         conn.execute("DELETE FROM images WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM custom_js WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM page_text WHERE crawl_id = ?1", params![id])?;
+        conn.execute("DELETE FROM render_errors WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM extractions WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM extractors WHERE crawl_id = ?1", params![id])?;
         conn.execute("DELETE FROM links WHERE crawl_id = ?1", params![id])?;
@@ -2867,6 +2895,16 @@ fn migrate(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_links_crawl_from ON links (crawl_id, from_id);
          CREATE INDEX IF NOT EXISTS idx_links_crawl_to ON links (crawl_id, to_id);",
     )?;
+    if version < 33 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS render_errors (
+                crawl_id TEXT NOT NULL,
+                url_id   INTEGER NOT NULL,
+                message  TEXT NOT NULL,
+                PRIMARY KEY (crawl_id, url_id)
+            );",
+        )?;
+    }
     if version < 32 {
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS page_text (
@@ -4598,7 +4636,7 @@ mod tests {
         let version: i32 = conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 32);
+        assert_eq!(version, 33);
         std::fs::remove_dir_all(dir).ok();
     }
 

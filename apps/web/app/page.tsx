@@ -397,6 +397,7 @@ export default function Home() {
   const [detail, setDetail] = useState<UrlDetail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [sourceHtml, setSourceHtml] = useState<string | null>(null);
+  const [renderError, setRenderError] = useState<string | null>(null);
   const [sourceError, setSourceError] = useState<string | null>(null);
   const [sourceLoading, setSourceLoading] = useState(false);
   const [sourceKind, setSourceKind] = useState<'raw' | 'rendered'>('raw');
@@ -1090,6 +1091,11 @@ export default function Home() {
         urlId,
       });
       setDetail(data);
+      const renderFailure = await invoke<string | null>('render_error', {
+        crawlId: crawl.id,
+        urlId,
+      });
+      setRenderError(renderFailure);
       setSourceHtml(null);
       setSourceError(null);
       setSourceQuery('');
@@ -2587,6 +2593,7 @@ export default function Home() {
                 onClick={(event) => event.stopPropagation()}
               >
                 <h3>{String(detail.url.url ?? '')}</h3>
+                {renderError && <p className="error">Render failed: {renderError}</p>}
                 <div className="detail-actions">
                   <button
                     className="secondary"

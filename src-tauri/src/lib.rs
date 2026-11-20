@@ -1033,6 +1033,18 @@ fn page_rendered_html(
 }
 
 #[tauri::command]
+fn render_error(
+    state: State<'_, AppState>,
+    crawl_id: String,
+    url_id: i64,
+) -> Result<Option<String>, String> {
+    state
+        .store
+        .render_error(&crawl_id, url_id)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn get_url_detail(
     state: State<'_, AppState>,
     crawl_id: String,
@@ -1511,6 +1523,7 @@ pub fn run() {
             response_buckets,
             get_url_detail,
             page_html,
+            render_error,
             page_rendered_html,
             export_pdf_report,
             run_due_schedules,
