@@ -173,6 +173,7 @@ pub const REPORTS: &[(&str, &str, &str)] = &[
         "Crawl overview",
         "Status, indexability, content, depth and issue totals.",
     ),
+    ("hreflang", "Hreflang", "Hreflang link pairs per page."),
 ];
 
 /// Render a named report.
@@ -194,6 +195,7 @@ pub fn render_report_with(
         "redirects" => render_redirects(store, crawl_id),
         "broken-links" => render_broken_links(store, crawl_id),
         "overview" => render_overview(store, crawl_id),
+        "hreflang" => render_hreflang(store, crawl_id),
         _ => render_html(store, crawl_id),
     }
 }
@@ -381,6 +383,35 @@ pub fn write_comparison(
         .total_urls(left_id)
         .map(|count| count as u64)
         .map_err(|error| error.to_string())
+}
+
+fn render_hreflang(store: &Store, crawl_id: &str) -> Result<String, String> {
+    let crawl = store
+        .get_crawl(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let rows = store
+        .hreflang_rows(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let pages = rows
+        .iter()
+        .map(|(page, _, _)| page)
+        .collect::<std::collections::BTreeSet<_>>()
+        .len();
+    let mut body = format!(
+        "<p class=\"muted\">{} hreflang links across {pages} pages</p>",
+        rows.len()
+    );
+    body.push_str("<table><tr><th>Page</th><th>Hreflang</th><th>Target</th></tr>");
+    for (page, lang, target) in rows.iter().take(200) {
+        body.push_str(&format!(
+            "<tr><td>{}</td><td>{}</td><td>{}</td></tr>",
+            escape(page),
+            escape(lang),
+            escape(target)
+        ));
+    }
+    body.push_str("</table>");
+    Ok(shell(&crawl.seed, "Hreflang", &body))
 }
 
 fn render_overview(store: &Store, crawl_id: &str) -> Result<String, String> {
