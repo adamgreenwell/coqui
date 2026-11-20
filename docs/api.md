@@ -14,6 +14,7 @@ It binds loopback by default and has **no authentication**; do not expose it pub
 | --- | --- | --- |
 | GET | `/health` | `ok` |
 | GET | `/crawls` | Crawl summaries (latest 100) |
+| POST | `/crawls` | Start a crawl: `{"seed": "...", "seedKind"?: "url", "maxUrls"?: 50}` → 202 `{"id": ...}` |
 | GET | `/crawls/{id}` | One crawl summary |
 | GET | `/crawls/{id}/issues` | Issue counts by rule/severity (suppression-aware) |
 | GET | `/crawls/{id}/issues/{rule}` | URLs and details for one rule |
@@ -30,12 +31,13 @@ curl http://127.0.0.1:4321/crawls
 curl "http://127.0.0.1:4321/crawls/<id>/urls?limit=2"
 ```
 
-With `--token secret123` verified locally: `/health` 200, `/crawls` 401 without the header and 200 with `Authorization: Bearer secret123`; `/health` returned `ok`, `/crawls` returned the validation crawl (`totalUrls=40`), `/urls?limit=2` returned 2 rows, and `?status=200&contentClass=html&sort=url&descending=true` applied the same filters as the grid (39 status-200 rows, 40 HTML) and `/issues` returned 15 rule rows; `/issues/title_too_long` returned 14 URLs with details. `/export/vitals` returned 200 with 3,124 bytes of `text/csv`; `/report/overview` returned 200 with 1,211 bytes of `text/html` and an unknown kind returned 400.
+With `--token secret123` verified locally: `/health` 200, `/crawls` 401 without the header and 200 with `Authorization: Bearer secret123`; `/health` returned `ok`, `/crawls` returned the validation crawl (`totalUrls=40`), `/urls?limit=2` returned 2 rows, and `?status=200&contentClass=html&sort=url&descending=true` applied the same filters as the grid (39 status-200 rows, 40 HTML) and `/issues` returned 15 rule rows; `/issues/title_too_long` returned 14 URLs with details. `POST /crawls` on `https://example.com` (maxUrls 1) returned 202 and the crawl completed with 1 URL and 6 issue rules. `/export/vitals` returned 200 with 3,124 bytes of `text/csv`; `/report/overview` returned 200 with 1,211 bytes of `text/html` and an unknown kind returned 400.
 
 ## Notes
 
-- Writes (starting crawls, exports) are not exposed yet.
+- Starting crawls is the only write endpoint; audits run automatically on completion. Exports and reports are read-only downloads.
 - The server uses the same SQLite database as the CLI/app; running it while a crawl writes is safe for reads.
+
 
 
 
