@@ -576,6 +576,7 @@ dependencies = [
  "coqui-audit",
  "coqui-core",
  "coqui-crawl",
+ "coqui-render",
  "coqui-report",
  "coqui-store",
  "serde",
