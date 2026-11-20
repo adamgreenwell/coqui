@@ -28,6 +28,7 @@ Named after the *coquí*, the tiny frog native to Puerto Rico whose call is ever
 - [Dev setup](docs/dev-setup.md) — run the desktop shell, tests and builds
 - [Exports reference](docs/exports.md) — export families, filename tokens, skip-empty
 - [CLI reference](docs/cli.md) — crawl, reports, exports, sitemaps, schedules, MCP
+- [HTTP API](docs/api.md) — read-only endpoints via `coqui serve`
 - [Packaging](docs/packaging.md) — installers, sidecars, release jobs
 - [Code signing runbook](docs/signing.md) — Windows/macOS signing steps (pending certificates)
 - [Benchmarks](docs/benchmarks.md) — 10k/50k/1M measurements
@@ -102,6 +103,7 @@ The backlog is the roadmap. Pick an issue from the board, comment to claim it, a
 ## License
 
 To be decided by the project owner before the first code release (MIT or Apache-2.0 are the candidates). Until then, no license is granted for reuse.
+
 
 
 
