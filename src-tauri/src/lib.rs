@@ -839,6 +839,21 @@ fn content_stats(
 }
 
 #[tauri::command]
+fn segments(
+    state: State<'_, AppState>,
+    crawl_id: String,
+) -> Result<Vec<serde_json::Value>, String> {
+    let counts = state
+        .store
+        .segment_counts(&crawl_id)
+        .map_err(|error| error.to_string())?;
+    Ok(counts
+        .into_iter()
+        .map(|(segment, count)| serde_json::json!({"segment": segment, "count": count}))
+        .collect())
+}
+
+#[tauri::command]
 fn depth_counts(
     state: State<'_, AppState>,
     crawl_id: String,
@@ -1407,6 +1422,7 @@ pub fn run() {
             response_stats,
             indexability_stats,
             depth_counts,
+            segments,
             content_stats,
             response_buckets,
             get_url_detail,
