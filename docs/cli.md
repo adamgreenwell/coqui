@@ -75,7 +75,7 @@ Exports a crawl's suppressions and severity overrides as JSON (default `issue-se
 
 ## Overview
 
-`coqui overview --out DIR` prints the same crawl aggregates as the app overview (issues by severity, statuses, content, indexability, response stats/buckets, depth, segments) and the aggregate timing. On the 1M-row fixture it took 2.7 s cold / 2.0 s warm.
+`coqui overview --out DIR` prints the same crawl aggregates as the app overview (issues by severity, statuses, content, indexability, response stats/buckets, depth, segments) and the aggregate timing plus a per-second throughput timeline summary. On the 1M-row fixture it took 2.7 s cold / 2.0 s warm.
 
 ## Serve (HTTP API)
 
@@ -165,6 +165,7 @@ Supports URL/sitemap/list seeds, crawl limits, user agent, custom headers, basic
 ## Custom JavaScript
 
 `--js EXPR` (repeatable) evaluates JavaScript in each rendered page after load; requires `--render`. Results are stored per URL and exported as Custom JS results (`custom-js`) in the app. Verified: `--js "document.title"` returned "Rendered title" on the JS fixture.
+
 
 
 

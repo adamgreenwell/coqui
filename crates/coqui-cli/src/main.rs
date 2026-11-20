@@ -758,6 +758,9 @@ fn run_overview(values: &[String]) -> Result<(), String> {
     let segments = store
         .segment_counts(&crawl.id)
         .map_err(|error| error.to_string())?;
+    let timeline = store
+        .throughput_buckets(&crawl.id)
+        .map_err(|error| error.to_string())?;
     let elapsed = started.elapsed().as_millis();
 
     println!("overview: {} ({} urls)", crawl.id, crawl.total_urls);
@@ -817,6 +820,13 @@ fn run_overview(values: &[String]) -> Result<(), String> {
             .join(" ")
     );
     println!("aggregates took {elapsed} ms");
+    let peak = timeline.iter().max_by_key(|(_, count)| *count);
+    println!(
+        "timeline: {} seconds, peak {} URLs/s (at {}s)",
+        timeline.len(),
+        peak.map(|(_, count)| *count).unwrap_or(0),
+        peak.map(|(second, _)| *second).unwrap_or(0)
+    );
     Ok(())
 }
 

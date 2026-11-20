@@ -682,6 +682,22 @@ impl Store {
         Ok(rows)
     }
 
+    /// URLs discovered per elapsed second since the first discovery.
+    pub fn throughput_buckets(&self, crawl_id: &str) -> Result<Vec<(i64, i64)>> {
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT (discovered_at - (
+                        SELECT MIN(discovered_at) FROM urls WHERE crawl_id = ?1
+                    )) / 1000 AS second, COUNT(*)
+             FROM urls WHERE crawl_id = ?1
+             GROUP BY second ORDER BY second LIMIT 3600",
+        )?;
+        let rows = stmt
+            .query_map(params![crawl_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     /// Issue count per URL (unsuppressed raw rows).
     pub fn issue_counts_by_url(&self, crawl_id: &str) -> Result<Vec<(String, i64)>> {
         let conn = self.lock()?;
