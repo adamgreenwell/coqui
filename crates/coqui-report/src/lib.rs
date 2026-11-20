@@ -415,12 +415,15 @@ fn render_orphans(store: &Store, crawl_id: &str) -> Result<String, String> {
         .map_err(|error| error.to_string())?;
     let inlinks: std::collections::HashSet<&str> = links
         .iter()
-        .filter(|link| link.internal)
+        .filter(|link| link.internal && link.from_url != link.to_url)
         .map(|link| link.to_url.as_str())
         .collect();
     let mut orphans = Vec::new();
     for url in &urls {
-        if url.url == crawl.seed || url.status != Some(200) || url.blocked {
+        if url.url.trim_end_matches('/') == crawl.seed.trim_end_matches('/')
+            || url.status != Some(200)
+            || url.blocked
+        {
             continue;
         }
         let noindex = url
