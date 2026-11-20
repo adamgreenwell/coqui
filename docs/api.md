@@ -18,7 +18,7 @@ It binds loopback by default and has **no authentication**; do not expose it pub
 | GET | `/crawls/{id}` | One crawl summary |
 | GET | `/crawls/{id}/issues` | Issue counts by rule/severity (suppression-aware) |
 | GET | `/crawls/{id}/issues/{rule}` | URLs and details for one rule |
-| GET | `/crawls/{id}/urls` | Paged URLs; query params `page`, `limit` (1–500), `query`, `status`, `statusClass`, `contentClass`, `maxDepth`, `indexability`, `sort`, `descending` |
+| GET | `/crawls/{id}/links?url=` | Inbound/outbound link edges with anchor, rel and internal flag |\n| GET | `/crawls/{id}/urls` | Paged URLs; query params `page`, `limit` (1–500), `query`, `status`, `statusClass`, `contentClass`, `maxDepth`, `indexability`, `sort`, `descending` |
 | GET | `/crawls/{id}/export/{family}` | CSV download for a family (urls, issues, links, headers, images, a11y, structured, vitals, console, text, markdown, extractions, custom-js) |
 | GET | `/crawls/{id}/report/{kind}` | HTML report (summary, issues, status, performance, redirects, broken-links, overview) |
 
@@ -52,4 +52,5 @@ docker run --rm -p 8787:8787 -v "$PWD/coqui-out:/data" -e COQUI_API_TOKEN=secret
 ```
 
 The image is a two-stage build (Rust builder → Debian slim) and serves `/data/coqui.db`. Verified locally: `/health` 200, `/crawls` 401 without the token and 200 with it.
+
 

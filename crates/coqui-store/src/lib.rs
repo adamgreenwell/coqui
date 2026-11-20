@@ -1760,6 +1760,46 @@ impl Store {
         Ok(summary)
     }
 
+    /// Inbound and outbound link edges for one URL.
+    pub fn links_for_url(
+        &self,
+        crawl_id: &str,
+        url: &str,
+    ) -> Result<(Vec<LinkRecord>, Vec<LinkRecord>)> {
+        let Some(url_id) = self.url_id(crawl_id, url)? else {
+            return Ok((Vec::new(), Vec::new()));
+        };
+        let conn = self.lock()?;
+        let inbound_sql = "SELECT f.url, t.url, l.anchor, l.rel, l.internal
+             FROM links l
+             JOIN url_map f ON f.id = l.from_id
+             JOIN url_map t ON t.id = l.to_id
+             WHERE l.crawl_id = ?1 AND l.to_id = ?2
+             ORDER BY f.url LIMIT 500";
+        let outbound_sql = "SELECT f.url, t.url, l.anchor, l.rel, l.internal
+             FROM links l
+             JOIN url_map f ON f.id = l.from_id
+             JOIN url_map t ON t.id = l.to_id
+             WHERE l.crawl_id = ?1 AND l.from_id = ?2
+             ORDER BY t.url LIMIT 500";
+        let read = |sql: &str| -> Result<Vec<LinkRecord>> {
+            let mut stmt = conn.prepare(sql)?;
+            let rows = stmt
+                .query_map(params![crawl_id, url_id], |row| {
+                    Ok(LinkRecord {
+                        from_url: row.get(0)?,
+                        to_url: row.get(1)?,
+                        anchor: row.get(2)?,
+                        rel: row.get(3)?,
+                        internal: row.get(4)?,
+                    })
+                })?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            Ok(rows)
+        };
+        Ok((read(inbound_sql)?, read(outbound_sql)?))
+    }
+
     pub fn all_links(&self, crawl_id: &str) -> Result<Vec<LinkRecord>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
