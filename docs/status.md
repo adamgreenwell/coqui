@@ -13,12 +13,12 @@ Snapshot of the Coqui build for the milestone review.
 
 ## Shipped
 
-- **Crawl:** URL/sitemap/list seeds, regex scope, robots.txt, redirects, auth headers, checkpoints, profiles, completion webhooks, per-host delay and max-RPS, 429 retries.
+- **Crawl:** URL/sitemap/list seeds, regex scope with testers, robots.txt, redirects, auth headers, **cookies**, **custom User-Agent/Accept-Language**, **HTTP/SOCKS proxy**, checkpoints, profiles, completion webhooks, per-host delay and max-RPS, 429 retries.
 - **Render:** Chromium/CDP, screenshots, console, axe, Web Vitals, custom JS, resource blocking.
 - **Audit:** 44 rules; suppression (rule + per-URL, reason required, optional expiry, actor); severity overrides; audit log; settings export/import/diff.
 - **Results UI:** filters, tabs, saved views, history, overview cards (status, severity, response stats, throughput, indexability, depth, content, segments), issue drill-down, inspector (links/images/axe/headers/screenshot).
 - **Exports/reports:** 13 CSV families, XLSX, sitemaps (split/gzip), HTML/PDF reports (summary, issues, status, performance, redirects, broken links, overview, comparison), filename tokens.
-- **Automation:** CLI (`crawl`, `resume`, `report`, `export`, `issue-settings`, `sitemap`, `schedule`, `serve`, `doctor`, `mcp`), MCP server, scheduler, HTTP API (bearer auth, exports/reports, start crawl), Dockerfile, CI recipes.
+- **Automation:** CLI (`crawl`, `resume`, `report`, `export`, `issue-settings`, `sitemap`, `schedule`, `serve`, `overview`, `prune`, `doctor`, `mcp`), MCP server, scheduler, HTTP API (bearer auth, exports/reports, start crawl), Dockerfile, CI recipes, comparison CSVs with per-URL issue deltas.
 - **Packaging:** Windows MSI 71.67 MiB / NSIS 40.95 MiB locally with Node + Lighthouse sidecars; macOS/Linux release jobs; signing runbook.
 
 ## Decisions pending
