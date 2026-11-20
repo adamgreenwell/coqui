@@ -350,6 +350,29 @@ fn run_report(values: &[String]) -> Result<(), String> {
         }
         index += 1;
     }
+    if kind == "all" {
+        let store = Store::open(out.join("coqui.db")).map_err(|error| error.to_string())?;
+        let crawl = store
+            .latest_crawl()
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "no crawl found".to_string())?;
+        let (mut written, mut failed) = (0usize, 0usize);
+        for (id, label, _) in coqui_report::REPORTS {
+            let path = out.join(format!("report-{id}.html"));
+            match coqui_report::write_report_with(&store, &crawl.id, &path, id, &options) {
+                Ok(urls) => {
+                    written += 1;
+                    println!("report {id} ({label}): {} urls", urls);
+                }
+                Err(error) => {
+                    failed += 1;
+                    eprintln!("report {id} ({label}) failed: {error}");
+                }
+            }
+        }
+        println!("reports: {written} written, {failed} failed");
+        return Ok(());
+    }
     if kind == "compare" {
         let other = with.ok_or_else(|| "--with <crawl id> is required".to_string())?;
         let store = Store::open(out.join("coqui.db")).map_err(|error| error.to_string())?;
