@@ -422,19 +422,39 @@ fn render_serp(store: &Store, crawl_id: &str) -> Result<String, String> {
     let urls = store
         .all_urls(crawl_id)
         .map_err(|error| error.to_string())?;
-    let mut title_counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
-    let mut meta_counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
-    for url in &urls {
+    let eligible: Vec<&coqui_core::UrlRecord> = urls
+        .iter()
+        .filter(|url| {
+            url.status == Some(200)
+                && !url.blocked
+                && url
+                    .content_type
+                    .as_deref()
+                    .map(|value| value.to_ascii_lowercase().contains("text/html"))
+                    .unwrap_or(false)
+                && !url
+                    .meta_robots
+                    .as_deref()
+                    .unwrap_or_default()
+                    .to_ascii_lowercase()
+                    .contains("noindex")
+        })
+        .collect();
+    let mut title_counts: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
+    let mut meta_counts: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
+    for url in &eligible {
         if let Some(title) = url.title.as_deref() {
-            *title_counts.entry(title).or_default() += 1;
+            *title_counts.entry(title.to_ascii_lowercase()).or_default() += 1;
         }
         if let Some(meta) = url.meta_description.as_deref() {
-            *meta_counts.entry(meta).or_default() += 1;
+            *meta_counts.entry(meta.to_ascii_lowercase()).or_default() += 1;
         }
     }
     let mut rows = Vec::new();
     let mut flagged = 0usize;
-    for url in urls.iter().filter(|url| url.status == Some(200)) {
+    for url in &eligible {
         let mut flags = Vec::new();
         match url.title.as_deref() {
             None => flags.push("missing title"),
@@ -442,7 +462,12 @@ fn render_serp(store: &Store, crawl_id: &str) -> Result<String, String> {
                 if title.chars().count() > 60 {
                     flags.push("title > 60 chars");
                 }
-                if title_counts.get(title).copied().unwrap_or(0) > 1 {
+                if title_counts
+                    .get(&title.to_ascii_lowercase())
+                    .copied()
+                    .unwrap_or(0)
+                    > 1
+                {
                     flags.push("duplicate title");
                 }
             }
@@ -453,7 +478,12 @@ fn render_serp(store: &Store, crawl_id: &str) -> Result<String, String> {
                 if meta.chars().count() > 160 {
                     flags.push("meta > 160 chars");
                 }
-                if meta_counts.get(meta).copied().unwrap_or(0) > 1 {
+                if meta_counts
+                    .get(&meta.to_ascii_lowercase())
+                    .copied()
+                    .unwrap_or(0)
+                    > 1
+                {
                     flags.push("duplicate meta");
                 }
             }
@@ -481,7 +511,7 @@ fn render_serp(store: &Store, crawl_id: &str) -> Result<String, String> {
         ));
     }
     let mut body = format!(
-        "<p class=\"muted\">{} indexable pages; {flagged} need SERP attention</p>",
+        "<p class=\"muted\">{} eligible HTML pages; {flagged} need SERP attention</p>",
         rows.len()
     );
     body.push_str("<table><tr><th>URL</th><th>Title</th><th>Meta length</th><th>H1</th><th>Words</th><th>Flags</th></tr>");
