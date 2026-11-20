@@ -179,6 +179,11 @@ pub const REPORTS: &[(&str, &str, &str)] = &[
         "Canonical chains",
         "Canonical targets followed across the crawl, with loops.",
     ),
+    (
+        "pagination",
+        "Pagination",
+        "rel=next/prev targets and whether they resolve to 200.",
+    ),
 ];
 
 /// Render a named report.
@@ -202,6 +207,7 @@ pub fn render_report_with(
         "overview" => render_overview(store, crawl_id),
         "hreflang" => render_hreflang(store, crawl_id),
         "canonical-chains" => render_canonical_chains(store, crawl_id),
+        "pagination" => render_pagination(store, crawl_id),
         _ => render_html(store, crawl_id),
     }
 }
@@ -389,6 +395,56 @@ pub fn write_comparison(
         .total_urls(left_id)
         .map(|count| count as u64)
         .map_err(|error| error.to_string())
+}
+
+fn render_pagination(store: &Store, crawl_id: &str) -> Result<String, String> {
+    let crawl = store
+        .get_crawl(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let urls = store
+        .all_urls(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let statuses: std::collections::HashMap<&str, Option<u16>> = urls
+        .iter()
+        .map(|url| (url.url.as_str(), url.status))
+        .collect();
+    let mut rows = Vec::new();
+    let mut non_200 = 0usize;
+    let mut uncrawled = 0usize;
+    for url in &urls {
+        if url.pagination_next.is_none() && url.pagination_prev.is_none() {
+            continue;
+        }
+        let next_status = url
+            .pagination_next
+            .as_deref()
+            .and_then(|next| statuses.get(next).copied().flatten());
+        if let Some(next) = &url.pagination_next {
+            match statuses.get(next.as_str()) {
+                Some(Some(status)) if *status != 200 => non_200 += 1,
+                None => uncrawled += 1,
+                _ => {}
+            }
+        }
+        rows.push((url.url.clone(), url.pagination_next.clone(), next_status));
+    }
+    let mut body = format!(
+        "<p class=\"muted\">{} pages use pagination; {non_200} next targets are non-200 and {uncrawled} were not crawled</p>",
+        rows.len()
+    );
+    body.push_str("<table><tr><th>Page</th><th>Next</th><th>Next status</th></tr>");
+    for (page, next, status) in &rows {
+        body.push_str(&format!(
+            "<tr><td>{}</td><td>{}</td><td>{}</td></tr>",
+            escape(page),
+            escape(next.as_deref().unwrap_or("")),
+            status
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "not crawled".into())
+        ));
+    }
+    body.push_str("</table>");
+    Ok(shell(&crawl.seed, "Pagination", &body))
 }
 
 fn render_canonical_chains(store: &Store, crawl_id: &str) -> Result<String, String> {
