@@ -69,6 +69,10 @@ coqui issue-settings diff --out DIR --with CRAWL_ID
 
 Exports a crawl's suppressions and severity overrides as JSON (default `issue-settings.json`) and imports them into the latest crawl, replacing its current settings. Verified with an empty settings file on the validation crawl.
 
+## Serve (HTTP API)
+
+`coqui serve --out DIR [--addr 127.0.0.1:8787]` starts the read-only JSON API (see [api.md](api.md)).
+
 ## Doctor
 
 `coqui doctor --out DIR` prints the CLI version and checks database writability, bundled Node, Lighthouse CLI and a detected Chrome/Edge browser. Verified output on this machine:
@@ -147,6 +151,7 @@ Supports URL/sitemap/list seeds, crawl limits, user agent, custom headers, basic
 ## Custom JavaScript
 
 `--js EXPR` (repeatable) evaluates JavaScript in each rendered page after load; requires `--render`. Results are stored per URL and exported as Custom JS results (`custom-js`) in the app. Verified: `--js "document.title"` returned "Rendered title" on the JS fixture.
+
 
 
 

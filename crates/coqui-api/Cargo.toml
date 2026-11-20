@@ -1,0 +1,14 @@
+[package]
+name = "coqui-api"
+description = "Read-only HTTP API for Coqui crawl databases"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+axum = "0.8"
+coqui-core.workspace = true
+coqui-store.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+tokio.workspace = true
