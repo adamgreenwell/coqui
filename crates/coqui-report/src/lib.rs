@@ -179,6 +179,11 @@ pub const REPORTS: &[(&str, &str, &str)] = &[
         "Canonical chains",
         "Canonical targets followed across the crawl, with loops.",
     ),
+    (
+        "pagination",
+        "Pagination",
+        "rel=next/prev targets and whether they resolve to 200.",
+    ),
 ];
 
 /// Render a named report.
@@ -202,6 +207,7 @@ pub fn render_report_with(
         "overview" => render_overview(store, crawl_id),
         "hreflang" => render_hreflang(store, crawl_id),
         "canonical-chains" => render_canonical_chains(store, crawl_id),
+        "pagination" => render_pagination(store, crawl_id),
         _ => render_html(store, crawl_id),
     }
 }
@@ -389,6 +395,81 @@ pub fn write_comparison(
         .total_urls(left_id)
         .map(|count| count as u64)
         .map_err(|error| error.to_string())
+}
+
+fn render_pagination(store: &Store, crawl_id: &str) -> Result<String, String> {
+    let crawl = store
+        .get_crawl(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let urls = store
+        .all_urls(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let statuses: std::collections::HashMap<&str, Option<u16>> = urls
+        .iter()
+        .map(|url| (url.url.as_str(), url.status))
+        .collect();
+    let crawled: std::collections::HashSet<&str> =
+        urls.iter().map(|url| url.url.as_str()).collect();
+    let describe = |target: Option<&str>| -> (String, bool, bool) {
+        let Some(target) = target else {
+            return (String::new(), false, false);
+        };
+        match statuses.get(target) {
+            None => ("not crawled".to_string(), false, true),
+            Some(Some(200)) => ("200".to_string(), false, false),
+            Some(Some(status)) => (status.to_string(), true, false),
+            Some(None) => ("no response".to_string(), true, false),
+        }
+    };
+    let mut rows = Vec::new();
+    let mut non_200 = 0usize;
+    let mut no_response = 0usize;
+    let mut uncrawled = 0usize;
+    for url in &urls {
+        if url.pagination_next.is_none() && url.pagination_prev.is_none() {
+            continue;
+        }
+        let (next_label, next_non_200, next_uncrawled) = describe(url.pagination_next.as_deref());
+        let (prev_label, prev_non_200, prev_uncrawled) = describe(url.pagination_prev.as_deref());
+        non_200 += usize::from(next_non_200) + usize::from(prev_non_200);
+        uncrawled += usize::from(next_uncrawled) + usize::from(prev_uncrawled);
+        if url.pagination_next.as_deref().is_some_and(|next| {
+            crawled.contains(next) && statuses.get(next).copied().flatten().is_none()
+        }) {
+            no_response += 1;
+        }
+        if url.pagination_prev.as_deref().is_some_and(|prev| {
+            crawled.contains(prev) && statuses.get(prev).copied().flatten().is_none()
+        }) {
+            no_response += 1;
+        }
+        rows.push((
+            url.url.clone(),
+            url.pagination_prev.clone(),
+            prev_label,
+            url.pagination_next.clone(),
+            next_label,
+        ));
+    }
+    let mut body = format!(
+        "<p class=\"muted\">{} pages use pagination; {non_200} targets non-200, {no_response} failed without a response, {uncrawled} not crawled</p>",
+        rows.len()
+    );
+    body.push_str(
+        "<table><tr><th>Page</th><th>Previous</th><th>Prev status</th><th>Next</th><th>Next status</th></tr>",
+    );
+    for (page, prev, prev_status, next, next_status) in &rows {
+        body.push_str(&format!(
+            "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+            escape(page),
+            escape(prev.as_deref().unwrap_or("")),
+            escape(prev_status),
+            escape(next.as_deref().unwrap_or("")),
+            escape(next_status)
+        ));
+    }
+    body.push_str("</table>");
+    Ok(shell(&crawl.seed, "Pagination", &body))
 }
 
 fn render_canonical_chains(store: &Store, crawl_id: &str) -> Result<String, String> {

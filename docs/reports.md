@@ -20,7 +20,7 @@ Outputs land as `DIR/report-<kind>.html` (plus `.pdf` with `--pdf`).
 | `performance` | Performance | Slowest URLs, throughput and per-second timeline |
 | `redirects` | Redirects | 3xx responses with targets |
 | `broken-links` | Broken links | 4xx/5xx and failed responses |
-| `overview` | Crawl overview | Status, indexability, content, depth and issue totals |\n| `hreflang` | Hreflang | Hreflang link pairs per page (language and target) |\n| `canonical-chains` | Canonical chains | Canonical targets followed across the crawl, with loops |
+| `overview` | Crawl overview | Status, indexability, content, depth and issue totals |\n| `hreflang` | Hreflang | Hreflang link pairs per page (language and target) |\n| `canonical-chains` | Canonical chains | Canonical targets followed across the crawl, with loops |\n| `pagination` | Pagination | rel=next/prev targets, with next status or not-crawled |
 
 ## Options
 
@@ -40,5 +40,6 @@ Outputs land as `DIR/report-<kind>.html` (plus `.pdf` with `--pdf`).
 ## Print styles
 
 Reports include `@page A4` with 12 mm margins and page-break avoidance for headings and table rows, so PDFs are print-friendly.
+
 
 
