@@ -632,6 +632,66 @@ impl Store {
         Ok(rows)
     }
 
+    /// Export suppressions and overrides as JSON.
+    pub fn issue_settings(&self, crawl_id: &str) -> Result<serde_json::Value> {
+        let suppressions: Vec<serde_json::Value> = self
+            .suppressed_rules(crawl_id)?
+            .into_iter()
+            .map(|(rule, reason)| serde_json::json!({"rule": rule, "reason": reason}))
+            .collect();
+        let overrides: Vec<serde_json::Value> = self
+            .overrides(crawl_id)?
+            .into_iter()
+            .map(|(rule, severity)| serde_json::json!({"rule": rule, "severity": severity}))
+            .collect();
+        Ok(serde_json::json!({
+            "suppressions": suppressions,
+            "overrides": overrides,
+        }))
+    }
+
+    /// Replace a crawl's suppressions and overrides from exported JSON.
+    pub fn apply_issue_settings(&self, crawl_id: &str, value: &serde_json::Value) -> Result<()> {
+        let conn = self.lock()?;
+        conn.execute(
+            "DELETE FROM issue_suppressions WHERE crawl_id = ?1",
+            params![crawl_id],
+        )?;
+        conn.execute(
+            "DELETE FROM issue_overrides WHERE crawl_id = ?1",
+            params![crawl_id],
+        )?;
+        if let Some(items) = value.get("suppressions").and_then(|value| value.as_array()) {
+            for item in items {
+                let Some(rule) = item.get("rule").and_then(|value| value.as_str()) else {
+                    continue;
+                };
+                let reason = item.get("reason").and_then(|value| value.as_str());
+                conn.execute(
+                    "INSERT OR REPLACE INTO issue_suppressions (crawl_id, rule, reason)
+                     VALUES (?1, ?2, ?3)",
+                    params![crawl_id, rule, reason],
+                )?;
+            }
+        }
+        if let Some(items) = value.get("overrides").and_then(|value| value.as_array()) {
+            for item in items {
+                let (Some(rule), Some(severity)) = (
+                    item.get("rule").and_then(|value| value.as_str()),
+                    item.get("severity").and_then(|value| value.as_str()),
+                ) else {
+                    continue;
+                };
+                conn.execute(
+                    "INSERT OR REPLACE INTO issue_overrides (crawl_id, rule, severity)
+                     VALUES (?1, ?2, ?3)",
+                    params![crawl_id, rule, severity],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
     pub fn issue_counts(&self, crawl_id: &str) -> Result<Vec<IssueCount>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
@@ -3470,6 +3530,45 @@ mod tests {
                 .any(|entry| entry.1 == "suppress" && entry.2.as_deref() == Some("client request"))
         );
         assert!(log.iter().any(|entry| entry.1 == "override"));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn issue_settings_round_trip() {
+        let dir = std::env::temp_dir().join(format!("coqui-issue-settings-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        store
+            .create_crawl(
+                "c1",
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        store
+            .create_crawl(
+                "c2",
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        store
+            .suppress_rule("c1", "missing_title", Some("client request"))
+            .unwrap();
+        store
+            .set_override("c1", "missing_title", "opportunity")
+            .unwrap();
+        let exported = store.issue_settings("c1").unwrap();
+        store.apply_issue_settings("c2", &exported).unwrap();
+        assert_eq!(store.suppressed_rules("c2").unwrap().len(), 1);
+        assert_eq!(
+            store.overrides("c2").unwrap(),
+            vec![("missing_title".to_string(), "opportunity".to_string())]
+        );
         std::fs::remove_dir_all(dir).ok();
     }
 

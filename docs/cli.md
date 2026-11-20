@@ -57,6 +57,15 @@ render_workers = 2
 
 `coqui mcp --out DIR` runs a stdio MCP server (JSON-RPC, newline-delimited) over `DIR/coqui.db`. Tools: `list_crawls`, `get_crawl`, `list_urls`, `issue_counts`, `export_urls`, `export_family` (family or `all`), `compare_crawls`, `start_crawl`, `run_schedule_due`. Implements `initialize`, `ping`, `tools/list`, `tools/call`, plus resources (`coqui://crawls`, `coqui://crawl/{id}`, `coqui://crawl/{id}/issues`) with `resources/list`, `resources/templates/list`, `resources/read`, and prompts (`audit-crawl`, `summarize-issues`, `export-crawl`) with `prompts/list`, `prompts/get`. Verified with a piped session (initialize + tools/list + list_urls).
 
+## Issue settings
+
+```bash
+coqui issue-settings export --out DIR [--file PATH]
+coqui issue-settings import --out DIR --file PATH
+```
+
+Exports a crawl's suppressions and severity overrides as JSON (default `issue-settings.json`) and imports them into the latest crawl, replacing its current settings. Verified with an empty settings file on the validation crawl.
+
 ## Doctor
 
 `coqui doctor --out DIR` prints the CLI version and checks database writability, bundled Node, Lighthouse CLI and a detected Chrome/Edge browser. Verified output on this machine:
@@ -135,6 +144,7 @@ Supports URL/sitemap/list seeds, crawl limits, user agent, custom headers, basic
 ## Custom JavaScript
 
 `--js EXPR` (repeatable) evaluates JavaScript in each rendered page after load; requires `--render`. Results are stored per URL and exported as Custom JS results (`custom-js`) in the app. Verified: `--js "document.title"` returned "Rendered title" on the JS fixture.
+
 
 
 
