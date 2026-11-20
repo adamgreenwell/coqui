@@ -58,6 +58,15 @@ pub struct RenderOutput {
     pub custom_js: Vec<Value>,
 }
 
+/// A background task that is aborted when dropped, including early-error paths.
+struct AbortOnDrop(tokio::task::JoinHandle<()>);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 /// A multiplexed CDP connection: concurrent calls are correlated by id, events are broadcast.
 struct CdpClient {
     tx: mpsc::Sender<String>,
@@ -315,7 +324,7 @@ impl Renderer {
         let network_session = session.clone();
         let bytes_counter = network_bytes.clone();
         let mut byte_events = self.client.subscribe();
-        let bytes_task = tokio::spawn(async move {
+        let bytes_task = AbortOnDrop(tokio::spawn(async move {
             while let Ok(event) = byte_events.recv().await {
                 if event.get("method").and_then(Value::as_str) == Some("Network.loadingFinished")
                     && event.get("sessionId").and_then(Value::as_str)
@@ -328,7 +337,7 @@ impl Renderer {
                     bytes_counter.fetch_add(length, Ordering::Relaxed);
                 }
             }
-        });
+        }));
         let _ = self
             .client
             .call(
@@ -461,7 +470,7 @@ impl Renderer {
                 vitals.transfer_bytes = Some(total);
             }
         }
-        bytes_task.abort();
+        bytes_task.0.abort();
         let axe = if self.options.accessibility {
             self.client
                 .call(
