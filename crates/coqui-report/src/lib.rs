@@ -422,10 +422,6 @@ fn render_canonical_chains(store: &Store, crawl_id: &str) -> Result<String, Stri
             }
             chain.push(target.to_string());
             current = target;
-            if chain.len() > 10 {
-                chain.push("…".to_string());
-                break;
-            }
         }
         if chain.len() > 1 {
             chains.push((url.url.clone(), chain));
