@@ -69,6 +69,10 @@ coqui issue-settings diff --out DIR --with CRAWL_ID
 
 Exports a crawl's suppressions and severity overrides as JSON (default `issue-settings.json`) and imports them into the latest crawl, replacing its current settings. Verified with an empty settings file on the validation crawl.
 
+## Prune
+
+`coqui prune --out DIR [--keep N]` deletes all but the N most recent crawls (default 10), including their screenshot files. Verified: pruning a two-crawl database with `--keep 1` removed one crawl; a second run reported nothing to delete.
+
 ## Overview
 
 `coqui overview --out DIR` prints the same crawl aggregates as the app overview (issues by severity, statuses, content, indexability, response stats/buckets, depth, segments) and the aggregate timing. On the 1M-row fixture it took 2.7 s cold / 2.0 s warm.
@@ -157,6 +161,7 @@ Supports URL/sitemap/list seeds, crawl limits, user agent, custom headers, basic
 ## Custom JavaScript
 
 `--js EXPR` (repeatable) evaluates JavaScript in each rendered page after load; requires `--render`. Results are stored per URL and exported as Custom JS results (`custom-js`) in the app. Verified: `--js "document.title"` returned "Rendered title" on the JS fixture.
+
 
 
 
