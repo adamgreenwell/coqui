@@ -110,7 +110,7 @@ fn load_config(path: &Path, required: bool) -> Result<FileConfig, String> {
 }
 
 fn usage() -> &'static str {
-    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots] [--webhook URL] [--delay-ms N] [--max-rps N]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR]\n       coqui report compare --with <crawl id> [--out DIR]\n       coqui reports\n       coqui export [--out DIR] [--family urls|issues|links|headers|images|a11y|structured|vitals|console|text|markdown|extractions|custom-js]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N] [--webhook URL] [--delay-ms N] [--max-rps N]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui serve [--out DIR] [--addr 127.0.0.1:8787] [--token TOKEN]
+    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots] [--webhook URL] [--delay-ms N] [--max-rps N]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR]\n       coqui report compare --with <crawl id> [--out DIR]\n       coqui reports\n       coqui export [--out DIR] [--family urls|issues|links|headers|images|a11y|structured|vitals|console|text|markdown|extractions|custom-js]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N] [--webhook URL] [--delay-ms N] [--max-rps N]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui overview [--out DIR]\n       coqui serve [--out DIR] [--addr 127.0.0.1:8787] [--token TOKEN]
        coqui issue-settings <export|import|diff> [--out DIR] [--file PATH] [--with CRAWL]
        coqui doctor [--out DIR]
        coqui mcp [--out DIR]"
@@ -602,6 +602,111 @@ fn first_existing(paths: &[&str]) -> Option<String> {
         .iter()
         .find(|path| std::path::Path::new(path).exists())
         .map(|path| (*path).to_string())
+}
+
+fn run_overview(values: &[String]) -> Result<(), String> {
+    let mut out = PathBuf::from("coqui-out");
+    let mut index = 0;
+    while index < values.len() {
+        match values[index].as_str() {
+            "--out" => {
+                index += 1;
+                out = PathBuf::from(values.get(index).ok_or("missing --out value")?);
+            }
+            other => return Err(format!("unknown option '{other}'")),
+        }
+        index += 1;
+    }
+    let store = Store::open(out.join("coqui.db")).map_err(|error| error.to_string())?;
+    let crawl = store
+        .latest_crawl()
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "no crawl found".to_string())?;
+    let started = std::time::Instant::now();
+    let issues = store
+        .issue_counts(&crawl.id)
+        .map_err(|error| error.to_string())?;
+    let statuses = store
+        .status_counts(&crawl.id)
+        .map_err(|error| error.to_string())?;
+    let depth = store
+        .depth_counts(&crawl.id)
+        .map_err(|error| error.to_string())?;
+    let (html, xml, image, other) = store
+        .content_counts(&crawl.id)
+        .map_err(|error| error.to_string())?;
+    let (indexable, noindex, blocked) = store
+        .indexability_counts(&crawl.id)
+        .map_err(|error| error.to_string())?;
+    let (count, average, p95) = store
+        .response_time_stats(&crawl.id)
+        .map_err(|error| error.to_string())?;
+    let buckets = store
+        .response_time_buckets(&crawl.id)
+        .map_err(|error| error.to_string())?;
+    let segments = store
+        .segment_counts(&crawl.id)
+        .map_err(|error| error.to_string())?;
+    let elapsed = started.elapsed().as_millis();
+
+    println!("overview: {} ({} urls)", crawl.id, crawl.total_urls);
+    let mut severity = std::collections::BTreeMap::new();
+    for issue in &issues {
+        *severity
+            .entry(format!("{:?}", issue.severity).to_lowercase())
+            .or_insert(0i64) += issue.count;
+    }
+    println!(
+        "issues: {} rules, {} total ({})",
+        issues.len(),
+        issues.iter().map(|issue| issue.count).sum::<i64>(),
+        severity
+            .iter()
+            .map(|(key, value)| format!("{key}={value}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
+    println!(
+        "statuses: {}",
+        statuses
+            .iter()
+            .map(|(status, count)| format!(
+                "{}={count}",
+                status.map(|value| value.to_string()).unwrap_or_default()
+            ))
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
+    println!("content: html={html} xml={xml} image={image} other={other}");
+    println!("indexability: indexable={indexable} noindex={noindex} blocked={blocked}");
+    println!("response: count={count} avg={average}ms p95={p95}ms");
+    println!(
+        "depth: {}",
+        depth
+            .iter()
+            .map(|(value, count)| format!("{value}={count}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
+    println!(
+        "response buckets: {}",
+        buckets
+            .iter()
+            .map(|(label, count)| format!("{label}={count}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
+    println!(
+        "segments: {}",
+        segments
+            .iter()
+            .take(5)
+            .map(|(segment, count)| format!("{segment}={count}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
+    println!("aggregates took {elapsed} ms");
+    Ok(())
 }
 
 async fn run_serve(values: &[String]) -> Result<(), String> {
@@ -1670,6 +1775,15 @@ async fn main() {
     }
     if values.get(1).map(String::as_str) == Some("mcp") {
         match run_mcp(&values[2..]) {
+            Ok(()) => return,
+            Err(message) => {
+                eprintln!("{message}");
+                std::process::exit(2);
+            }
+        }
+    }
+    if values.get(1).map(String::as_str) == Some("overview") {
+        match run_overview(&values[2..]) {
             Ok(()) => return,
             Err(message) => {
                 eprintln!("{message}");
