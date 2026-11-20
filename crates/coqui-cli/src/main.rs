@@ -106,7 +106,7 @@ fn load_config(path: &Path, required: bool) -> Result<FileConfig, String> {
 }
 
 fn usage() -> &'static str {
-    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots] [--webhook URL]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR]\n       coqui report compare --with <crawl id> [--out DIR]\n       coqui reports\n       coqui export [--out DIR] [--family urls|issues|links|headers|images|a11y|structured|vitals|console|text|markdown|extractions|custom-js]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N] [--webhook URL]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui issue-settings <export|import> [--out DIR] [--file PATH]
+    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots] [--webhook URL]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR]\n       coqui report compare --with <crawl id> [--out DIR]\n       coqui reports\n       coqui export [--out DIR] [--family urls|issues|links|headers|images|a11y|structured|vitals|console|text|markdown|extractions|custom-js]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N] [--webhook URL]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui issue-settings <export|import|diff> [--out DIR] [--file PATH] [--with CRAWL]
        coqui doctor [--out DIR]
        coqui mcp [--out DIR]"
 }
@@ -445,6 +445,7 @@ fn run_issue_settings(values: &[String]) -> Result<(), String> {
         .ok_or("usage: issue-settings <export|import> [--out DIR] [--file PATH]")?;
     let mut out = PathBuf::from("coqui-out");
     let mut file = None;
+    let mut with = None;
     let mut index = 1;
     while index < values.len() {
         match values[index].as_str() {
@@ -457,6 +458,10 @@ fn run_issue_settings(values: &[String]) -> Result<(), String> {
                 file = Some(PathBuf::from(
                     values.get(index).ok_or("missing --file value")?,
                 ));
+            }
+            "--with" => {
+                index += 1;
+                with = Some(values.get(index).ok_or("missing --with value")?.clone());
             }
             other => return Err(format!("unknown option '{other}'")),
         }
@@ -489,6 +494,44 @@ fn run_issue_settings(values: &[String]) -> Result<(), String> {
                 .apply_issue_settings(&crawl.id, &value)
                 .map_err(|error| error.to_string())?;
             println!("issue-settings imported from {}", path.display());
+        }
+        "diff" => {
+            let other = with.ok_or("diff requires --with <crawl id>")?;
+            let left = store
+                .issue_settings(&crawl.id)
+                .map_err(|error| error.to_string())?;
+            let right = store
+                .issue_settings(&other)
+                .map_err(|error| error.to_string())?;
+            let collect = |value: &serde_json::Value, key: &str, field: &str| {
+                let mut map = std::collections::BTreeMap::new();
+                if let Some(items) = value.get(key).and_then(|value| value.as_array()) {
+                    for item in items {
+                        let Some(rule) = item.get("rule").and_then(|value| value.as_str()) else {
+                            continue;
+                        };
+                        let entry = item
+                            .get(field)
+                            .and_then(|value| value.as_str())
+                            .unwrap_or_default()
+                            .to_string();
+                        map.insert(rule.to_string(), entry);
+                    }
+                }
+                map
+            };
+            for (key, field) in [("suppressions", "reason"), ("overrides", "severity")] {
+                let a = collect(&left, key, field);
+                let b = collect(&right, key, field);
+                let rules: std::collections::BTreeSet<&String> = a.keys().chain(b.keys()).collect();
+                for rule in rules {
+                    let left_value = a.get(rule).cloned().unwrap_or_else(|| "none".into());
+                    let right_value = b.get(rule).cloned().unwrap_or_else(|| "none".into());
+                    if left_value != right_value {
+                        println!("{key} {rule}: left={left_value} right={right_value}");
+                    }
+                }
+            }
         }
         other => return Err(format!("unknown action '{other}'")),
     }
