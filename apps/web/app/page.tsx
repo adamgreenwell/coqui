@@ -439,6 +439,7 @@ export default function Home() {
   } | null>(null);
   const [depthCounts, setDepthCounts] = useState<{ depth: number; count: number }[]>([]);
   const [segments, setSegments] = useState<{ segment: string; count: number }[]>([]);
+  const [timeline, setTimeline] = useState<{ second: number; count: number }[]>([]);
   const [duplicateKind, setDuplicateKind] = useState<'title' | 'meta_description' | 'h1'>('title');
   const [duplicateGroups, setDuplicateGroups] = useState<
     { value: string; count: number; urls: { id: number; url: string }[] }[]
@@ -743,6 +744,11 @@ export default function Home() {
         });
         setDepthCounts(depths);
         setSegments(await invoke<{ segment: string; count: number }[]>('segments', { crawlId: crawl.id }));
+        setTimeline(
+          await invoke<{ second: number; count: number }[]>('throughput_buckets', {
+            crawlId: crawl.id,
+          }),
+        );
         const content = await invoke<{
           html: number;
           xml: number;
@@ -3238,6 +3244,26 @@ export default function Home() {
                 </div>
               ))}
             </div>
+            {timeline.length > 0 && (
+              <div className="overview-bars" style={{ flexBasis: '100%' }}>
+                <h3>Throughput timeline</h3>
+                {timeline.slice(-30).map((row) => {
+                  const max = Math.max(1, ...timeline.map((entry) => entry.count));
+                  return (
+                    <div className="bar-row" key={`timeline-${row.second}`}>
+                      <span>+{row.second}s</span>
+                      <div className="bar-track">
+                        <div
+                          className="bar-fill"
+                          style={{ width: `${Math.round((row.count / max) * 100)}%` }}
+                        />
+                      </div>
+                      <strong>{row.count}</strong>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </section>
 
           <section className="panel results">
