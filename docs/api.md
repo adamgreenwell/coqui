@@ -43,3 +43,12 @@ With `--token secret123` verified locally: `/health` 200, `/crawls` 401 without 
 
 
 
+
+## Container
+
+```bash
+docker build -t coqui-api .
+docker run --rm -p 8787:8787 -v "$PWD/coqui-out:/data" -e COQUI_API_TOKEN=secret coqui-api
+```
+
+The image is a two-stage build (Rust builder → Debian slim) and serves `/data/coqui.db`. Verified locally: `/health` 200, `/crawls` 401 without the token and 200 with it.
