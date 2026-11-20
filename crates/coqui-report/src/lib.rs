@@ -199,6 +199,11 @@ pub const REPORTS: &[(&str, &str, &str)] = &[
         "SERP summary",
         "Titles, meta descriptions, H1s and word counts with flags.",
     ),
+    (
+        "canonicals",
+        "Canonicals",
+        "Self, non-self and missing canonical declarations.",
+    ),
 ];
 
 /// Render a named report.
@@ -226,6 +231,7 @@ pub fn render_report_with(
         "orphans" => render_orphans(store, crawl_id),
         "segments" => render_segments(store, crawl_id),
         "serp" => render_serp(store, crawl_id),
+        "canonicals" => render_canonicals(store, crawl_id),
         _ => render_html(store, crawl_id),
     }
 }
@@ -413,6 +419,70 @@ pub fn write_comparison(
         .total_urls(left_id)
         .map(|count| count as u64)
         .map_err(|error| error.to_string())
+}
+
+fn render_canonicals(store: &Store, crawl_id: &str) -> Result<String, String> {
+    let crawl = store
+        .get_crawl(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let urls = store
+        .all_urls(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let statuses: std::collections::HashMap<&str, Option<u16>> = urls
+        .iter()
+        .map(|url| (url.url.as_str(), url.status))
+        .collect();
+    let mut rows = Vec::new();
+    let mut self_canonical = 0usize;
+    let mut non_self = 0usize;
+    let mut missing = 0usize;
+    for url in urls
+        .iter()
+        .filter(|url| url.status == Some(200) && !url.blocked)
+    {
+        match url.canonical.as_deref() {
+            None => {
+                missing += 1;
+                rows.push((url.url.clone(), String::new(), "missing", String::new()));
+            }
+            Some(canonical) if canonical.trim_end_matches('/') == url.url.trim_end_matches('/') => {
+                self_canonical += 1;
+                rows.push((
+                    url.url.clone(),
+                    canonical.to_string(),
+                    "self",
+                    String::new(),
+                ));
+            }
+            Some(canonical) => {
+                non_self += 1;
+                let status = statuses
+                    .get(canonical)
+                    .copied()
+                    .flatten()
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "not crawled".into());
+                rows.push((url.url.clone(), canonical.to_string(), "non-self", status));
+            }
+        }
+    }
+    let mut body = format!(
+        "<p class=\"muted\">{} pages: {self_canonical} self, {non_self} non-self, {missing} missing</p>",
+        rows.len()
+    );
+    body.push_str(
+        "<table><tr><th>URL</th><th>Canonical</th><th>Type</th><th>Target status</th></tr>",
+    );
+    for (url, canonical, kind, status) in &rows {
+        body.push_str(&format!(
+            "<tr><td>{}</td><td>{}</td><td>{kind}</td><td>{}</td></tr>",
+            escape(url),
+            escape(canonical),
+            escape(status)
+        ));
+    }
+    body.push_str("</table>");
+    Ok(shell(&crawl.seed, "Canonicals", &body))
 }
 
 fn render_serp(store: &Store, crawl_id: &str) -> Result<String, String> {
