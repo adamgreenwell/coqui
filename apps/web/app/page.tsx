@@ -54,6 +54,7 @@ interface CrawlConfig {
   webVitals: boolean;
   storeText?: boolean;
   customJs?: string[];
+  webhookUrl?: string | null;
 }
 
 interface UrlDetail {
@@ -347,6 +348,7 @@ export default function Home() {
   const [webVitals, setWebVitals] = useState(false);
   const [storeText, setStoreText] = useState(false);
   const [customJs, setCustomJs] = useState('');
+  const [webhookUrl, setWebhookUrl] = useState('');
   const [extractors, setExtractors] = useState<{ name: string; selector: string }[]>([]);
   const [extractorName, setExtractorName] = useState('');
   const [extractorSelector, setExtractorSelector] = useState('');
@@ -982,6 +984,7 @@ export default function Home() {
         webVitals,
         storeText,
         customJs: splitLines(customJs),
+        webhookUrl: webhookUrl.trim() || null,
       };
       const summary = await invoke<CrawlSummary>('create_crawl', {
         seedKind,
@@ -1118,6 +1121,7 @@ export default function Home() {
     webVitals,
     storeText,
     customJs,
+    webhookUrl,
   });
   const applySettings = (value: Record<string, unknown>) => {
     if (typeof value.seed === 'string') setSeed(value.seed);
@@ -1144,6 +1148,7 @@ export default function Home() {
     if (typeof value.webVitals === 'boolean') setWebVitals(value.webVitals);
     if (typeof value.storeText === 'boolean') setStoreText(value.storeText);
     if (typeof value.customJs === 'string') setCustomJs(value.customJs);
+    if (typeof value.webhookUrl === 'string') setWebhookUrl(value.webhookUrl);
   };
   const loadProfiles = async () => {
     try {
@@ -1276,6 +1281,7 @@ export default function Home() {
     { label: 'Accessibility (axe)', help: 'Run axe-core on rendered pages.', value: accessibility ? 'on' : 'off', changed: accessibility },
     { label: 'Web Vitals', help: 'Capture LCP, CLS, TBT, TTFB and FCP.', value: webVitals ? 'on' : 'off', changed: webVitals },
     { label: 'Store page text', help: 'Save extracted text and Markdown for exports.', value: storeText ? 'on' : 'off', changed: storeText },
+    { label: 'Completion webhook', help: 'POST crawl stats to this URL when the crawl finishes.', value: webhookUrl.trim() || 'none', changed: webhookUrl.trim().length > 0 },
     { label: 'Browser path', help: 'Chrome/Edge executable override.', value: browserPath || 'auto', changed: browserPath.length > 0 },
     { label: 'Include patterns', help: 'One regex per line; only matching URLs are crawled.', value: includePatterns ? 'set' : 'none', changed: includePatterns.length > 0 },
     { label: 'Exclude patterns', help: 'One regex per line; matching URLs are skipped.', value: excludePatterns ? 'set' : 'none', changed: excludePatterns.length > 0 },
@@ -1934,6 +1940,17 @@ export default function Home() {
                     />
                     Store page text + Markdown
                   </label>
+                  <div className="field">
+                    <label htmlFor="webhookUrl">Completion webhook URL</label>
+                    <input
+                      id="webhookUrl"
+                      type="url"
+                      value={webhookUrl}
+                      onChange={(event) => setWebhookUrl(event.target.value)}
+                      placeholder="https://example.com/hooks/coqui"
+                      disabled={isRunning}
+                    />
+                  </div>
                   <div className="field">
                     <label htmlFor="customJs">Custom JavaScript (one expression per line)</label>
                     <textarea
