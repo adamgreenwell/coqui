@@ -26,7 +26,7 @@ Named after the *coquí*, the tiny frog native to Puerto Rico whose call is ever
 - [Reverse-engineering notes](docs/reverse-engineering.md) — evidence and limitations
 - [WordPress validation](docs/validation/2026-11-18-wordpress.md) — first real-site crawl results and the Cloudflare finding
 - [Dev setup](docs/dev-setup.md) — run the desktop shell, tests and builds
-- [Exports reference](docs/exports.md) — export families, filename tokens, skip-empty
+- [Reports](docs/reports.md) — report catalogue, PDF, batch and comparison outputs\n- [Exports reference](docs/exports.md) — export families, filename tokens, skip-empty
 - [CLI reference](docs/cli.md) — crawl, reports, exports, sitemaps, schedules, MCP
 - [HTTP API](docs/api.md) — server mode, auth, exports/reports, starting crawls
 - [CI operation](docs/ci.md) — workflows, artifacts, API smoke tests
@@ -107,6 +107,7 @@ The backlog is the roadmap. Pick an issue from the board, comment to claim it, a
 ## License
 
 To be decided by the project owner before the first code release (MIT or Apache-2.0 are the candidates). Until then, no license is granted for reuse.
+
 
 
 
