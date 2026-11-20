@@ -399,6 +399,7 @@ export default function Home() {
   const [sourceLoading, setSourceLoading] = useState(false);
   const [sourceKind, setSourceKind] = useState<'raw' | 'rendered'>('raw');
   const [sourceQuery, setSourceQuery] = useState('');
+  const [sourceLimit, setSourceLimit] = useState(200_000);
   const [copied, setCopied] = useState<string | null>(null);
   const [linkFilter, setLinkFilter] = useState('');
   const [lighthouse, setLighthouse] = useState<LighthouseSummary | null>(null);
@@ -1027,6 +1028,7 @@ export default function Home() {
         );
       } else {
         setSourceHtml(html);
+        setSourceLimit(200_000);
       }
     } catch (cause) {
       setSourceError(cause instanceof Error ? cause.message : String(cause));
@@ -2709,7 +2711,22 @@ export default function Home() {
                     {(sourceHtml.length / 1024).toFixed(0)} KB
                   </span>
                 )}
-                {sourceHtml && <pre className="source-view">{highlightSource(sourceHtml)}</pre>}
+                {sourceHtml && (
+                  <pre className="source-view">
+                    {highlightSource(sourceHtml.slice(0, sourceLimit))}
+                  </pre>
+                )}
+                {sourceHtml && sourceHtml.length > sourceLimit && (
+                  <button
+                    type="button"
+                    className="link-button"
+                    style={{ marginTop: 8 }}
+                    onClick={() => setSourceLimit(sourceLimit + 200_000)}
+                  >
+                    Load more ({Math.round(sourceLimit / 1024)} KB of{' '}
+                    {Math.round(sourceHtml.length / 1024)} KB)
+                  </button>
+                )}
                 {detail.screenshot && (
                   <img
                     src={detail.screenshot}
