@@ -241,7 +241,11 @@ fn shell(crawl: &str, title: &str, body: &str) -> String {
          <style>body{{font-family:system-ui,sans-serif;margin:32px;color:#1c2321;background:#f7faf9}}\
          table{{border-collapse:collapse;width:100%;background:#fff}}\
          th,td{{border:1px solid #d8e2df;padding:6px 10px;text-align:left;font-size:14px}}\
-         th{{background:#eef5f2}}.muted{{color:#5d6f6b}}</style></head><body>\
+         th{{background:#eef5f2}}.muted{{color:#5d6f6b}}\
+         @page{{size:A4;margin:12mm}}\
+         @media print{{body{{margin:0;background:#fff;color:#000}}h2{{break-after:avoid}}\
+         table{{break-inside:avoid}}tr{{break-inside:avoid}}}}\
+         </style></head><body>\
          <h1>{title}</h1><p class=\"muted\">{}</p>{body}</body></html>",
         escape(crawl)
     )
