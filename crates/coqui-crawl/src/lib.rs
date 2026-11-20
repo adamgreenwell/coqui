@@ -136,6 +136,11 @@ pub async fn run_crawl(
     } else {
         builder
     };
+    if let Some(cookie) = &config.cookie {
+        let value = HeaderValue::from_str(cookie)
+            .map_err(|error| CrawlError::Config(format!("invalid cookie value: {error}")))?;
+        headers.insert(reqwest::header::COOKIE, value);
+    }
     if let Some(user) = &config.auth_user {
         let token = STANDARD.encode(format!(
             "{}:{}",

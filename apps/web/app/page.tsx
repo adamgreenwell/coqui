@@ -58,6 +58,7 @@ interface CrawlConfig {
   crawlDelayMs?: number;
   maxRps?: number;
   proxyUrl?: string | null;
+  cookie?: string | null;
 }
 
 interface UrlDetail {
@@ -360,6 +361,7 @@ export default function Home() {
   const [crawlDelayMs, setCrawlDelayMs] = useState(0);
   const [maxRps, setMaxRps] = useState(0);
   const [proxyUrl, setProxyUrl] = useState('');
+  const [cookie, setCookie] = useState('');
   const [extractors, setExtractors] = useState<{ name: string; selector: string }[]>([]);
   const [extractorName, setExtractorName] = useState('');
   const [extractorSelector, setExtractorSelector] = useState('');
@@ -1079,6 +1081,7 @@ export default function Home() {
         crawlDelayMs: Math.max(0, Math.round(crawlDelayMs)),
         maxRps: Math.max(0, Math.round(maxRps)),
         proxyUrl: proxyUrl.trim() || null,
+        cookie: cookie.trim() || null,
       };
       const summary = await invoke<CrawlSummary>('create_crawl', {
         seedKind,
@@ -1208,6 +1211,7 @@ export default function Home() {
     userAgent,
     acceptLanguage,
     proxyUrl,
+    cookie,
     render,
     browserPath,
     renderWaitMs,
@@ -1238,6 +1242,7 @@ export default function Home() {
     if (typeof value.userAgent === 'string') setUserAgent(value.userAgent);
     if (typeof value.acceptLanguage === 'string') setAcceptLanguage(value.acceptLanguage);
     if (typeof value.proxyUrl === 'string') setProxyUrl(value.proxyUrl);
+    if (typeof value.cookie === 'string') setCookie(value.cookie);
     if (typeof value.render === 'boolean') setRender(value.render);
     if (typeof value.browserPath === 'string') setBrowserPath(value.browserPath);
     if (typeof value.renderWaitMs === 'number') setRenderWaitMs(value.renderWaitMs);
@@ -1386,6 +1391,7 @@ export default function Home() {
     { label: 'Include patterns', help: 'One regex per line; only matching URLs are crawled.', value: includePatterns ? 'set' : 'none', changed: includePatterns.length > 0 },
     { label: 'Exclude patterns', help: 'One regex per line; matching URLs are skipped.', value: excludePatterns ? 'set' : 'none', changed: excludePatterns.length > 0 },
     { label: 'Basic auth user', help: 'HTTP basic authentication username.', value: authUser || 'none', changed: authUser.length > 0 },
+    { label: 'Cookie header', help: 'Sent as the Cookie header for logged-in crawling.', value: cookie ? 'set' : 'none', changed: cookie.length > 0 },
     { label: 'Custom headers', help: 'Header: value lines sent with every request.', value: customHeaders ? 'set' : 'none', changed: customHeaders.length > 0 },
     { label: 'User-Agent', help: 'HTTP User-Agent for every request.', value: userAgent, changed: userAgent !== USER_AGENT },
     { label: 'Accept-Language', help: 'Optional Accept-Language header.', value: acceptLanguage || 'none', changed: acceptLanguage.length > 0 },
@@ -1985,6 +1991,18 @@ export default function Home() {
                 )}
               </div>
               <div className="grid-2">
+                <div className="field">
+                  <label htmlFor="cookie">Cookie header</label>
+                  <input
+                    id="cookie"
+                    type="text"
+                    value={cookie}
+                    onChange={(event) => setCookie(event.target.value)}
+                    placeholder="session=abc; other=1"
+                    disabled={isRunning}
+                    autoComplete="off"
+                  />
+                </div>
                 <div className="field">
                   <label htmlFor="authUser">Basic auth user</label>
                   <input

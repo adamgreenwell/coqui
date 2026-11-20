@@ -91,6 +91,9 @@ pub struct CrawlConfig {
     /// Optional HTTP proxy URL for all requests.
     #[serde(default)]
     pub proxy_url: Option<String>,
+    /// Optional Cookie header value for authenticated crawling.
+    #[serde(default)]
+    pub cookie: Option<String>,
     /// Only crawl discovered URLs matching at least one pattern (empty = all).
     #[serde(default)]
     pub include_patterns: Vec<String>,
@@ -149,6 +152,7 @@ impl Default for CrawlConfig {
             crawl_delay_ms: 0,
             max_rps: 0,
             proxy_url: None,
+            cookie: None,
             include_patterns: Vec::new(),
             exclude_patterns: Vec::new(),
             auth_user: None,
