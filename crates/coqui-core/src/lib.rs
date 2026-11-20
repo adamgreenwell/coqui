@@ -382,6 +382,8 @@ pub struct WebVitals {
     pub fcp_ms: u64,
     #[serde(default)]
     pub dom_nodes: Option<u32>,
+    #[serde(default)]
+    pub render_blocking: Option<u32>,
 }
 
 /// One axe-core accessibility violation.
