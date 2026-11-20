@@ -151,6 +151,11 @@ pub const RULES: &[RuleDef] = &[
         severity: IssueSeverity::Warning,
     },
     RuleDef {
+        id: "image_missing_dimensions",
+        label: "Image missing dimensions",
+        severity: IssueSeverity::Opportunity,
+    },
+    RuleDef {
         id: "noindex_page",
         label: "Noindex page",
         severity: IssueSeverity::Warning,
@@ -332,6 +337,16 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
         if ok && url.depth > 0 && inbound.get(&url.url).copied().unwrap_or(0) == 0 {
             issue(store, crawl_id, &url.url, "orphan_url", None)?;
         }
+    }
+
+    for (url, count) in store.images_missing_dimensions(crawl_id)? {
+        issue(
+            store,
+            crawl_id,
+            &url,
+            "image_missing_dimensions",
+            Some(format!("{count} images")),
+        )?;
     }
 
     let missing_alt: HashMap<String, i64> =
@@ -1246,6 +1261,38 @@ mod tests {
         let counts = analyze_crawl(&store, id).unwrap();
         let by_rule: HashMap<_, _> = counts.iter().map(|c| (c.rule.as_str(), c.count)).collect();
         assert_eq!(by_rule.get("image_missing_alt"), Some(&1));
+    }
+
+    #[test]
+    fn flags_images_missing_dimensions() {
+        let store = Store::open_in_memory().unwrap();
+        let id = "dims";
+        store
+            .create_crawl(
+                id,
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        add_url(&store, id, "https://example.com/", Some("Home"), 1, 600);
+        let url_id = store.url_id(id, "https://example.com/").unwrap().unwrap();
+        store
+            .replace_images(
+                id,
+                url_id,
+                &[coqui_core::ImageRef {
+                    src: "https://example.com/a.png".into(),
+                    alt: Some("A".into()),
+                    width: None,
+                    height: None,
+                }],
+            )
+            .unwrap();
+        let counts = analyze_crawl(&store, id).unwrap();
+        let by_rule: HashMap<_, _> = counts.iter().map(|c| (c.rule.as_str(), c.count)).collect();
+        assert_eq!(by_rule.get("image_missing_dimensions"), Some(&1));
     }
 
     #[test]
