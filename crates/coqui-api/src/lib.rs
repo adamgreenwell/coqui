@@ -23,6 +23,7 @@ struct AppState {
 /// Build the read-only API router. When `token` is set, every route except `/health`
 /// requires `Authorization: Bearer <token>`.
 pub fn router(store: Arc<Store>, token: Option<String>) -> Router {
+    let state = AppState { store };
     let protected = Router::new()
         .route("/crawls", get(list_crawls).post(start_crawl))
         .route("/crawls/{id}", get(get_crawl))
@@ -31,13 +32,16 @@ pub fn router(store: Arc<Store>, token: Option<String>) -> Router {
         .route("/crawls/{id}/urls", get(list_urls))
         .route("/crawls/{id}/export/{family}", get(export_csv))
         .route("/crawls/{id}/report/{kind}", get(report))
-        .with_state(AppState { store });
+        .with_state(state.clone());
     let protected = if token.is_some() {
         protected.layer(middleware::from_fn_with_state(token, require_token))
     } else {
         protected
     };
-    Router::new().route("/health", get(health)).merge(protected)
+    let health = Router::new()
+        .route("/health", get(health))
+        .with_state(state);
+    health.merge(protected)
 }
 
 async fn require_token(
@@ -74,8 +78,27 @@ pub async fn serve(store: Arc<Store>, addr: &str, token: Option<String>) -> Resu
         .map_err(|error| error.to_string())
 }
 
-async fn health() -> &'static str {
-    "ok"
+async fn health(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let crawls = state.store.list_crawls().map_err(internal)?;
+    let status = if crawls
+        .iter()
+        .any(|crawl| matches!(crawl.status, CrawlStatus::Running))
+    {
+        "crawling"
+    } else if crawls
+        .iter()
+        .any(|crawl| matches!(crawl.status, CrawlStatus::Pending))
+    {
+        "starting"
+    } else {
+        "ok"
+    };
+    Ok(Json(serde_json::json!({
+        "status": status,
+        "crawls": crawls.len(),
+    })))
 }
 
 async fn list_crawls(
