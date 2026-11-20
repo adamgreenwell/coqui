@@ -120,6 +120,22 @@ pub async fn run_crawl(
         .user_agent(config.user_agent.clone())
         .timeout(Duration::from_millis(config.request_timeout_ms))
         .redirect(reqwest::redirect::Policy::none());
+    let builder = if let Some(proxy) = &config.proxy_url {
+        let parsed = url::Url::parse(proxy)
+            .map_err(|error| CrawlError::Config(format!("invalid proxy URL: {error}")))?;
+        if !matches!(parsed.scheme(), "http" | "https" | "socks5" | "socks5h") {
+            return Err(CrawlError::Config(format!(
+                "unsupported proxy scheme '{}'",
+                parsed.scheme()
+            )));
+        }
+        builder.proxy(
+            reqwest::Proxy::all(proxy)
+                .map_err(|error| CrawlError::Config(format!("invalid proxy: {error}")))?,
+        )
+    } else {
+        builder
+    };
     if let Some(user) = &config.auth_user {
         let token = STANDARD.encode(format!(
             "{}:{}",

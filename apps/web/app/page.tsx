@@ -57,6 +57,7 @@ interface CrawlConfig {
   webhookUrl?: string | null;
   crawlDelayMs?: number;
   maxRps?: number;
+  proxyUrl?: string | null;
 }
 
 interface UrlDetail {
@@ -358,6 +359,7 @@ export default function Home() {
   const [webhookUrl, setWebhookUrl] = useState('');
   const [crawlDelayMs, setCrawlDelayMs] = useState(0);
   const [maxRps, setMaxRps] = useState(0);
+  const [proxyUrl, setProxyUrl] = useState('');
   const [extractors, setExtractors] = useState<{ name: string; selector: string }[]>([]);
   const [extractorName, setExtractorName] = useState('');
   const [extractorSelector, setExtractorSelector] = useState('');
@@ -1076,6 +1078,7 @@ export default function Home() {
         webhookUrl: webhookUrl.trim() || null,
         crawlDelayMs: Math.max(0, Math.round(crawlDelayMs)),
         maxRps: Math.max(0, Math.round(maxRps)),
+        proxyUrl: proxyUrl.trim() || null,
       };
       const summary = await invoke<CrawlSummary>('create_crawl', {
         seedKind,
@@ -1204,6 +1207,7 @@ export default function Home() {
     customHeaders,
     userAgent,
     acceptLanguage,
+    proxyUrl,
     render,
     browserPath,
     renderWaitMs,
@@ -1233,6 +1237,7 @@ export default function Home() {
     if (typeof value.customHeaders === 'string') setCustomHeaders(value.customHeaders);
     if (typeof value.userAgent === 'string') setUserAgent(value.userAgent);
     if (typeof value.acceptLanguage === 'string') setAcceptLanguage(value.acceptLanguage);
+    if (typeof value.proxyUrl === 'string') setProxyUrl(value.proxyUrl);
     if (typeof value.render === 'boolean') setRender(value.render);
     if (typeof value.browserPath === 'string') setBrowserPath(value.browserPath);
     if (typeof value.renderWaitMs === 'number') setRenderWaitMs(value.renderWaitMs);
@@ -1384,6 +1389,7 @@ export default function Home() {
     { label: 'Custom headers', help: 'Header: value lines sent with every request.', value: customHeaders ? 'set' : 'none', changed: customHeaders.length > 0 },
     { label: 'User-Agent', help: 'HTTP User-Agent for every request.', value: userAgent, changed: userAgent !== USER_AGENT },
     { label: 'Accept-Language', help: 'Optional Accept-Language header.', value: acceptLanguage || 'none', changed: acceptLanguage.length > 0 },
+    { label: 'Proxy', help: 'HTTP/SOCKS proxy for crawl requests.', value: proxyUrl || 'none', changed: proxyUrl.length > 0 },
   ];
   const validationErrors: string[] = [];
   if (seedKind !== 'list') {
@@ -2117,6 +2123,17 @@ export default function Home() {
                       step={50}
                       value={crawlDelayMs}
                       onChange={(event) => setCrawlDelayMs(Number(event.target.value) || 0)}
+                      disabled={isRunning}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="proxyUrl">Proxy URL (http/https/socks5)</label>
+                    <input
+                      id="proxyUrl"
+                      type="url"
+                      value={proxyUrl}
+                      onChange={(event) => setProxyUrl(event.target.value)}
+                      placeholder="http://127.0.0.1:8080"
                       disabled={isRunning}
                     />
                   </div>
