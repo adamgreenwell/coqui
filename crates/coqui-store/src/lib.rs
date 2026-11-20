@@ -3821,6 +3821,35 @@ mod tests {
     }
 
     #[test]
+    fn segment_counts_group_top_level_paths() {
+        let dir = std::env::temp_dir().join(format!("coqui-segments-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        store
+            .create_crawl(
+                "c1",
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        for url in [
+            "https://example.com/",
+            "https://example.com/blog/a",
+            "https://example.com/blog/b",
+            "https://example.com/shop",
+        ] {
+            store.insert_url(&sample_record("c1", url)).unwrap();
+        }
+        let counts = store.segment_counts("c1").unwrap();
+        assert!(counts.contains(&("blog".to_string(), 2)));
+        assert!(counts.contains(&("shop".to_string(), 1)));
+        assert!(counts.contains(&("(root)".to_string(), 1)));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
     fn depth_counts_group_by_depth() {
         let dir = std::env::temp_dir().join(format!("coqui-depth-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
