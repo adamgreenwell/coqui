@@ -218,6 +218,7 @@ const ISSUE_LABELS: Record<string, string> = {
   long_blocking_time: 'Long blocking time',
   dom_size_large: 'Large DOM size',
   render_blocking_requests: 'Render-blocking requests',
+  avoid_enormous_network_payload: 'Enormous network payload',
 };
 
 const ISSUE_DESCRIPTIONS: Record<string, string> = {
@@ -266,7 +267,8 @@ const ISSUE_DESCRIPTIONS: Record<string, string> = {
   slow_ttfb: 'Time to First Byte is above the good threshold.',
   long_blocking_time: 'Total Blocking Time is above the good threshold.',
   dom_size_large: 'The rendered DOM has more than 1,500 nodes.',
-  render_blocking_requests: 'More than two blocking scripts or stylesheets in the head.',
+  render_blocking_requests: 'More than two render-blocking resources were found.',
+  avoid_enormous_network_payload: 'Total transfer size exceeds 2 MB.',
 };
 
 const issueLabel = (rule: string): string => {
@@ -3796,6 +3798,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 

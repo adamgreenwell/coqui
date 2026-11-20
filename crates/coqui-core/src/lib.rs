@@ -384,6 +384,10 @@ pub struct WebVitals {
     pub dom_nodes: Option<u32>,
     #[serde(default)]
     pub render_blocking: Option<u32>,
+    #[serde(default)]
+    pub transfer_bytes: Option<u64>,
+    #[serde(default)]
+    pub resource_count: Option<u32>,
 }
 
 /// One axe-core accessibility violation.
