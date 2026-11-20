@@ -1038,6 +1038,48 @@ fn status_counts(
 }
 
 #[tauri::command]
+fn suppress_url(
+    state: State<'_, AppState>,
+    crawl_id: String,
+    rule: String,
+    url: String,
+    reason: Option<String>,
+) -> Result<(), String> {
+    state
+        .store
+        .suppress_url(&crawl_id, &rule, &url, reason.as_deref())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn restore_url(
+    state: State<'_, AppState>,
+    crawl_id: String,
+    rule: String,
+    url: String,
+) -> Result<usize, String> {
+    state
+        .store
+        .restore_url(&crawl_id, &rule, &url)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn suppressed_urls(
+    state: State<'_, AppState>,
+    crawl_id: String,
+) -> Result<Vec<serde_json::Value>, String> {
+    let rows = state
+        .store
+        .suppressed_urls(&crawl_id)
+        .map_err(|error| error.to_string())?;
+    Ok(rows
+        .into_iter()
+        .map(|(rule, url, reason)| serde_json::json!({"rule": rule, "url": url, "reason": reason}))
+        .collect())
+}
+
+#[tauri::command]
 fn issue_audit_log(
     state: State<'_, AppState>,
     crawl_id: String,
@@ -1380,6 +1422,9 @@ pub fn run() {
             issues_for_rule,
             overrides,
             issue_audit_log,
+            suppress_url,
+            restore_url,
+            suppressed_urls,
             set_override,
             clear_override,
             save_view,
