@@ -6,10 +6,10 @@ Snapshot of the Coqui build for the milestone review.
 
 | Metric | Value |
 | --- | --- |
-| Open issues | 76 |
-| Closed issues | 10 (including A-02 overrides/suppression, P-05 comparison, U-04 overview) |
-| Commits since 2026-11-18 | 414 |
-| Main CI | green (PR #266 run) |
+| Open issues | 75 |
+| Closed issues | 11 (including A-02, P-05, U-04, C-08) |
+| Commits since 2026-11-18 | 463 |
+| Main CI | green (PR #289 run) |
 
 ## Shipped
 
@@ -18,7 +18,7 @@ Snapshot of the Coqui build for the milestone review.
 - **Audit:** 44 rules; suppression (rule + per-URL, reason required, optional expiry, actor); severity overrides; audit log; settings export/import/diff.
 - **Results UI:** filters, tabs, saved views, history, overview cards (status, severity, response stats, throughput, indexability, depth, content, segments, duplicates), issue drill-down, inspector (links/images/axe/headers/screenshot/**raw HTML source viewer**).
 - **Exports/reports:** 13 CSV families, XLSX, sitemaps (split/gzip), HTML/PDF reports (summary, issues, status, performance, redirects, broken links, overview, comparison), filename tokens.
-- **Automation:** CLI (`crawl`, `resume`, `report`, `export`, `issue-settings`, `sitemap`, `schedule`, `serve`, `overview`, `prune`, `doctor`, `mcp`), MCP server, scheduler, HTTP API (bearer auth, exports/reports, start crawl), Dockerfile, CI recipes, comparison CSVs with per-URL issue deltas.
+- **Automation:** CLI (`crawl`, `resume`, `report`, `export`, `issue-settings`, `sitemap`, `schedule`, `serve`, `overview`, `prune`, `doctor`, `mcp`), MCP server, scheduler, HTTP API (bearer auth, health states, exports/reports, start crawl), Dockerfile, GitHub/GitLab CI recipes, **JSON/NDJSON crawl output with crawlId correlation**, `--fail-on-issues` exit code, comparison CSVs with per-URL issue deltas, PDF and batch reports.
 - **Packaging:** Windows MSI 71.67 MiB / NSIS 40.95 MiB locally with Node + Lighthouse sidecars; macOS/Linux release jobs; **gated signing steps** (Windows signtool, macOS codesign/notarization) that activate when secrets exist.
 
 ## Decisions settled
@@ -29,8 +29,10 @@ Snapshot of the Coqui build for the milestone review.
 
 ## Next candidates
 
-- U-03 rendered-DOM comparison; source viewer shipped.
-- X-04 srcset/natural-size/asset metadata.
-- C-08 auto-throttle/circuit breaker and crawl timeline.
-- B-01 PDF output; P-05 and U-04 are closed.
+- U-03: full source virtualisation and rendered-DOM diff polish.
+- X-04: asset discovery (scripts/styles/fonts, media metadata, file sizes).
+- X-03/X-02: link-graph queries/anchors; near-duplicate and readability analysis.
+- T-04: multi-arch image with Chromium/Node and structured stderr logs.
+- G-04: storage settings and active-crawl blocking.
+- B-01: full reference report catalogue.
 
