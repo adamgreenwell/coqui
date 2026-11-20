@@ -106,7 +106,7 @@ fn load_config(path: &Path, required: bool) -> Result<FileConfig, String> {
 }
 
 fn usage() -> &'static str {
-    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots] [--webhook URL]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR]\n       coqui report compare --with <crawl id> [--out DIR]\n       coqui reports\n       coqui export [--out DIR] [--family urls|issues|links|headers|images|a11y|structured|vitals|console|text|markdown|extractions|custom-js]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui doctor [--out DIR]
+    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots] [--webhook URL]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR]\n       coqui report compare --with <crawl id> [--out DIR]\n       coqui reports\n       coqui export [--out DIR] [--family urls|issues|links|headers|images|a11y|structured|vitals|console|text|markdown|extractions|custom-js]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N] [--webhook URL]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui doctor [--out DIR]
        coqui mcp [--out DIR]"
 }
 
@@ -591,6 +591,7 @@ async fn run_schedule(values: &[String]) -> Result<(), String> {
     let mut out = PathBuf::from("coqui-out");
     let mut every = 3600i64;
     let mut max_urls = None;
+    let mut webhook = None;
     let mut remove_id = None;
     let mut kind = String::new();
     let mut seed = String::new();
@@ -619,6 +620,10 @@ async fn run_schedule(values: &[String]) -> Result<(), String> {
                         .map_err(|_| "invalid --max-urls".to_string())?,
                 );
             }
+            "--webhook" => {
+                index += 1;
+                webhook = Some(values.get(index).ok_or("missing --webhook value")?.clone());
+            }
             other => match command {
                 "add" if kind.is_empty() => kind = other.to_string(),
                 "add" if seed.is_empty() => seed = other.to_string(),
@@ -639,6 +644,9 @@ async fn run_schedule(values: &[String]) -> Result<(), String> {
             let mut config = CrawlConfig::default();
             if let Some(max_urls) = max_urls {
                 config.max_urls = max_urls;
+            }
+            if let Some(webhook) = webhook.clone() {
+                config.webhook_url = Some(webhook);
             }
             let json = serde_json::to_string(&config).map_err(|error| error.to_string())?;
             let id = store
