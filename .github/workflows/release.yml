@@ -45,6 +45,9 @@ jobs:
   desktop:
     name: Desktop (Windows)
     runs-on: windows-latest
+    env:
+      WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -57,6 +60,20 @@ jobs:
         run: npm run sidecars
       - name: Build desktop installer
         run: npm run build
+      - name: Sign installers
+        if: env.WINDOWS_CERTIFICATE != ''
+        shell: pwsh
+        run: |
+          [IO.File]::WriteAllBytes("cert.pfx", [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          $files = Get-ChildItem src-tauri/target/release/bundle -Recurse -Include *.exe,*.msi
+          foreach ($file in $files) {
+            signtool sign /f cert.pfx /p "$env:WINDOWS_CERTIFICATE_PASSWORD" `
+              /tr http://timestamp.digicert.com /td sha256 /fd sha256 $file.FullName
+          }
+          foreach ($file in $files) {
+            signtool verify /pa $file.FullName
+          }
+          Remove-Item cert.pfx
       - name: Check installer size
         shell: pwsh
         run: |
@@ -76,6 +93,13 @@ jobs:
   desktop-macos:
     name: Desktop (macOS)
     runs-on: macos-latest
+    env:
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -88,6 +112,14 @@ jobs:
         run: npm run sidecars
       - name: Build desktop installer
         run: npm run build
+      - name: Verify signature and notarization
+        if: env.APPLE_SIGNING_IDENTITY != ''
+        shell: bash
+        run: |
+          app=$(find src-tauri/target/release/bundle -name '*.app' -maxdepth 3 | head -n 1)
+          dmg=$(find src-tauri/target/release/bundle -name '*.dmg' | head -n 1)
+          if [ -n "$app" ]; then codesign --verify --deep --strict --verbose=2 "$app"; fi
+          if [ -n "$dmg" ]; then xcrun stapler validate "$dmg"; fi
       - name: Check installer size
         shell: bash
         run: |
