@@ -82,6 +82,9 @@ pub struct CrawlConfig {
     /// Optional webhook URL posted on crawl completion.
     #[serde(default)]
     pub webhook_url: Option<String>,
+    /// Minimum delay between HTTP requests, in milliseconds (0 = none).
+    #[serde(default)]
+    pub crawl_delay_ms: u64,
     /// Only crawl discovered URLs matching at least one pattern (empty = all).
     #[serde(default)]
     pub include_patterns: Vec<String>,
@@ -137,6 +140,7 @@ impl Default for CrawlConfig {
             web_vitals: false,
             store_text: false,
             webhook_url: None,
+            crawl_delay_ms: 0,
             include_patterns: Vec::new(),
             exclude_patterns: Vec::new(),
             auth_user: None,

@@ -55,6 +55,7 @@ interface CrawlConfig {
   storeText?: boolean;
   customJs?: string[];
   webhookUrl?: string | null;
+  crawlDelayMs?: number;
 }
 
 interface UrlDetail {
@@ -351,6 +352,7 @@ export default function Home() {
   const [storeText, setStoreText] = useState(false);
   const [customJs, setCustomJs] = useState('');
   const [webhookUrl, setWebhookUrl] = useState('');
+  const [crawlDelayMs, setCrawlDelayMs] = useState(0);
   const [extractors, setExtractors] = useState<{ name: string; selector: string }[]>([]);
   const [extractorName, setExtractorName] = useState('');
   const [extractorSelector, setExtractorSelector] = useState('');
@@ -1043,6 +1045,7 @@ export default function Home() {
         storeText,
         customJs: splitLines(customJs),
         webhookUrl: webhookUrl.trim() || null,
+        crawlDelayMs: Math.max(0, Math.round(crawlDelayMs)),
       };
       const summary = await invoke<CrawlSummary>('create_crawl', {
         seedKind,
@@ -1998,6 +2001,18 @@ export default function Home() {
                     />
                     Store page text + Markdown
                   </label>
+                  <div className="field">
+                    <label htmlFor="crawlDelayMs">Delay between requests (ms)</label>
+                    <input
+                      id="crawlDelayMs"
+                      type="number"
+                      min={0}
+                      step={50}
+                      value={crawlDelayMs}
+                      onChange={(event) => setCrawlDelayMs(Number(event.target.value) || 0)}
+                      disabled={isRunning}
+                    />
+                  </div>
                   <div className="field">
                     <label htmlFor="webhookUrl">Completion webhook URL</label>
                     <input
