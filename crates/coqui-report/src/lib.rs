@@ -194,6 +194,11 @@ pub const REPORTS: &[(&str, &str, &str)] = &[
         "Segments overview",
         "URL counts per configured segment.",
     ),
+    (
+        "serp",
+        "SERP summary",
+        "Titles, meta descriptions, H1s and word counts with flags.",
+    ),
 ];
 
 /// Render a named report.
@@ -220,6 +225,7 @@ pub fn render_report_with(
         "pagination" => render_pagination(store, crawl_id),
         "orphans" => render_orphans(store, crawl_id),
         "segments" => render_segments(store, crawl_id),
+        "serp" => render_serp(store, crawl_id),
         _ => render_html(store, crawl_id),
     }
 }
@@ -407,6 +413,122 @@ pub fn write_comparison(
         .total_urls(left_id)
         .map(|count| count as u64)
         .map_err(|error| error.to_string())
+}
+
+fn render_serp(store: &Store, crawl_id: &str) -> Result<String, String> {
+    let crawl = store
+        .get_crawl(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let urls = store
+        .all_urls(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let eligible: Vec<&coqui_core::UrlRecord> = urls
+        .iter()
+        .filter(|url| {
+            url.status == Some(200)
+                && !url.blocked
+                && url
+                    .content_type
+                    .as_deref()
+                    .map(|value| {
+                        let value = value.to_ascii_lowercase();
+                        value.contains("text/html") || value.contains("application/xhtml")
+                    })
+                    .unwrap_or(false)
+                && !url
+                    .meta_robots
+                    .as_deref()
+                    .unwrap_or_default()
+                    .to_ascii_lowercase()
+                    .contains("noindex")
+        })
+        .collect();
+    let mut title_counts: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
+    let mut meta_counts: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
+    for url in &eligible {
+        if let Some(title) = url.title.as_deref() {
+            *title_counts.entry(title.to_ascii_lowercase()).or_default() += 1;
+        }
+        if let Some(meta) = url.meta_description.as_deref() {
+            *meta_counts.entry(meta.to_ascii_lowercase()).or_default() += 1;
+        }
+    }
+    let mut rows = Vec::new();
+    let mut flagged = 0usize;
+    for url in &eligible {
+        let mut flags = Vec::new();
+        match url.title.as_deref() {
+            None => flags.push("missing title"),
+            Some(title) => {
+                if title.chars().count() > 60 {
+                    flags.push("title > 60 chars");
+                }
+                if title_counts
+                    .get(&title.to_ascii_lowercase())
+                    .copied()
+                    .unwrap_or(0)
+                    > 1
+                {
+                    flags.push("duplicate title");
+                }
+            }
+        }
+        match url.meta_description.as_deref() {
+            None => flags.push("missing meta"),
+            Some(meta) => {
+                if meta.chars().count() > 160 {
+                    flags.push("meta > 160 chars");
+                }
+                if meta_counts
+                    .get(&meta.to_ascii_lowercase())
+                    .copied()
+                    .unwrap_or(0)
+                    > 1
+                {
+                    flags.push("duplicate meta");
+                }
+            }
+        }
+        if url.h1.is_none() {
+            flags.push("missing H1");
+        }
+        if url.word_count.unwrap_or(0) < 200 {
+            flags.push("thin content");
+        }
+        if !flags.is_empty() {
+            flagged += 1;
+        }
+        rows.push((
+            url.url.clone(),
+            url.title.clone().unwrap_or_default(),
+            url.meta_description
+                .as_deref()
+                .unwrap_or("")
+                .chars()
+                .count(),
+            url.h1.clone().unwrap_or_default(),
+            url.word_count.unwrap_or(0),
+            flags.join(", "),
+        ));
+    }
+    let mut body = format!(
+        "<p class=\"muted\">{} eligible HTML pages; {flagged} need SERP attention</p>",
+        rows.len()
+    );
+    body.push_str("<table><tr><th>URL</th><th>Title</th><th>Meta length</th><th>H1</th><th>Words</th><th>Flags</th></tr>");
+    for (url, title, meta_length, h1, words, flags) in &rows {
+        body.push_str(&format!(
+            "<tr><td>{}</td><td>{}</td><td>{meta_length}</td><td>{}</td><td>{words}</td><td>{}</td></tr>",
+            escape(url),
+            escape(title),
+            escape(h1),
+            escape(flags)
+        ));
+    }
+    body.push_str("</table>");
+    Ok(shell(&crawl.seed, "SERP summary", &body))
 }
 
 fn render_segments(store: &Store, crawl_id: &str) -> Result<String, String> {
