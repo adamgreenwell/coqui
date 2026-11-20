@@ -305,6 +305,7 @@ pub async fn run_crawl(
         None
     };
     let concurrency = usize::from(config.concurrency.max(1));
+    let mut current_concurrency = concurrency;
     let chunk_size = (concurrency * 4).clamp(8, 400);
     let mut last_checkpoint = Instant::now();
     let breaker: Arc<tokio::sync::Mutex<std::collections::HashMap<String, u32>>> =
@@ -364,9 +365,22 @@ pub async fn run_crawl(
                     (url, outcome)
                 }
             }))
-            .buffer_unordered(concurrency)
+            .buffer_unordered(current_concurrency)
             .collect()
             .await;
+
+            let sampled: Vec<u64> = results
+                .iter()
+                .filter_map(|(_, outcome)| outcome.error.is_none().then_some(outcome.elapsed_ms))
+                .collect();
+            if !sampled.is_empty() {
+                let average = sampled.iter().sum::<u64>() / sampled.len() as u64;
+                if average > 1_000 && current_concurrency > 1 {
+                    current_concurrency -= 1;
+                } else if average < 300 && current_concurrency < concurrency {
+                    current_concurrency += 1;
+                }
+            }
 
             if debug {
                 eprintln!("crawl: batch {} at depth {}", results.len(), depth);
