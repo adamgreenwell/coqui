@@ -398,6 +398,7 @@ export default function Home() {
   const [sourceError, setSourceError] = useState<string | null>(null);
   const [sourceLoading, setSourceLoading] = useState(false);
   const [sourceKind, setSourceKind] = useState<'raw' | 'rendered'>('raw');
+  const [sourceQuery, setSourceQuery] = useState('');
   const [copied, setCopied] = useState<string | null>(null);
   const [linkFilter, setLinkFilter] = useState('');
   const [lighthouse, setLighthouse] = useState<LighthouseSummary | null>(null);
@@ -996,6 +997,16 @@ export default function Home() {
     }
   };
 
+  const highlightSource = (text: string) => {
+    const query = sourceQuery.trim();
+    if (!query) return text;
+    const pattern = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const parts = text.split(new RegExp(`(${pattern})`, 'gi'));
+    return parts.map((part, index) =>
+      index % 2 === 1 ? <mark key={index}>{part}</mark> : part,
+    );
+  };
+
   const loadSource = async (kind: 'raw' | 'rendered' = sourceKind) => {
     if (!crawl || !detail) return;
     setSourceLoading(true);
@@ -1035,6 +1046,7 @@ export default function Home() {
       setDetail(data);
       setSourceHtml(null);
       setSourceError(null);
+      setSourceQuery('');
       setLinkFilter('');
       setDetailError(null);
     } catch (cause) {
@@ -2675,7 +2687,17 @@ export default function Home() {
                   </button>
                 )}
                 {sourceError && <p className="error">{sourceError}</p>}
-                {sourceHtml && <pre className="source-view">{sourceHtml}</pre>}
+                {sourceHtml && (
+                  <input
+                    className="source-find"
+                    type="search"
+                    value={sourceQuery}
+                    onChange={(event) => setSourceQuery(event.target.value)}
+                    placeholder="Find in source"
+                    style={{ marginTop: 8, width: '100%' }}
+                  />
+                )}
+                {sourceHtml && <pre className="source-view">{highlightSource(sourceHtml)}</pre>}
                 {detail.screenshot && (
                   <img
                     src={detail.screenshot}
