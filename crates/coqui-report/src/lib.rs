@@ -189,6 +189,11 @@ pub const REPORTS: &[(&str, &str, &str)] = &[
         "Orphan pages",
         "Indexable 200 pages with no internal inlinks.",
     ),
+    (
+        "segments",
+        "Segments overview",
+        "URL counts per configured segment.",
+    ),
 ];
 
 /// Render a named report.
@@ -214,6 +219,7 @@ pub fn render_report_with(
         "canonical-chains" => render_canonical_chains(store, crawl_id),
         "pagination" => render_pagination(store, crawl_id),
         "orphans" => render_orphans(store, crawl_id),
+        "segments" => render_segments(store, crawl_id),
         _ => render_html(store, crawl_id),
     }
 }
@@ -401,6 +407,34 @@ pub fn write_comparison(
         .total_urls(left_id)
         .map(|count| count as u64)
         .map_err(|error| error.to_string())
+}
+
+fn render_segments(store: &Store, crawl_id: &str) -> Result<String, String> {
+    let crawl = store
+        .get_crawl(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let segments = store
+        .segment_counts(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let total: i64 = segments.iter().map(|(_, count)| *count).sum();
+    let mut body = format!(
+        "<p class=\"muted\">{total} URLs across {} segments</p>",
+        segments.len()
+    );
+    body.push_str("<table><tr><th>Segment</th><th>URLs</th><th>Share</th></tr>");
+    for (segment, count) in &segments {
+        let share = if total > 0 {
+            *count as f64 * 100.0 / total as f64
+        } else {
+            0.0
+        };
+        body.push_str(&format!(
+            "<tr><td>{}</td><td>{count}</td><td>{share:.1}%</td></tr>",
+            escape(segment)
+        ));
+    }
+    body.push_str("</table>");
+    Ok(shell(&crawl.seed, "Segments", &body))
 }
 
 fn render_orphans(store: &Store, crawl_id: &str) -> Result<String, String> {
