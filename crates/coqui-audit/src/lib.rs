@@ -1199,7 +1199,9 @@ mod tests {
                 .url_id(id, &format!("https://example.com{path}"))
                 .unwrap()
                 .unwrap();
-            store.save_page_text(id, url_id, &text, &text).unwrap();
+            store
+                .save_page_text(id, url_id, &text, &text, None)
+                .unwrap();
         }
         let counts = analyze_crawl(&store, id).unwrap();
         let by_rule: HashMap<_, _> = counts.iter().map(|c| (c.rule.as_str(), c.count)).collect();
@@ -1222,7 +1224,13 @@ mod tests {
         add_url(&store, id, "https://example.com/", Some("Home"), 1, 500);
         let url_id = store.url_id(id, "https://example.com/").unwrap().unwrap();
         store
-            .save_page_text(id, url_id, "We recieve teh data", "We recieve teh data")
+            .save_page_text(
+                id,
+                url_id,
+                "We recieve teh data",
+                "We recieve teh data",
+                None,
+            )
             .unwrap();
         let counts = analyze_crawl(&store, id).unwrap();
         let by_rule: HashMap<_, _> = counts.iter().map(|c| (c.rule.as_str(), c.count)).collect();

@@ -53,6 +53,7 @@ interface CrawlConfig {
   accessibility: boolean;
   webVitals: boolean;
   storeText?: boolean;
+  storeHtml?: boolean;
   customJs?: string[];
   webhookUrl?: string | null;
   crawlDelayMs?: number;
@@ -356,6 +357,7 @@ export default function Home() {
   const [accessibility, setAccessibility] = useState(false);
   const [webVitals, setWebVitals] = useState(false);
   const [storeText, setStoreText] = useState(false);
+  const [storeHtml, setStoreHtml] = useState(false);
   const [customJs, setCustomJs] = useState('');
   const [webhookUrl, setWebhookUrl] = useState('');
   const [crawlDelayMs, setCrawlDelayMs] = useState(0);
@@ -1076,6 +1078,7 @@ export default function Home() {
         accessibility,
         webVitals,
         storeText,
+        storeHtml,
         customJs: splitLines(customJs),
         webhookUrl: webhookUrl.trim() || null,
         crawlDelayMs: Math.max(0, Math.round(crawlDelayMs)),
@@ -1252,6 +1255,7 @@ export default function Home() {
     if (typeof value.accessibility === 'boolean') setAccessibility(value.accessibility);
     if (typeof value.webVitals === 'boolean') setWebVitals(value.webVitals);
     if (typeof value.storeText === 'boolean') setStoreText(value.storeText);
+    if (typeof value.storeHtml === 'boolean') setStoreHtml(value.storeHtml);
     if (typeof value.customJs === 'string') setCustomJs(value.customJs);
     if (typeof value.webhookUrl === 'string') setWebhookUrl(value.webhookUrl);
   };
@@ -1386,6 +1390,7 @@ export default function Home() {
     { label: 'Accessibility (axe)', help: 'Run axe-core on rendered pages.', value: accessibility ? 'on' : 'off', changed: accessibility },
     { label: 'Web Vitals', help: 'Capture LCP, CLS, TBT, TTFB and FCP.', value: webVitals ? 'on' : 'off', changed: webVitals },
     { label: 'Store page text', help: 'Save extracted text and Markdown for exports.', value: storeText ? 'on' : 'off', changed: storeText },
+    { label: 'Store raw HTML', help: 'Keep raw HTML for the source viewer.', value: storeHtml ? 'on' : 'off', changed: storeHtml },
     { label: 'Completion webhook', help: 'POST crawl stats to this URL when the crawl finishes.', value: webhookUrl.trim() || 'none', changed: webhookUrl.trim().length > 0 },
     { label: 'Browser path', help: 'Chrome/Edge executable override.', value: browserPath || 'auto', changed: browserPath.length > 0 },
     { label: 'Include patterns', help: 'One regex per line; only matching URLs are crawled.', value: includePatterns ? 'set' : 'none', changed: includePatterns.length > 0 },
@@ -2132,6 +2137,18 @@ export default function Home() {
                     />
                     Store page text + Markdown
                   </label>
+                  <div className="field checkbox-field">
+                    <label htmlFor="storeHtml">
+                      <input
+                        id="storeHtml"
+                        type="checkbox"
+                        checked={storeHtml}
+                        onChange={(event) => setStoreHtml(event.target.checked)}
+                        disabled={isRunning}
+                      />
+                      Store raw HTML
+                    </label>
+                  </div>
                   <div className="field">
                     <label htmlFor="crawlDelayMs">Delay between requests (ms)</label>
                     <input
