@@ -2326,6 +2326,35 @@ impl Store {
         Ok(links.len() as u64)
     }
 
+    /// Internal anchor texts grouped by target URL.
+    pub fn export_anchors_csv(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT target.url, links.anchor, COUNT(*)
+             FROM links
+             JOIN urls target ON target.id = links.to_id
+             WHERE links.crawl_id = ?1 AND links.internal = 1
+             GROUP BY target.url, links.anchor
+             ORDER BY target.url, COUNT(*) DESC, links.anchor",
+        )?;
+        let mut writer = csv::Writer::from_path(path)?;
+        writer.write_record(["to_url", "anchor", "count"])?;
+        let mut rows = 0u64;
+        let mut records = stmt.query(params![crawl_id])?;
+        while let Some(row) = records.next()? {
+            let to_url: String = row.get(0)?;
+            let anchor: String = row.get(1)?;
+            let count: i64 = row.get(2)?;
+            writer.write_record([to_url, anchor, count.to_string()])?;
+            rows += 1;
+        }
+        writer.flush()?;
+        Ok(rows)
+    }
+
     pub fn export_csv(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {
         if let Some(parent) = path.as_ref().parent() {
             std::fs::create_dir_all(parent)?;
