@@ -184,6 +184,11 @@ pub const REPORTS: &[(&str, &str, &str)] = &[
         "Pagination",
         "rel=next/prev targets and whether they resolve to 200.",
     ),
+    (
+        "orphans",
+        "Orphan pages",
+        "Indexable 200 pages with no internal inlinks.",
+    ),
 ];
 
 /// Render a named report.
@@ -208,6 +213,7 @@ pub fn render_report_with(
         "hreflang" => render_hreflang(store, crawl_id),
         "canonical-chains" => render_canonical_chains(store, crawl_id),
         "pagination" => render_pagination(store, crawl_id),
+        "orphans" => render_orphans(store, crawl_id),
         _ => render_html(store, crawl_id),
     }
 }
@@ -395,6 +401,57 @@ pub fn write_comparison(
         .total_urls(left_id)
         .map(|count| count as u64)
         .map_err(|error| error.to_string())
+}
+
+fn render_orphans(store: &Store, crawl_id: &str) -> Result<String, String> {
+    let crawl = store
+        .get_crawl(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let urls = store
+        .all_urls(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let links = store
+        .all_links(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let inlinks: std::collections::HashSet<&str> = links
+        .iter()
+        .filter(|link| link.internal && link.from_url != link.to_url)
+        .map(|link| link.to_url.as_str())
+        .collect();
+    let mut orphans = Vec::new();
+    for url in &urls {
+        if url.url.trim_end_matches('/') == crawl.seed.trim_end_matches('/')
+            || url.status != Some(200)
+            || url.blocked
+        {
+            continue;
+        }
+        let noindex = url
+            .meta_robots
+            .as_deref()
+            .unwrap_or_default()
+            .to_ascii_lowercase()
+            .contains("noindex");
+        if noindex || inlinks.contains(url.url.as_str()) {
+            continue;
+        }
+        orphans.push(url);
+    }
+    let mut body = format!(
+        "<p class=\"muted\">{} orphan pages with no internal inlinks</p>",
+        orphans.len()
+    );
+    body.push_str("<table><tr><th>URL</th><th>Title</th><th>Depth</th></tr>");
+    for url in &orphans {
+        body.push_str(&format!(
+            "<tr><td>{}</td><td>{}</td><td>{}</td></tr>",
+            escape(&url.url),
+            escape(url.title.as_deref().unwrap_or("")),
+            url.depth
+        ));
+    }
+    body.push_str("</table>");
+    Ok(shell(&crawl.seed, "Orphan pages", &body))
 }
 
 fn render_pagination(store: &Store, crawl_id: &str) -> Result<String, String> {
