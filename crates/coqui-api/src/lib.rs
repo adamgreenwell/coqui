@@ -29,6 +29,7 @@ pub fn router(store: Arc<Store>, token: Option<String>) -> Router {
         .route("/crawls/{id}", get(get_crawl))
         .route("/crawls/{id}/issues", get(issue_counts))
         .route("/crawls/{id}/issues/{rule}", get(issue_rule))
+        .route("/crawls/{id}/links", get(links))
         .route("/crawls/{id}/urls", get(list_urls))
         .route("/crawls/{id}/export/{family}", get(export_csv))
         .route("/crawls/{id}/report/{kind}", get(report))
@@ -193,6 +194,40 @@ async fn issue_rule(
             })
             .collect(),
     ))
+}
+
+#[derive(Deserialize)]
+struct LinksQuery {
+    url: String,
+}
+
+async fn links(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Query(params): Query<LinksQuery>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let (inbound, outbound) = state
+        .store
+        .links_for_url(&id, &params.url)
+        .map_err(internal)?;
+    let map = |rows: Vec<coqui_core::LinkRecord>| -> Vec<serde_json::Value> {
+        rows.into_iter()
+            .map(|link| {
+                serde_json::json!({
+                    "from": link.from_url,
+                    "to": link.to_url,
+                    "anchor": link.anchor,
+                    "rel": link.rel,
+                    "internal": link.internal,
+                })
+            })
+            .collect()
+    };
+    Ok(Json(serde_json::json!({
+        "url": params.url,
+        "inbound": map(inbound),
+        "outbound": map(outbound),
+    })))
 }
 
 #[derive(Deserialize)]
