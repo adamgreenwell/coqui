@@ -1775,7 +1775,27 @@ impl Store {
         }
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
-            "SELECT url, rule, severity, detail FROM issues WHERE crawl_id = ?1 ORDER BY rule, url",
+            "SELECT issues.url, issues.rule,
+                    COALESCE(issue_overrides.severity, issues.severity), issues.detail
+             FROM issues
+             LEFT JOIN issue_overrides
+               ON issue_overrides.crawl_id = issues.crawl_id
+              AND issue_overrides.rule = issues.rule
+             WHERE issues.crawl_id = ?1
+               AND issues.rule NOT IN (
+                   SELECT rule FROM issue_suppressions
+                   WHERE crawl_id = ?1
+                     AND (expires_at IS NULL
+                          OR expires_at > CAST(strftime('%s','now') AS INTEGER) * 1000))
+               AND NOT EXISTS (
+                   SELECT 1 FROM issue_url_suppressions
+                   WHERE issue_url_suppressions.crawl_id = issues.crawl_id
+                     AND issue_url_suppressions.rule = issues.rule
+                     AND issue_url_suppressions.url = issues.url
+                     AND (issue_url_suppressions.expires_at IS NULL
+                          OR issue_url_suppressions.expires_at
+                             > CAST(strftime('%s','now') AS INTEGER) * 1000))
+             ORDER BY issues.rule, issues.url",
         )?;
         let mut workbook = rust_xlsxwriter::Workbook::new();
         let sheet = workbook.add_worksheet();
@@ -2118,7 +2138,27 @@ impl Store {
         }
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
-            "SELECT url, rule, severity, detail FROM issues WHERE crawl_id = ?1 ORDER BY rule, url",
+            "SELECT issues.url, issues.rule,
+                    COALESCE(issue_overrides.severity, issues.severity), issues.detail
+             FROM issues
+             LEFT JOIN issue_overrides
+               ON issue_overrides.crawl_id = issues.crawl_id
+              AND issue_overrides.rule = issues.rule
+             WHERE issues.crawl_id = ?1
+               AND issues.rule NOT IN (
+                   SELECT rule FROM issue_suppressions
+                   WHERE crawl_id = ?1
+                     AND (expires_at IS NULL
+                          OR expires_at > CAST(strftime('%s','now') AS INTEGER) * 1000))
+               AND NOT EXISTS (
+                   SELECT 1 FROM issue_url_suppressions
+                   WHERE issue_url_suppressions.crawl_id = issues.crawl_id
+                     AND issue_url_suppressions.rule = issues.rule
+                     AND issue_url_suppressions.url = issues.url
+                     AND (issue_url_suppressions.expires_at IS NULL
+                          OR issue_url_suppressions.expires_at
+                             > CAST(strftime('%s','now') AS INTEGER) * 1000))
+             ORDER BY issues.rule, issues.url",
         )?;
         let mut writer = csv::Writer::from_path(path)?;
         writer.write_record(["url", "rule", "severity", "detail"])?;
@@ -3686,6 +3726,48 @@ mod tests {
                 .any(|entry| entry.1 == "suppress" && entry.2.as_deref() == Some("client request"))
         );
         assert!(log.iter().any(|entry| entry.1 == "override"));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn issues_export_respects_overrides_and_suppression() {
+        let dir = std::env::temp_dir().join(format!("coqui-export-issues-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        store
+            .create_crawl(
+                "c1",
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        store
+            .insert_url(&sample_record("c1", "https://example.com/"))
+            .unwrap();
+        store
+            .insert_issue(&Issue {
+                crawl_id: "c1".into(),
+                url: "https://example.com/".into(),
+                rule: "missing_title".into(),
+                severity: IssueSeverity::Error,
+                detail: None,
+            })
+            .unwrap();
+        store
+            .set_override("c1", "missing_title", "warning")
+            .unwrap();
+        let path = dir.join("issues.csv");
+        store.export_issues_csv("c1", &path).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("warning"));
+        store
+            .suppress_rule("c1", "missing_title", Some("client"), None)
+            .unwrap();
+        store.export_issues_csv("c1", &path).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(text.lines().count(), 1);
         std::fs::remove_dir_all(dir).ok();
     }
 
