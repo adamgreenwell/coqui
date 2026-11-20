@@ -28,6 +28,7 @@ pub fn router(store: Arc<Store>) -> Router {
         .route("/crawls/{id}/issues", get(issue_counts))
         .route("/crawls/{id}/urls", get(list_urls))
         .route("/crawls/{id}/export/{family}", get(export_csv))
+        .route("/crawls/{id}/report/{kind}", get(report))
         .with_state(AppState { store })
 }
 
@@ -136,6 +137,24 @@ async fn export_csv(
             format!("attachment; filename=\"{family}.csv\""),
         )
         .body(Body::from(bytes))
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))
+}
+
+async fn report(
+    State(state): State<AppState>,
+    Path((id, kind)): Path<(String, String)>,
+) -> Result<Response, (StatusCode, String)> {
+    if !coqui_report::REPORTS
+        .iter()
+        .any(|(name, _, _)| *name == kind)
+    {
+        return Err((StatusCode::BAD_REQUEST, format!("unknown report '{kind}'")));
+    }
+    let html = coqui_report::render_report(&state.store, &id, &kind)
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))?;
+    Response::builder()
+        .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+        .body(Body::from(html))
         .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))
 }
 
