@@ -938,6 +938,9 @@ fn suppress_rule(
     reason: Option<String>,
     expires_at: Option<i64>,
 ) -> Result<(), String> {
+    if reason.as_deref().unwrap_or("").trim().is_empty() {
+        return Err("a reason is required to suppress a rule".into());
+    }
     state
         .store
         .suppress_rule(&crawl_id, &rule, reason.as_deref(), expires_at)
@@ -1062,6 +1065,9 @@ fn suppress_url(
     reason: Option<String>,
     expires_at: Option<i64>,
 ) -> Result<(), String> {
+    if reason.as_deref().unwrap_or("").trim().is_empty() {
+        return Err("a reason is required to suppress a URL".into());
+    }
     state
         .store
         .suppress_url(&crawl_id, &rule, &url, reason.as_deref(), expires_at)
