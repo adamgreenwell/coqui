@@ -985,6 +985,35 @@ impl Store {
     }
 
     /// URL counts grouped by crawl depth.
+    /// Top-level path segments and how many URLs each contains.
+    pub fn segment_counts(&self, crawl_id: &str) -> Result<Vec<(String, i64)>> {
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "WITH parsed AS (
+                 SELECT CASE
+                     WHEN instr(substr(url, instr(url, '//') + 2), '/') = 0 THEN ''
+                     ELSE substr(
+                         substr(url, instr(url, '//') + 2),
+                         instr(substr(url, instr(url, '//') + 2), '/') + 1
+                     )
+                 END AS tail
+                 FROM urls WHERE crawl_id = ?1
+             ), segments AS (
+                 SELECT CASE
+                     WHEN instr(tail, '/') = 0 THEN tail
+                     ELSE substr(tail, 1, instr(tail, '/') - 1)
+                 END AS seg
+                 FROM parsed
+             )
+             SELECT CASE WHEN seg = '' THEN '(root)' ELSE seg END AS segment, COUNT(*)
+             FROM segments GROUP BY 1 ORDER BY COUNT(*) DESC, 1",
+        )?;
+        let rows = stmt
+            .query_map(params![crawl_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     pub fn depth_counts(&self, crawl_id: &str) -> Result<Vec<(i64, i64)>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(

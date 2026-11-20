@@ -413,6 +413,7 @@ export default function Home() {
     blocked: number;
   } | null>(null);
   const [depthCounts, setDepthCounts] = useState<{ depth: number; count: number }[]>([]);
+  const [segments, setSegments] = useState<{ segment: string; count: number }[]>([]);
   const [contentStats, setContentStats] = useState<{
     html: number;
     xml: number;
@@ -698,6 +699,7 @@ export default function Home() {
           crawlId: crawl.id,
         });
         setDepthCounts(depths);
+        setSegments(await invoke<{ segment: string; count: number }[]>('segments', { crawlId: crawl.id }));
         const content = await invoke<{
           html: number;
           xml: number;
@@ -2812,6 +2814,26 @@ export default function Home() {
                         />
                       </div>
                       <strong>{count}</strong>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {segments.length > 0 && (
+              <div className="overview-bars" style={{ flexBasis: '100%' }}>
+                <h3>Top segments</h3>
+                {segments.slice(0, 8).map((row) => {
+                  const max = Math.max(1, ...segments.map((entry) => entry.count));
+                  return (
+                    <div className="bar-row" key={`segment-${row.segment}`}>
+                      <span>{row.segment}</span>
+                      <div className="bar-track">
+                        <div
+                          className="bar-fill"
+                          style={{ width: `${Math.round((row.count / max) * 100)}%` }}
+                        />
+                      </div>
+                      <strong>{row.count}</strong>
                     </div>
                   );
                 })}
