@@ -307,6 +307,8 @@ pub async fn run_crawl(
     let concurrency = usize::from(config.concurrency.max(1));
     let chunk_size = (concurrency * 4).clamp(8, 400);
     let mut last_checkpoint = Instant::now();
+    let breaker: Arc<tokio::sync::Mutex<std::collections::HashMap<String, u32>>> =
+        Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
 
     while !frontier.is_empty() && depth <= config.max_depth {
         if cancel.is_cancelled() {
@@ -334,8 +336,31 @@ pub async fn run_crawl(
                 let client = client.clone();
                 let renderer = renderer.clone();
                 let throttle = throttle.clone();
+                let breaker = breaker.clone();
                 async move {
+                    let host = host_of(&url);
+                    let open = {
+                        let failures = breaker.lock().await;
+                        failures.get(&host).copied().unwrap_or(0) >= 5
+                    };
+                    if open {
+                        return (
+                            url.clone(),
+                            circuit_outcome(
+                                &url,
+                                "host circuit open after repeated transport failures",
+                            ),
+                        );
+                    }
                     let outcome = fetch(&client, &url, renderer, throttle, delay_ms).await;
+                    {
+                        let mut failures = breaker.lock().await;
+                        if outcome.error.is_some() {
+                            *failures.entry(host).or_insert(0) += 1;
+                        } else {
+                            failures.remove(&host);
+                        }
+                    }
                     (url, outcome)
                 }
             }))
@@ -683,6 +708,35 @@ fn path_of(url: &str) -> String {
             path
         })
         .unwrap_or_else(|_| "/".to_string())
+}
+
+fn host_of(url: &str) -> String {
+    url::Url::parse(url)
+        .ok()
+        .and_then(|parsed| parsed.host_str().map(str::to_string))
+        .unwrap_or_default()
+}
+
+fn circuit_outcome(url: &str, message: &str) -> FetchOutcome {
+    FetchOutcome {
+        status: None,
+        final_url: url.to_string(),
+        chain: Vec::new(),
+        content_type: None,
+        body: None,
+        raw_body: None,
+        rendered: false,
+        size_bytes: 0,
+        elapsed_ms: 0,
+        error: Some(message.to_string()),
+        blocked: false,
+        console: Vec::new(),
+        screenshot: None,
+        axe: Vec::new(),
+        vitals: None,
+        headers: Vec::new(),
+        custom_js: Vec::new(),
+    }
 }
 
 async fn fetch(
