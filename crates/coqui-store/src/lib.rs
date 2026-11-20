@@ -11,7 +11,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const SCHEMA_VERSION: i32 = 26;
+pub const SCHEMA_VERSION: i32 = 27;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -168,6 +168,15 @@ CREATE TABLE IF NOT EXISTS issue_audit_log (
     action     TEXT NOT NULL,
     reason     TEXT,
     created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS issue_url_suppressions (
+    crawl_id  TEXT NOT NULL,
+    rule      TEXT NOT NULL,
+    url       TEXT NOT NULL,
+    reason    TEXT,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (crawl_id, rule, url)
 );
 "#;
 
@@ -547,6 +556,50 @@ impl Store {
         Ok(changed)
     }
 
+    pub fn suppress_url(
+        &self,
+        crawl_id: &str,
+        rule: &str,
+        url: &str,
+        reason: Option<&str>,
+    ) -> Result<()> {
+        let conn = self.lock()?;
+        conn.execute(
+            "INSERT OR REPLACE INTO issue_url_suppressions
+                (crawl_id, rule, url, reason, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![crawl_id, rule, url, reason, now_ms()],
+        )?;
+        log_issue_action(&conn, crawl_id, rule, "suppress_url", reason)?;
+        Ok(())
+    }
+
+    pub fn restore_url(&self, crawl_id: &str, rule: &str, url: &str) -> Result<usize> {
+        let conn = self.lock()?;
+        let changed = conn.execute(
+            "DELETE FROM issue_url_suppressions WHERE crawl_id = ?1 AND rule = ?2 AND url = ?3",
+            params![crawl_id, rule, url],
+        )?;
+        if changed > 0 {
+            log_issue_action(&conn, crawl_id, rule, "restore_url", None)?;
+        }
+        Ok(changed)
+    }
+
+    pub fn suppressed_urls(&self, crawl_id: &str) -> Result<Vec<(String, String, Option<String>)>> {
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT rule, url, reason FROM issue_url_suppressions
+             WHERE crawl_id = ?1 ORDER BY rule, url",
+        )?;
+        let rows = stmt
+            .query_map(params![crawl_id], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     /// Recent suppression/override actions for a crawl.
     pub fn issue_audit_log(
         &self,
@@ -588,6 +641,11 @@ impl Store {
             "SELECT urls.id, issues.url, issues.detail FROM issues
              JOIN urls ON urls.crawl_id = issues.crawl_id AND urls.url = issues.url
              WHERE issues.crawl_id = ?1 AND issues.rule = ?2
+               AND NOT EXISTS (
+                   SELECT 1 FROM issue_url_suppressions
+                   WHERE issue_url_suppressions.crawl_id = issues.crawl_id
+                     AND issue_url_suppressions.rule = issues.rule
+                     AND issue_url_suppressions.url = issues.url)
              ORDER BY issues.url LIMIT 500",
         )?;
         let rows = stmt
@@ -704,6 +762,11 @@ impl Store {
              WHERE issues.crawl_id = ?1
                AND issues.rule NOT IN (
                    SELECT rule FROM issue_suppressions WHERE crawl_id = ?1)
+               AND NOT EXISTS (
+                   SELECT 1 FROM issue_url_suppressions
+                   WHERE issue_url_suppressions.crawl_id = issues.crawl_id
+                     AND issue_url_suppressions.rule = issues.rule
+                     AND issue_url_suppressions.url = issues.url)
              GROUP BY issues.rule,
                       COALESCE(issue_overrides.severity, issues.severity)
              ORDER BY COUNT(*) DESC, issues.rule",
@@ -2454,6 +2517,18 @@ fn migrate(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_links_crawl_from ON links (crawl_id, from_id);
          CREATE INDEX IF NOT EXISTS idx_links_crawl_to ON links (crawl_id, to_id);",
     )?;
+    if version < 27 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS issue_url_suppressions (
+                crawl_id  TEXT NOT NULL,
+                rule      TEXT NOT NULL,
+                url       TEXT NOT NULL,
+                reason    TEXT,
+                created_at INTEGER NOT NULL,
+                PRIMARY KEY (crawl_id, rule, url)
+            );",
+        )?;
+    }
     if version < 26 {
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS issue_audit_log (
@@ -3573,6 +3648,50 @@ mod tests {
     }
 
     #[test]
+    fn url_suppression_hides_one_issue() {
+        let dir = std::env::temp_dir().join(format!("coqui-url-supp-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        store
+            .create_crawl(
+                "c1",
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        store
+            .insert_url(&sample_record("c1", "https://example.com/"))
+            .unwrap();
+        store
+            .insert_issue(&Issue {
+                crawl_id: "c1".into(),
+                url: "https://example.com/".into(),
+                rule: "missing_title".into(),
+                severity: IssueSeverity::Error,
+                detail: None,
+            })
+            .unwrap();
+        assert_eq!(store.issue_counts("c1").unwrap().len(), 1);
+        store
+            .suppress_url(
+                "c1",
+                "missing_title",
+                "https://example.com/",
+                Some("one-off"),
+            )
+            .unwrap();
+        assert!(store.issue_counts("c1").unwrap().is_empty());
+        assert_eq!(store.suppressed_urls("c1").unwrap().len(), 1);
+        store
+            .restore_url("c1", "missing_title", "https://example.com/")
+            .unwrap();
+        assert_eq!(store.issue_counts("c1").unwrap().len(), 1);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
     fn suppressed_rules_hide_issue_counts() {
         let dir = std::env::temp_dir().join(format!("coqui-suppress-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -3850,7 +3969,7 @@ mod tests {
         let version: i32 = conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 26);
+        assert_eq!(version, 27);
         std::fs::remove_dir_all(dir).ok();
     }
 

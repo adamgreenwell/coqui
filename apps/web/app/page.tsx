@@ -613,6 +613,20 @@ export default function Home() {
     })();
   }, [isTauri]);
 
+  const suppressIssueUrl = async (rule: string, url: string) => {
+    if (!crawl) return;
+    const reason = window.prompt('Reason for ignoring this URL for this rule?') ?? undefined;
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('suppress_url', {
+      crawlId: crawl.id,
+      rule,
+      url,
+      reason: reason || null,
+    });
+    setIssueDetails((current) => current.filter((row) => row.url !== url));
+    await loadIssues(crawl.id);
+  };
+
   const loadViews = async () => {
     const { invoke } = await import('@tauri-apps/api/core');
     const rows = await invoke<
@@ -2638,6 +2652,14 @@ export default function Home() {
                       <li key={row.url}>
                         <code>{row.url}</code>
                         {row.detail ? ` — ${row.detail}` : ''}
+                        <button
+                          type="button"
+                          className="link-button"
+                          style={{ marginLeft: 8 }}
+                          onClick={() => void suppressIssueUrl(activeIssue, row.url)}
+                        >
+                          Ignore URL
+                        </button>
                       </li>
                     ))}
                   </ul>
