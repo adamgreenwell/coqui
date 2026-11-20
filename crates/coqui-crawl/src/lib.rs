@@ -290,7 +290,10 @@ pub async fn run_crawl(
         }
         let mut next: Vec<String> = Vec::new();
 
-        let throttle = Arc::new(tokio::sync::Mutex::new(None::<std::time::Instant>));
+        let throttle = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::<
+            String,
+            std::time::Instant,
+        >::new()));
         let delay_ms = config.crawl_delay_ms;
         while !frontier.is_empty() && (stats.crawled as u32) < config.max_urls {
             let remaining = config.max_urls.saturating_sub(stats.crawled as u32) as usize;
@@ -641,7 +644,7 @@ async fn fetch(
     client: &Client,
     requested: &str,
     renderer: Option<Arc<RenderPool>>,
-    throttle: Arc<tokio::sync::Mutex<Option<std::time::Instant>>>,
+    throttle: Arc<tokio::sync::Mutex<std::collections::HashMap<String, std::time::Instant>>>,
     delay_ms: u64,
 ) -> FetchOutcome {
     let debug = std::env::var_os("COQUI_DEBUG_CRAWL").is_some();
@@ -657,15 +660,19 @@ async fn fetch(
 
     loop {
         if delay_ms > 0 {
+            let host = url::Url::parse(&current)
+                .ok()
+                .and_then(|parsed| parsed.host_str().map(str::to_string))
+                .unwrap_or_default();
             let mut last = throttle.lock().await;
-            if let Some(previous) = *last {
+            if let Some(previous) = last.get(&host).copied() {
                 let elapsed = previous.elapsed();
                 let target = Duration::from_millis(delay_ms);
                 if elapsed < target {
                     tokio::time::sleep(target - elapsed).await;
                 }
             }
-            *last = Some(std::time::Instant::now());
+            last.insert(host, std::time::Instant::now());
         }
         let response = match client.get(&current).send().await {
             Ok(response) => response,
