@@ -88,6 +88,9 @@ pub struct CrawlConfig {
     /// Maximum requests per second per host (0 = unlimited).
     #[serde(default)]
     pub max_rps: u32,
+    /// Optional HTTP proxy URL for all requests.
+    #[serde(default)]
+    pub proxy_url: Option<String>,
     /// Only crawl discovered URLs matching at least one pattern (empty = all).
     #[serde(default)]
     pub include_patterns: Vec<String>,
@@ -145,6 +148,7 @@ impl Default for CrawlConfig {
             webhook_url: None,
             crawl_delay_ms: 0,
             max_rps: 0,
+            proxy_url: None,
             include_patterns: Vec::new(),
             exclude_patterns: Vec::new(),
             auth_user: None,

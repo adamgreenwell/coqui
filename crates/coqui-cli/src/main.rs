@@ -63,6 +63,7 @@ impl Args {
             webhook_url: None,
             delay_ms: 0,
             max_rps: 0,
+            proxy_url: None,
             extractors: Vec::new(),
             custom_js: Vec::new(),
             resume: false,
@@ -92,6 +93,7 @@ struct Args {
     webhook_url: Option<String>,
     delay_ms: u64,
     max_rps: u32,
+    proxy_url: Option<String>,
     extractors: Vec<(String, String)>,
     custom_js: Vec<String>,
     resume: bool,
@@ -110,7 +112,7 @@ fn load_config(path: &Path, required: bool) -> Result<FileConfig, String> {
 }
 
 fn usage() -> &'static str {
-    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots] [--webhook URL] [--delay-ms N] [--max-rps N]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR]\n       coqui report compare --with <crawl id> [--out DIR]\n       coqui reports\n       coqui export [--out DIR] [--family urls|issues|links|headers|images|a11y|structured|vitals|console|text|markdown|extractions|custom-js]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N] [--webhook URL] [--delay-ms N] [--max-rps N]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui overview [--out DIR]\n       coqui serve [--out DIR] [--addr 127.0.0.1:8787] [--token TOKEN]
+    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots] [--webhook URL] [--delay-ms N] [--max-rps N] [--proxy URL]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR]\n       coqui report compare --with <crawl id> [--out DIR]\n       coqui reports\n       coqui export [--out DIR] [--family urls|issues|links|headers|images|a11y|structured|vitals|console|text|markdown|extractions|custom-js]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N] [--webhook URL] [--delay-ms N] [--max-rps N] [--proxy URL]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui overview [--out DIR]\n       coqui serve [--out DIR] [--addr 127.0.0.1:8787] [--token TOKEN]
        coqui issue-settings <export|import|diff> [--out DIR] [--file PATH] [--with CRAWL]
        coqui doctor [--out DIR]
        coqui mcp [--out DIR]"
@@ -178,6 +180,10 @@ fn parse_args(values: &[String], config: &FileConfig) -> Result<Args, String> {
                     .ok_or("missing --delay-ms value")?
                     .parse()
                     .map_err(|_| "invalid --delay-ms".to_string())?;
+            }
+            "--proxy" => {
+                index += 1;
+                args.proxy_url = Some(values.get(index).ok_or("missing --proxy value")?.clone());
             }
             "--max-rps" => {
                 index += 1;
@@ -1000,6 +1006,7 @@ async fn run_schedule(values: &[String]) -> Result<(), String> {
     let mut webhook = None;
     let mut delay_ms = 0u64;
     let mut max_rps = 0u32;
+    let mut proxy_url = None;
     let mut remove_id = None;
     let mut kind = String::new();
     let mut seed = String::new();
@@ -1035,6 +1042,10 @@ async fn run_schedule(values: &[String]) -> Result<(), String> {
                     .ok_or("missing --delay-ms value")?
                     .parse()
                     .map_err(|_| "invalid --delay-ms".to_string())?;
+            }
+            "--proxy" => {
+                index += 1;
+                proxy_url = Some(values.get(index).ok_or("missing --proxy value")?.clone());
             }
             "--max-rps" => {
                 index += 1;
@@ -1074,6 +1085,7 @@ async fn run_schedule(values: &[String]) -> Result<(), String> {
             }
             config.crawl_delay_ms = delay_ms;
             config.max_rps = max_rps;
+            config.proxy_url = proxy_url;
             let json = serde_json::to_string(&config).map_err(|error| error.to_string())?;
             let id = store
                 .add_schedule(&kind, &seed, every, &json, now_ms() + every * 1000)
@@ -1930,6 +1942,7 @@ async fn main() {
             webhook_url: args.webhook_url.clone(),
             crawl_delay_ms: args.delay_ms,
             max_rps: args.max_rps,
+            proxy_url: args.proxy_url.clone(),
             custom_js: args.custom_js.clone(),
             render_workers: args.render_workers,
             ..CrawlConfig::default()
