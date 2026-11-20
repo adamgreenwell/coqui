@@ -280,6 +280,11 @@ pub const RULES: &[RuleDef] = &[
         label: "Large DOM size",
         severity: IssueSeverity::Warning,
     },
+    RuleDef {
+        id: "render_blocking_requests",
+        label: "Render-blocking requests",
+        severity: IssueSeverity::Opportunity,
+    },
 ];
 
 pub fn rule_label(rule: &str) -> &str {
@@ -850,6 +855,17 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
                     &url.url,
                     "dom_size_large",
                     Some(format!("{nodes} DOM nodes")),
+                )?;
+            }
+            if let Some(blocking) = vitals.render_blocking
+                && blocking > 2
+            {
+                issue(
+                    store,
+                    crawl_id,
+                    &url.url,
+                    "render_blocking_requests",
+                    Some(format!("{blocking} blocking scripts/stylesheets")),
                 )?;
             }
         }
