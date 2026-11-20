@@ -1,0 +1,21 @@
+name: coqui-crawl
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release -p coqui-cli
+      - run: ./target/release/coqui crawl url https://example.com --max-urls 200 --out crawl
+      - run: ./target/release/coqui export --out crawl --family all
+      - run: ./target/release/coqui report summary --out crawl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coqui-crawl
+          path: crawl/
