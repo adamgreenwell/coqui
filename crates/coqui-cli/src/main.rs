@@ -712,6 +712,9 @@ fn run_prune(values: &[String]) -> Result<(), String> {
         index += 1;
     }
     let store = Store::open(out.join("coqui.db")).map_err(|error| error.to_string())?;
+    if let Some(id) = store.running_crawl().map_err(|error| error.to_string())? {
+        return Err(format!("cannot prune while crawl {id} is running"));
+    }
     let crawls = store.list_crawls().map_err(|error| error.to_string())?;
     if crawls.len() <= keep {
         println!(

@@ -775,6 +775,15 @@ fn remove_schedule(state: State<'_, AppState>, id: i64) -> Result<usize, String>
 
 #[tauri::command]
 fn delete_crawl(state: State<'_, AppState>, crawl_id: String) -> Result<(), String> {
+    if state
+        .store
+        .running_crawl()
+        .map_err(|error| error.to_string())?
+        .as_deref()
+        == Some(crawl_id.as_str())
+    {
+        return Err("cannot delete a crawl while it is running".into());
+    }
     state
         .store
         .delete_crawl(&crawl_id)

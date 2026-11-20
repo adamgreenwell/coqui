@@ -71,7 +71,7 @@ Exports a crawl's suppressions and severity overrides as JSON (default `issue-se
 
 ## Prune
 
-`coqui prune --out DIR [--keep N]` deletes all but the N most recent crawls (default 10), including their screenshot files. Verified: pruning a two-crawl database with `--keep 1` removed one crawl; a second run reported nothing to delete.
+`coqui prune --out DIR [--keep N]` deletes all but the N most recent crawls (default 10), including their screenshot files. It refuses while a crawl is running (verified: running crawl -> exit 2 with a clear message). Verified: pruning a two-crawl database with `--keep 1` removed one crawl; a second run reported nothing to delete.
 
 ## Overview
 
@@ -171,6 +171,7 @@ Supports URL/sitemap/list seeds, crawl limits, user agent, custom headers, basic
 ## Custom JavaScript
 
 `--js EXPR` (repeatable) evaluates JavaScript in each rendered page after load; requires `--render`. Results are stored per URL and exported as Custom JS results (`custom-js`) in the app. Verified: `--js "document.title"` returned "Rendered title" on the JS fixture.
+
 
 
 

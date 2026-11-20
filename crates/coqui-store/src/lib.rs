@@ -2727,6 +2727,19 @@ impl Store {
         Ok(changed)
     }
 
+    /// ID of a crawl currently marked running, if any.
+    pub fn running_crawl(&self) -> Result<Option<String>> {
+        let conn = self.lock()?;
+        let id = conn
+            .query_row(
+                "SELECT id FROM crawls WHERE status = 'running' ORDER BY rowid DESC LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(id)
+    }
+
     pub fn delete_crawl(&self, id: &str) -> Result<()> {
         let conn = self.lock()?;
         conn.execute("DELETE FROM issues WHERE crawl_id = ?1", params![id])?;
