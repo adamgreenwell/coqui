@@ -397,6 +397,7 @@ export default function Home() {
   const [sourceHtml, setSourceHtml] = useState<string | null>(null);
   const [sourceError, setSourceError] = useState<string | null>(null);
   const [sourceLoading, setSourceLoading] = useState(false);
+  const [sourceKind, setSourceKind] = useState<'raw' | 'rendered'>('raw');
   const [copied, setCopied] = useState<string | null>(null);
   const [linkFilter, setLinkFilter] = useState('');
   const [lighthouse, setLighthouse] = useState<LighthouseSummary | null>(null);
@@ -995,19 +996,23 @@ export default function Home() {
     }
   };
 
-  const loadSource = async () => {
+  const loadSource = async (kind: 'raw' | 'rendered' = sourceKind) => {
     if (!crawl || !detail) return;
     setSourceLoading(true);
     setSourceError(null);
+    setSourceKind(kind);
     try {
       const { invoke } = await import('@tauri-apps/api/core');
-      const html = await invoke<string | null>('page_html', {
-        crawlId: crawl.id,
-        urlId: detail.url.id,
-      });
+      const html = await invoke<string | null>(
+        kind === 'raw' ? 'page_html' : 'page_rendered_html',
+        { crawlId: crawl.id, urlId: detail.url.id },
+      );
       if (html === null) {
+        setSourceHtml(null);
         setSourceError(
-          'Raw HTML was not stored for this crawl. Enable "Store raw HTML" before crawling.',
+          kind === 'raw'
+            ? 'Raw HTML was not stored for this crawl. Enable "Store raw HTML" before crawling.'
+            : 'Rendered DOM was not stored (crawl without render, or the render failed).',
         );
       } else {
         setSourceHtml(html);
