@@ -112,7 +112,7 @@ Schedules are interval-based (seconds) and stored in the crawl DB. `run-due` run
 
 `coqui schedule add ... --webhook URL --delay-ms N --max-rps N` stores those in the schedule config so scheduled runs notify and stay within rate limits.
 
-`--ndjson` streams one JSON object per progress update plus a final completed/failed event, and suppresses the banner.
+`--fail-on-issues N` exits with code 3 when the crawl produces more than N issues (JSON/NDJSON-aware), so pipelines can gate on it.\n\n`--ndjson` streams one JSON object per progress update plus a final completed/failed event, and suppresses the banner.
 
 `--json` prints a single machine-readable crawl summary (`status`, `crawlId`, `crawled`, `discovered`, `issues`, `seconds`, `csv`) and suppresses progress lines; errors print JSON too.
 
@@ -169,6 +169,7 @@ Supports URL/sitemap/list seeds, crawl limits, user agent, custom headers, basic
 ## Custom JavaScript
 
 `--js EXPR` (repeatable) evaluates JavaScript in each rendered page after load; requires `--render`. Results are stored per URL and exported as Custom JS results (`custom-js`) in the app. Verified: `--js "document.title"` returned "Rendered title" on the JS fixture.
+
 
 
 
