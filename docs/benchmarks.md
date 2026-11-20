@@ -34,6 +34,13 @@ Synthetic 1M-row export: a 1,000,000-row crawl database (176.3 MB) exported in *
 
 Node v26.13.1, debug build, concurrency 8. Rendered runs use `--render --screenshots --a11y --vitals`.
 
+## Two-crawl comparison
+
+`node tools/bench/compare.mjs --urls 10000` crawls the bulk fixture twice into one database and times `coqui report compare`.
+
+- 10,000 URLs crawled per pass in **49.4 s** (40,000 issues).
+- Comparing the two 10k crawls (10,000 matched, 0 added/removed/changed) took **254 ms**, including `compare.csv` and `compare-urls.csv` output.
+
 ## Notes
 
 - Small runs are dominated by startup/DB creation; use ≥2,000 URLs for throughput.
