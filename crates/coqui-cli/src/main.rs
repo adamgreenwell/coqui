@@ -343,6 +343,27 @@ fn run_report(values: &[String]) -> Result<(), String> {
         let path = out.join("report-compare.html");
         let urls = coqui_report::write_comparison(&store, &crawl.id, &other, &path)?;
         println!("report: {} ({} urls)", path.display(), urls);
+        let mut rules: std::collections::BTreeMap<String, (i64, i64)> =
+            std::collections::BTreeMap::new();
+        for issue in store
+            .issue_counts(&crawl.id)
+            .map_err(|error| error.to_string())?
+        {
+            rules.entry(issue.rule).or_default().0 += issue.count;
+        }
+        for issue in store
+            .issue_counts(&other)
+            .map_err(|error| error.to_string())?
+        {
+            rules.entry(issue.rule).or_default().1 += issue.count;
+        }
+        let mut csv = String::from("rule,left,right,delta\n");
+        for (rule, (left, right)) in &rules {
+            csv.push_str(&format!("{rule},{left},{right},{}\n", right - left));
+        }
+        let csv_path = out.join("compare.csv");
+        std::fs::write(&csv_path, csv).map_err(|error| error.to_string())?;
+        println!("compare csv: {}", csv_path.display());
         return Ok(());
     }
     if !coqui_report::REPORTS.iter().any(|(id, _, _)| *id == kind) {
