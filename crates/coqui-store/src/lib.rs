@@ -11,7 +11,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const SCHEMA_VERSION: i32 = 29;
+pub const SCHEMA_VERSION: i32 = 30;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS urls (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     crawl_id          TEXT NOT NULL REFERENCES crawls(id) ON DELETE CASCADE,
     url               TEXT NOT NULL,
+    segment           TEXT,
     status            INTEGER,
     content_type      TEXT,
     title             TEXT,
@@ -253,6 +254,20 @@ fn log_issue_action(
     Ok(())
 }
 
+fn segment_of(url: &str) -> String {
+    let rest = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
+    let path = match rest.find('/') {
+        Some(index) => &rest[index + 1..],
+        None => "",
+    };
+    let segment = path.split('/').next().unwrap_or("");
+    if segment.is_empty() {
+        "(root)".to_string()
+    } else {
+        segment.to_string()
+    }
+}
+
 fn actor() -> Option<String> {
     std::env::var("USERNAME")
         .or_else(|_| std::env::var("USER"))
@@ -405,6 +420,7 @@ impl Store {
 
     /// Insert a URL. Returns `true` when a new row was created.
     pub fn insert_url(&self, record: &NewUrl) -> Result<bool> {
+        let segment = segment_of(&record.url);
         let response_time_ms = record.response_time_ms.map(|value| value as i64);
         let size_bytes = record.size_bytes.map(|value| value as i64);
         let redirect_chain = if record.redirect_chain.is_empty() {
@@ -418,9 +434,9 @@ impl Store {
                  canonical, meta_robots, redirect_target, redirect_chain, word_count, depth,
                  response_time_ms, size_bytes, error, blocked, hreflang_json, pagination_next,
                  pagination_prev, structured_data_json, console_json, axe_json, vitals_json,
-                 headers_json, discovered_at)
+                 headers_json, discovered_at, segment)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
-                     ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)",
+                     ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28)",
             params![
                 record.crawl_id,
                 record.url,
@@ -450,6 +466,7 @@ impl Store {
                 serde_json::to_string(&record.vitals).unwrap_or_else(|_| "null".into()),
                 serde_json::to_string(&record.headers).unwrap_or_else(|_| "[]".into()),
                 record.discovered_at,
+                segment,
             ],
         )?;
         Ok(changed > 0)
@@ -1080,24 +1097,9 @@ impl Store {
     pub fn segment_counts(&self, crawl_id: &str) -> Result<Vec<(String, i64)>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
-            "WITH parsed AS (
-                 SELECT CASE
-                     WHEN instr(substr(url, instr(url, '//') + 2), '/') = 0 THEN ''
-                     ELSE substr(
-                         substr(url, instr(url, '//') + 2),
-                         instr(substr(url, instr(url, '//') + 2), '/') + 1
-                     )
-                 END AS tail
-                 FROM urls WHERE crawl_id = ?1
-             ), segments AS (
-                 SELECT CASE
-                     WHEN instr(tail, '/') = 0 THEN tail
-                     ELSE substr(tail, 1, instr(tail, '/') - 1)
-                 END AS seg
-                 FROM parsed
-             )
-             SELECT CASE WHEN seg = '' THEN '(root)' ELSE seg END AS segment, COUNT(*)
-             FROM segments GROUP BY 1 ORDER BY COUNT(*) DESC, 1",
+            "SELECT COALESCE(segment, '(root)') AS segment, COUNT(*)
+             FROM urls WHERE crawl_id = ?1
+             GROUP BY 1 ORDER BY COUNT(*) DESC, 1",
         )?;
         let rows = stmt
             .query_map(params![crawl_id], |row| Ok((row.get(0)?, row.get(1)?)))?
@@ -2677,6 +2679,30 @@ fn migrate(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_links_crawl_from ON links (crawl_id, from_id);
          CREATE INDEX IF NOT EXISTS idx_links_crawl_to ON links (crawl_id, to_id);",
     )?;
+    if version < 30 {
+        if !has_column(conn, "urls", "segment")? {
+            conn.execute("ALTER TABLE urls ADD COLUMN segment TEXT", [])?;
+        }
+        let pending: Vec<(i64, String)> = {
+            let mut stmt = conn.prepare("SELECT id, url FROM urls WHERE segment IS NULL")?;
+            stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+                .collect::<std::result::Result<Vec<_>, _>>()?
+        };
+        if !pending.is_empty() {
+            let transaction = conn.unchecked_transaction()?;
+            {
+                let mut update =
+                    transaction.prepare("UPDATE urls SET segment = ?1 WHERE id = ?2")?;
+                for (id, url) in &pending {
+                    update.execute(params![segment_of(url), id])?;
+                }
+            }
+            transaction.commit()?;
+        }
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_urls_segment ON urls(crawl_id, segment);",
+        )?;
+    }
     if version < 29 {
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS issue_audit_log (
@@ -4328,7 +4354,7 @@ mod tests {
         let version: i32 = conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 29);
+        assert_eq!(version, 30);
         std::fs::remove_dir_all(dir).ok();
     }
 

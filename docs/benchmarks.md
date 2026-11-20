@@ -43,7 +43,7 @@ Node v26.13.1, debug build, concurrency 8. Rendered runs use `--render --screens
 
 ## Overview aggregates
 
-`coqui overview --out research/million` on the 1M-row database: **2.7 s cold, 2.0 s warm** for issues by severity, statuses, content, indexability, response stats/buckets, depth and segments. Segment grouping dominates (~0.7 s); U-04 targets under 2 s.
+`coqui overview --out research/million` on the 1M-row database: **0.79 s warm** for issues by severity, statuses, content, indexability, response stats/buckets, depth and segments — inside U-04's under-2 s target. The URL segment is now stored (schema v30) and indexed, replacing per-row substring parsing.
 
 ## Notes
 
@@ -51,5 +51,6 @@ Node v26.13.1, debug build, concurrency 8. Rendered runs use `--render --screens
 - Rendering, Lighthouse and axe add their own costs and are measured separately.
 - The fixture is loopback-only, so network latency is not represented.
 - Port must be free; the harness fails fast if the fixture cannot start.
+
 
 
