@@ -814,6 +814,7 @@ async fn run_schedule(values: &[String]) -> Result<(), String> {
             if let Some(webhook) = webhook.clone() {
                 config.webhook_url = Some(webhook);
             }
+            config.crawl_delay_ms = delay_ms;
             let json = serde_json::to_string(&config).map_err(|error| error.to_string())?;
             let id = store
                 .add_schedule(&kind, &seed, every, &json, now_ms() + every * 1000)

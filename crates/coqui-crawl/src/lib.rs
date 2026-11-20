@@ -789,7 +789,6 @@ async fn fetch(
                 }
             }
         }
-        let mut body = body;
         let mut console = Vec::new();
         let mut screenshot = None;
         let mut axe = Vec::new();

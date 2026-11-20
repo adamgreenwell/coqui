@@ -38,7 +38,7 @@ pub fn render_html(store: &Store, crawl_id: &str) -> Result<String, String> {
         .iter()
         .filter_map(|url| url.response_time_ms.map(|ms| (ms, url.url.clone())))
         .collect();
-    slowest.sort_by(|left, right| right.0.cmp(&left.0));
+    slowest.sort_by_key(|item| std::cmp::Reverse(item.0));
     slowest.truncate(10);
     let total_issues: i64 = issues.iter().map(|count| count.count).sum();
 
@@ -477,7 +477,7 @@ fn render_performance(
         .iter()
         .filter_map(|url| url.response_time_ms.map(|ms| (ms, url.url.clone())))
         .collect();
-    slowest.sort_by(|left, right| right.0.cmp(&left.0));
+    slowest.sort_by_key(|item| std::cmp::Reverse(item.0));
     slowest.truncate(top.unwrap_or(25));
     let mut body = String::from("<table><tr><th>URL</th><th>ms</th></tr>");
     for (ms, url) in &slowest {
