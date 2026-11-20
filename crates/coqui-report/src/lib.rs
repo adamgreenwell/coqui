@@ -413,6 +413,9 @@ fn render_canonical_chains(store: &Store, crawl_id: &str) -> Result<String, Stri
         seen.insert(url.url.clone());
         let mut current = url.url.as_str();
         while let Some(target) = canonicals.get(current).copied() {
+            if target == current {
+                break;
+            }
             if !seen.insert(target.to_string()) {
                 chain.push(format!("{target} (loop)"));
                 break;
