@@ -126,7 +126,9 @@ Schedules are interval-based (seconds) and stored in the crawl DB. `run-due` run
 
 `coqui report <kind> --pdf` also writes a PDF via headless Chrome/Edge (absolute output path, `COQUI_BROWSER_PATH` override). Verified: summary report produced a 71 KB PDF.
 
-`coqui report all` renders every report, isolating failures (prints written/failed counts). Verified: 7 reports written, 0 failed on the regression crawl.\n\n`coqui reports` lists report types; `coqui report issues --out DIR` renders an HTML report from the latest crawl in `DIR/coqui.db` to `DIR/report-issues.html`. `--top N` limits list rows and `--status CODE` filters by HTTP status. Verified end-to-end (`report performance --top 1 --status 200`).
+`coqui report all` renders every report, isolating failures (prints written/failed counts). Verified: 7 reports written, 0 failed on the regression crawl.
+
+`coqui reports` lists report types; `coqui report issues --out DIR` renders an HTML report from the latest crawl in `DIR/coqui.db` to `DIR/report-issues.html`. `--top N` limits list rows and `--status CODE` filters by HTTP status. Verified end-to-end (`report performance --top 1 --status 200`).
 
 ## Output
 
