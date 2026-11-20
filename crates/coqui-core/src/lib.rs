@@ -94,6 +94,9 @@ pub struct CrawlConfig {
     /// Optional Cookie header value for authenticated crawling.
     #[serde(default)]
     pub cookie: Option<String>,
+    /// Store raw HTML alongside text/Markdown (off by default).
+    #[serde(default)]
+    pub store_html: bool,
     /// Only crawl discovered URLs matching at least one pattern (empty = all).
     #[serde(default)]
     pub include_patterns: Vec<String>,
@@ -153,6 +156,7 @@ impl Default for CrawlConfig {
             max_rps: 0,
             proxy_url: None,
             cookie: None,
+            store_html: false,
             include_patterns: Vec::new(),
             exclude_patterns: Vec::new(),
             auth_user: None,
@@ -765,3 +769,4 @@ mod export_catalog_tests {
         assert!(catalogue.iter().all(|entry| !entry.view.is_empty()));
     }
 }
+

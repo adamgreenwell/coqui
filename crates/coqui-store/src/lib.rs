@@ -11,7 +11,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const SCHEMA_VERSION: i32 = 30;
+pub const SCHEMA_VERSION: i32 = 31;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -181,6 +181,15 @@ CREATE TABLE IF NOT EXISTS issue_url_suppressions (
     created_at INTEGER NOT NULL,
     expires_at INTEGER,
     PRIMARY KEY (crawl_id, rule, url)
+);
+
+CREATE TABLE IF NOT EXISTS page_text (
+    crawl_id TEXT NOT NULL,
+    url_id   INTEGER NOT NULL,
+    text     TEXT NOT NULL,
+    markdown TEXT NOT NULL,
+    html     TEXT,
+    PRIMARY KEY (crawl_id, url_id)
 );
 "#;
 
@@ -1635,14 +1644,30 @@ impl Store {
         url_id: i64,
         text: &str,
         markdown: &str,
+        html: Option<&str>,
     ) -> Result<()> {
         self.lock()?.execute(
-            "INSERT INTO page_text (crawl_id, url_id, text, markdown) VALUES (?1, ?2, ?3, ?4)
+            "INSERT INTO page_text (crawl_id, url_id, text, markdown, html)
+             VALUES (?1, ?2, ?3, ?4, ?5)
              ON CONFLICT(crawl_id, url_id) DO UPDATE SET text = excluded.text,
-                                                        markdown = excluded.markdown",
-            params![crawl_id, url_id, text, markdown],
+                                                        markdown = excluded.markdown,
+                                                        html = COALESCE(excluded.html, page_text.html)",
+            params![crawl_id, url_id, text, markdown, html],
         )?;
         Ok(())
+    }
+
+    /// Stored raw HTML for a URL, when the crawl opted in.
+    pub fn page_html(&self, crawl_id: &str, url_id: i64) -> Result<Option<String>> {
+        let html: Option<Option<String>> = self
+            .lock()?
+            .query_row(
+                "SELECT html FROM page_text WHERE crawl_id = ?1 AND url_id = ?2",
+                params![crawl_id, url_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(html.flatten())
     }
 
     pub fn export_text_csv(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {
@@ -2679,6 +2704,21 @@ fn migrate(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_links_crawl_from ON links (crawl_id, from_id);
          CREATE INDEX IF NOT EXISTS idx_links_crawl_to ON links (crawl_id, to_id);",
     )?;
+    if version < 31 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS page_text (
+                crawl_id TEXT NOT NULL,
+                url_id   INTEGER NOT NULL,
+                text     TEXT NOT NULL,
+                markdown TEXT NOT NULL,
+                html     TEXT,
+                PRIMARY KEY (crawl_id, url_id)
+            );",
+        )?;
+        if !has_column(conn, "page_text", "html")? {
+            conn.execute("ALTER TABLE page_text ADD COLUMN html TEXT", [])?;
+        }
+    }
     if version < 30 {
         if !has_column(conn, "urls", "segment")? {
             conn.execute("ALTER TABLE urls ADD COLUMN segment TEXT", [])?;
@@ -4612,3 +4652,4 @@ fn lastmod_from_headers(json: Option<&str>) -> Option<String> {
         .ok()?;
     Some(formatted.replace("+00:00", "Z"))
 }
+

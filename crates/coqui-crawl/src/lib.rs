@@ -468,8 +468,19 @@ pub async fn run_crawl(
                 }
                 if let Some(page) = extracted {
                     store.replace_images(&crawl_id, page_id, &page.images)?;
-                    if config.store_text {
-                        store.save_page_text(&crawl_id, page_id, &page.text, &page.markdown)?;
+                    if config.store_text || config.store_html {
+                        let html = if config.store_html {
+                            outcome.body.as_deref()
+                        } else {
+                            None
+                        };
+                        store.save_page_text(
+                            &crawl_id,
+                            page_id,
+                            &page.text,
+                            &page.markdown,
+                            html,
+                        )?;
                     }
                     for link in &page.links {
                         let to_id = store.ensure_url_id(&crawl_id, &link.url)?;
