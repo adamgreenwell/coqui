@@ -62,3 +62,14 @@ The release workflow builds the CLI for the three desktop platforms, publishes t
 
 Code signing and notarization: see [signing.md](signing.md). Artifacts are currently unsigned.
 
+
+## Local Windows build evidence (2026-11-19)
+
+`npm run build` with fetched sidecars produced:
+
+| Artifact | Size |
+| --- | --- |
+| `Coqui_0.1.0_x64_en-US.msi` | 71.67 MiB |
+| `Coqui_0.1.0_x64-setup.exe` (NSIS) | 40.95 MiB |
+
+Bundled sidecars included `sidecars/node.exe` (~79.5 MB uncompressed) and the Lighthouse CLI tree; both are below the 350 MB installer budget after compression. Artifacts were unsigned.
