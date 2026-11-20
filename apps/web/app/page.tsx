@@ -339,6 +339,7 @@ export default function Home() {
   const [seedKind, setSeedKind] = useState<'url' | 'sitemap' | 'list'>('url');
   const [includePatterns, setIncludePatterns] = useState('');
   const [excludePatterns, setExcludePatterns] = useState('');
+  const [patternTestUrl, setPatternTestUrl] = useState('');
   const [authUser, setAuthUser] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [customHeaders, setCustomHeaders] = useState('');
@@ -1016,6 +1017,23 @@ export default function Home() {
 
   async function startCrawl(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    for (const [label, patterns] of [
+      ['Include', splitLines(includePatterns)],
+      ['Exclude', splitLines(excludePatterns)],
+    ] as const) {
+      for (const pattern of patterns) {
+        try {
+          new RegExp(pattern);
+        } catch (cause) {
+          setError(
+            `${label} pattern "${pattern}" is invalid: ${
+              cause instanceof Error ? cause.message : String(cause)
+            }`,
+          );
+          return;
+        }
+      }
+    }
     setBusy(true);
     setError(null);
     setExportPath(null);
@@ -1468,6 +1486,20 @@ export default function Home() {
     };
   }, [crawl, duplicateKind]);
 
+  const patternTest = useMemo(() => {
+    const url = patternTestUrl.trim();
+    if (!url) return null;
+    const check = (text: string) =>
+      splitLines(text).map((pattern) => {
+        try {
+          return { pattern, valid: true, match: new RegExp(pattern).test(url) };
+        } catch {
+          return { pattern, valid: false, match: false };
+        }
+      });
+    return { include: check(includePatterns), exclude: check(excludePatterns) };
+  }, [patternTestUrl, includePatterns, excludePatterns]);
+
   const depthBuckets = useMemo(() => {
     const buckets = [0, 0, 0, 0];
     for (const row of depthCounts) {
@@ -1906,6 +1938,34 @@ export default function Home() {
                   placeholder="/tag/.*"
                   disabled={isRunning}
                 />
+              </div>
+              <div className="field">
+                <label htmlFor="patternTest">Test a URL against the patterns</label>
+                <input
+                  id="patternTest"
+                  type="url"
+                  value={patternTestUrl}
+                  onChange={(event) => setPatternTestUrl(event.target.value)}
+                  placeholder="https://example.com/blog/post"
+                  disabled={isRunning}
+                />
+                {patternTest && (
+                  <div className="pattern-test">
+                    {(['include', 'exclude'] as const).map((kind) => (
+                      <div key={kind}>
+                        <strong>{kind === 'include' ? 'Include' : 'Exclude'}:</strong>{' '}
+                        {patternTest[kind].length === 0
+                          ? 'no patterns'
+                          : patternTest[kind]
+                              .map(
+                                (entry) =>
+                                  `${entry.pattern} ${entry.valid ? (entry.match ? '✓ matches' : '✗ no match') : 'invalid'}`,
+                              )
+                              .join(' · ')}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="grid-2">
                 <div className="field">

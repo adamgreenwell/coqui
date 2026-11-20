@@ -1118,3 +1118,11 @@ tbody tr:hover {
   cursor: pointer;
   word-break: break-all;
 }
+
+.pattern-test {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted, #5d6f6b);
+  display: grid;
+  gap: 2px;
+}
