@@ -344,6 +344,7 @@ fn export_family(
         "markdown" => store.export_markdown_csv(crawl_id, path),
         "extractions" => store.export_extractions_csv(crawl_id, path),
         "custom-js" => store.export_custom_js_csv(crawl_id, path),
+        "anchors" => store.export_anchors_csv(crawl_id, path),
         other => return Err(format!("unknown export family '{other}'")),
     };
     result.map_err(|error| error.to_string())
