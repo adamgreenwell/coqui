@@ -37,7 +37,7 @@ Named after the *coquí*, the tiny frog native to Puerto Rico whose call is ever
 - [Changelog](CHANGELOG.md) — release notes
 - [Regression validation](docs/validation/2026-11-20-regression.md) — post-change real-site crawl
 - [Wiki](https://github.com/adamgreenwell/coqui/wiki) — architecture and feature notes
-- [Parity matrix](docs/reference/parity-matrix.csv) — every feature, phase, size, priority
+- [Parity workflow](docs/reference/parity-workflow.md) — reference crawl export comparison\n- [Parity matrix](docs/reference/parity-matrix.csv) — every feature, phase, size, priority
 - [Backlog](https://github.com/adamgreenwell/coqui/issues) and [project board](https://github.com/users/adamgreenwell/projects/16/views/1?layout_template=board)
 
 ### Backlog at a glance
@@ -107,6 +107,7 @@ The backlog is the roadmap. Pick an issue from the board, comment to claim it, a
 ## License
 
 To be decided by the project owner before the first code release (MIT or Apache-2.0 are the candidates). Until then, no license is granted for reuse.
+
 
 
 

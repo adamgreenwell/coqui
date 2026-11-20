@@ -1,0 +1,30 @@
+# Reference crawl parity workflow
+
+1. Run the reference crawl (Screaming Frog 25.1) on a site and export CSVs to a folder, e.g. `research/reference/crawl-adam-25.1`.
+2. Run Coqui against the same URL with equivalent settings (same mode, same depth, rendering off for an HTTP-only baseline):
+
+   ```bash
+   coqui crawl url https://adamgreenwell.com --max-urls 100 --out research/parity/adam-coqui
+   ```
+
+3. Compare exports:
+
+   ```bash
+   node tools/parity/compare-exports.mjs \
+     --coqui research/parity/adam-coqui \
+     --reference research/reference/crawl-adam-25.1 \
+     --out research/parity/report.md
+   ```
+
+The report lists each reference CSV, its URL column, row counts, URL overlap with Coqui, and which headers Coqui's `urls.csv` shares (with a synonym map: `Address`→`url`, `Status Code`→`status`, `Page Title`→`title`, `Meta Description`→`meta_description`, `H1-1`→`h1`, `Word Count`→`words`, `Response Time`→`response_ms`).
+
+## Interpreting gaps
+
+- **Missing URLs** — scope/normalisation differences (trailing slash, redirects, canonical handling, robots, pagination).
+- **Reference-only headers** — extraction fields Coqui does not yet export (e.g. target size, mobile viewport, PSI metrics). Map them to planned rules/tabs.
+- **Issue names** — use `docs/reference/sf-25.1-issues.csv` (136 reference issue types) to align Coqui rule ids and severities; `axe` types are enumerated individually in the reference while Coqui currently aggregates accessibility.
+- **Reports** — `docs/reference/sf-25.1-reports.csv` lists the 35 reference report menu entries.
+
+## Golden fixtures
+
+Copy a small reference export (e.g. 20–50 URLs) into `research/reference/` and keep it out of the installed app's licence state. These become read-only fixtures for future comparisons; the site must be publicly reachable to regenerate.
