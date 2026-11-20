@@ -37,6 +37,16 @@ const MISSPELLINGS: &[&str] = &[
     "teh",
 ];
 
+fn duplicate_examples(group: &[String], current: &str) -> String {
+    group
+        .iter()
+        .filter(|url| url.as_str() != current)
+        .take(2)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct RuleDef {
     pub id: &'static str,
@@ -552,7 +562,11 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
                 crawl_id,
                 &url.url,
                 "duplicate_title",
-                Some(format!("{} pages share this title", group.len())),
+                Some(format!(
+                    "{} pages share this title ({})",
+                    group.len(),
+                    duplicate_examples(group, &url.url)
+                )),
             )?;
         }
 
@@ -585,7 +599,11 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
                     crawl_id,
                     &url.url,
                     "duplicate_meta_description",
-                    Some(format!("{} pages share this description", group.len())),
+                    Some(format!(
+                        "{} pages share this description ({})",
+                        group.len(),
+                        duplicate_examples(group, &url.url)
+                    )),
                 )?;
             }
         }
@@ -677,7 +695,11 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
                 crawl_id,
                 &url.url,
                 "duplicate_content",
-                Some(format!("{} pages share this content", group.len())),
+                Some(format!(
+                    "{} pages share this content ({})",
+                    group.len(),
+                    duplicate_examples(group, &url.url)
+                )),
             )?;
         }
 
@@ -749,7 +771,11 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
                 crawl_id,
                 &url.url,
                 "duplicate_h1",
-                Some(format!("{} pages share this H1", group.len())),
+                Some(format!(
+                    "{} pages share this H1 ({})",
+                    group.len(),
+                    duplicate_examples(group, &url.url)
+                )),
             )?;
         }
 
