@@ -936,10 +936,11 @@ fn suppress_rule(
     crawl_id: String,
     rule: String,
     reason: Option<String>,
+    expires_at: Option<i64>,
 ) -> Result<(), String> {
     state
         .store
-        .suppress_rule(&crawl_id, &rule, reason.as_deref())
+        .suppress_rule(&crawl_id, &rule, reason.as_deref(), expires_at)
         .map_err(|error| error.to_string())
 }
 
@@ -1059,10 +1060,11 @@ fn suppress_url(
     rule: String,
     url: String,
     reason: Option<String>,
+    expires_at: Option<i64>,
 ) -> Result<(), String> {
     state
         .store
-        .suppress_url(&crawl_id, &rule, &url, reason.as_deref())
+        .suppress_url(&crawl_id, &rule, &url, reason.as_deref(), expires_at)
         .map_err(|error| error.to_string())
 }
 

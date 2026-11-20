@@ -11,7 +11,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const SCHEMA_VERSION: i32 = 27;
+pub const SCHEMA_VERSION: i32 = 28;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -148,9 +148,10 @@ CREATE TABLE IF NOT EXISTS saved_views (
 );
 
 CREATE TABLE IF NOT EXISTS issue_suppressions (
-    crawl_id TEXT NOT NULL,
-    rule     TEXT NOT NULL,
-    reason   TEXT,
+    crawl_id   TEXT NOT NULL,
+    rule       TEXT NOT NULL,
+    reason     TEXT,
+    expires_at INTEGER,
     PRIMARY KEY (crawl_id, rule)
 );
 
@@ -176,6 +177,7 @@ CREATE TABLE IF NOT EXISTS issue_url_suppressions (
     url       TEXT NOT NULL,
     reason    TEXT,
     created_at INTEGER NOT NULL,
+    expires_at INTEGER,
     PRIMARY KEY (crawl_id, rule, url)
 );
 "#;
@@ -533,12 +535,20 @@ impl Store {
         Ok(())
     }
 
-    pub fn suppress_rule(&self, crawl_id: &str, rule: &str, reason: Option<&str>) -> Result<()> {
+    pub fn suppress_rule(
+        &self,
+        crawl_id: &str,
+        rule: &str,
+        reason: Option<&str>,
+        expires_at: Option<i64>,
+    ) -> Result<()> {
         let conn = self.lock()?;
         conn.execute(
-            "INSERT INTO issue_suppressions (crawl_id, rule, reason) VALUES (?1, ?2, ?3)
-             ON CONFLICT(crawl_id, rule) DO UPDATE SET reason = excluded.reason",
-            params![crawl_id, rule, reason],
+            "INSERT INTO issue_suppressions (crawl_id, rule, reason, expires_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(crawl_id, rule) DO UPDATE
+             SET reason = excluded.reason, expires_at = excluded.expires_at",
+            params![crawl_id, rule, reason, expires_at],
         )?;
         log_issue_action(&conn, crawl_id, rule, "suppress", reason)?;
         Ok(())
@@ -562,13 +572,14 @@ impl Store {
         rule: &str,
         url: &str,
         reason: Option<&str>,
+        expires_at: Option<i64>,
     ) -> Result<()> {
         let conn = self.lock()?;
         conn.execute(
             "INSERT OR REPLACE INTO issue_url_suppressions
-                (crawl_id, rule, url, reason, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![crawl_id, rule, url, reason, now_ms()],
+                (crawl_id, rule, url, reason, created_at, expires_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![crawl_id, rule, url, reason, now_ms(), expires_at],
         )?;
         log_issue_action(&conn, crawl_id, rule, "suppress_url", reason)?;
         Ok(())
@@ -622,7 +633,7 @@ impl Store {
     pub fn suppressed_rules(&self, crawl_id: &str) -> Result<Vec<(String, Option<String>)>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
-            "SELECT rule, reason FROM issue_suppressions WHERE crawl_id = ?1 ORDER BY rule",
+            "SELECT rule, reason FROM issue_suppressions\n             WHERE crawl_id = ?1\n               AND (expires_at IS NULL OR expires_at > CAST(strftime('%s','now') AS INTEGER) * 1000)\n             ORDER BY rule",
         )?;
         let rows = stmt
             .query_map(params![crawl_id], |row| Ok((row.get(0)?, row.get(1)?)))?
@@ -645,7 +656,10 @@ impl Store {
                    SELECT 1 FROM issue_url_suppressions
                    WHERE issue_url_suppressions.crawl_id = issues.crawl_id
                      AND issue_url_suppressions.rule = issues.rule
-                     AND issue_url_suppressions.url = issues.url)
+                     AND issue_url_suppressions.url = issues.url
+                     AND (issue_url_suppressions.expires_at IS NULL
+                          OR issue_url_suppressions.expires_at
+                             > CAST(strftime('%s','now') AS INTEGER) * 1000))
              ORDER BY issues.url LIMIT 500",
         )?;
         let rows = stmt
@@ -761,12 +775,18 @@ impl Store {
               AND issue_overrides.rule = issues.rule
              WHERE issues.crawl_id = ?1
                AND issues.rule NOT IN (
-                   SELECT rule FROM issue_suppressions WHERE crawl_id = ?1)
+                   SELECT rule FROM issue_suppressions
+                   WHERE crawl_id = ?1
+                     AND (expires_at IS NULL
+                          OR expires_at > CAST(strftime('%s','now') AS INTEGER) * 1000))
                AND NOT EXISTS (
                    SELECT 1 FROM issue_url_suppressions
                    WHERE issue_url_suppressions.crawl_id = issues.crawl_id
                      AND issue_url_suppressions.rule = issues.rule
-                     AND issue_url_suppressions.url = issues.url)
+                     AND issue_url_suppressions.url = issues.url
+                     AND (issue_url_suppressions.expires_at IS NULL
+                          OR issue_url_suppressions.expires_at
+                             > CAST(strftime('%s','now') AS INTEGER) * 1000))
              GROUP BY issues.rule,
                       COALESCE(issue_overrides.severity, issues.severity)
              ORDER BY COUNT(*) DESC, issues.rule",
@@ -2546,6 +2566,38 @@ fn migrate(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_links_crawl_from ON links (crawl_id, from_id);
          CREATE INDEX IF NOT EXISTS idx_links_crawl_to ON links (crawl_id, to_id);",
     )?;
+    if version < 28 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS issue_suppressions (
+                crawl_id   TEXT NOT NULL,
+                rule       TEXT NOT NULL,
+                reason     TEXT,
+                expires_at INTEGER,
+                PRIMARY KEY (crawl_id, rule)
+            );
+            CREATE TABLE IF NOT EXISTS issue_url_suppressions (
+                crawl_id  TEXT NOT NULL,
+                rule      TEXT NOT NULL,
+                url       TEXT NOT NULL,
+                reason    TEXT,
+                created_at INTEGER NOT NULL,
+                expires_at INTEGER,
+                PRIMARY KEY (crawl_id, rule, url)
+            );",
+        )?;
+        if !has_column(conn, "issue_suppressions", "expires_at")? {
+            conn.execute(
+                "ALTER TABLE issue_suppressions ADD COLUMN expires_at INTEGER",
+                [],
+            )?;
+        }
+        if !has_column(conn, "issue_url_suppressions", "expires_at")? {
+            conn.execute(
+                "ALTER TABLE issue_url_suppressions ADD COLUMN expires_at INTEGER",
+                [],
+            )?;
+        }
+    }
     if version < 27 {
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS issue_url_suppressions (
@@ -3620,7 +3672,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let store = Store::open(dir.join("coqui.db")).unwrap();
         store
-            .suppress_rule("c", "missing_title", Some("client request"))
+            .suppress_rule("c", "missing_title", Some("client request"), None)
             .unwrap();
         store
             .set_override("c", "missing_title", "opportunity")
@@ -3661,7 +3713,7 @@ mod tests {
             )
             .unwrap();
         store
-            .suppress_rule("c1", "missing_title", Some("client request"))
+            .suppress_rule("c1", "missing_title", Some("client request"), None)
             .unwrap();
         store
             .set_override("c1", "missing_title", "opportunity")
@@ -3673,6 +3725,54 @@ mod tests {
             store.overrides("c2").unwrap(),
             vec![("missing_title".to_string(), "opportunity".to_string())]
         );
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn expired_suppression_stops_applying() {
+        let dir = std::env::temp_dir().join(format!("coqui-expiry-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        store
+            .create_crawl(
+                "c1",
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        store
+            .insert_url(&sample_record("c1", "https://example.com/"))
+            .unwrap();
+        store
+            .insert_issue(&Issue {
+                crawl_id: "c1".into(),
+                url: "https://example.com/".into(),
+                rule: "missing_title".into(),
+                severity: IssueSeverity::Error,
+                detail: None,
+            })
+            .unwrap();
+        store
+            .suppress_rule(
+                "c1",
+                "missing_title",
+                Some("temporary"),
+                Some(now_ms() - 60_000),
+            )
+            .unwrap();
+        assert_eq!(store.issue_counts("c1").unwrap().len(), 1);
+        assert!(store.suppressed_rules("c1").unwrap().is_empty());
+        store
+            .suppress_rule(
+                "c1",
+                "missing_title",
+                Some("long-lived"),
+                Some(now_ms() + 3_600_000),
+            )
+            .unwrap();
+        assert!(store.issue_counts("c1").unwrap().is_empty());
         std::fs::remove_dir_all(dir).ok();
     }
 
@@ -3709,6 +3809,7 @@ mod tests {
                 "missing_title",
                 "https://example.com/",
                 Some("one-off"),
+                None,
             )
             .unwrap();
         assert!(store.issue_counts("c1").unwrap().is_empty());
@@ -3745,7 +3846,7 @@ mod tests {
             .unwrap();
         assert_eq!(store.issue_counts("c1").unwrap().len(), 1);
         store
-            .suppress_rule("c1", "missing_title", Some("tracked separately"))
+            .suppress_rule("c1", "missing_title", Some("tracked separately"), None)
             .unwrap();
         assert_eq!(
             store.suppressed_rules("c1").unwrap(),
@@ -4019,7 +4120,7 @@ mod tests {
             conn.pragma_update(None, "user_version", 21).unwrap();
         }
         let store = Store::open(&path).unwrap();
-        store.suppress_rule("c", "r", None).unwrap();
+        store.suppress_rule("c", "r", None, None).unwrap();
         store.set_override("c", "r", "warning").unwrap();
         assert_eq!(store.overrides("c").unwrap().len(), 1);
         drop(store);
@@ -4027,7 +4128,7 @@ mod tests {
         let version: i32 = conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 27);
+        assert_eq!(version, 28);
         std::fs::remove_dir_all(dir).ok();
     }
 
