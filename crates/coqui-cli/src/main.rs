@@ -122,7 +122,7 @@ fn load_config(path: &Path, required: bool) -> Result<FileConfig, String> {
 }
 
 fn usage() -> &'static str {
-    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots] [--store-html] [--json] [--ndjson] [--fail-on-issues N] [--webhook URL] [--delay-ms N] [--max-rps N] [--proxy URL] [--cookie STRING]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR]\n       coqui report compare --with <crawl id> [--out DIR]\n       coqui reports\n       coqui export [--out DIR] [--family urls|issues|links|headers|images|a11y|structured|vitals|console|text|markdown|extractions|custom-js|anchors]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N] [--webhook URL] [--delay-ms N] [--max-rps N] [--proxy URL] [--cookie STRING]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui prune [--out DIR] [--keep N]\n       coqui overview [--out DIR]\n       coqui serve [--out DIR] [--addr 127.0.0.1:8787] [--token TOKEN]
+    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots] [--store-html] [--json] [--ndjson] [--fail-on-issues N] [--webhook URL] [--delay-ms N] [--max-rps N] [--proxy URL] [--cookie STRING]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR]\n       coqui report compare --with <crawl id> [--out DIR]\n       coqui reports\n       coqui export [--out DIR] [--family urls|issues|links|headers|images|a11y|structured|vitals|console|text|markdown|extractions|custom-js|anchors]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip] [--images]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N] [--webhook URL] [--delay-ms N] [--max-rps N] [--proxy URL] [--cookie STRING]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui prune [--out DIR] [--keep N]\n       coqui overview [--out DIR]\n       coqui serve [--out DIR] [--addr 127.0.0.1:8787] [--token TOKEN]
        coqui issue-settings <export|import|diff> [--out DIR] [--file PATH] [--with CRAWL]
        coqui doctor [--out DIR]
        coqui mcp [--out DIR]"
@@ -1091,6 +1091,7 @@ fn run_sitemap(values: &[String]) -> Result<(), String> {
     let mut out = PathBuf::from("coqui-out");
     let mut split = false;
     let mut gzip = false;
+    let mut images = false;
     let mut index = 0;
     while index < values.len() {
         match values[index].as_str() {
@@ -1100,6 +1101,7 @@ fn run_sitemap(values: &[String]) -> Result<(), String> {
             }
             "--split" => split = true,
             "--gzip" => gzip = true,
+            "--images" => images = true,
             other => return Err(format!("unknown option '{other}'")),
         }
         index += 1;
@@ -1119,6 +1121,12 @@ fn run_sitemap(values: &[String]) -> Result<(), String> {
             directory.display(),
             rows
         );
+    } else if images {
+        let path = out.join("sitemap-images.xml");
+        let rows = store
+            .export_image_sitemap(&crawl.id, &path)
+            .map_err(|error| error.to_string())?;
+        println!("image sitemap: {} ({} pages)", path.display(), rows);
     } else {
         let path = out.join("sitemap.xml");
         let rows = store

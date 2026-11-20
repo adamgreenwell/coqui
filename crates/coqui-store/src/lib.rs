@@ -2015,6 +2015,55 @@ impl Store {
         Ok(links.len() as u64)
     }
 
+    /// Image sitemap (one `<url>` per page with `<image:image>` entries).
+    pub fn export_image_sitemap(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT urls.url, images.src
+             FROM images
+             JOIN urls ON urls.id = images.url_id
+             WHERE images.crawl_id = ?1
+             ORDER BY urls.url, images.src",
+        )?;
+        let mut pages: std::collections::BTreeMap<String, Vec<String>> =
+            std::collections::BTreeMap::new();
+        let mut records = stmt.query(params![crawl_id])?;
+        while let Some(row) = records.next()? {
+            let page: String = row.get(0)?;
+            let src: String = row.get(1)?;
+            pages.entry(page).or_default().push(src);
+        }
+        let escape = |value: &str| {
+            value
+                .replace('&', "&amp;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;")
+                .replace('"', "&quot;")
+                .replace('\'', "&apos;")
+        };
+        let mut xml = String::from(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+             <urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\" \
+             xmlns:image=\"http://www.google.com/schemas/sitemap-image/1.1\">\n",
+        );
+        for (page, images) in &pages {
+            xml.push_str(&format!("  <url><loc>{}</loc>", escape(page)));
+            for image in images {
+                xml.push_str(&format!(
+                    "<image:image><image:loc>{}</image:loc></image:image>",
+                    escape(image)
+                ));
+            }
+            xml.push_str("</url>\n");
+        }
+        xml.push_str("</urlset>\n");
+        std::fs::write(path, xml)?;
+        Ok(pages.len() as u64)
+    }
+
     pub fn export_sitemap(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {
         use std::io::Write;
         if let Some(parent) = path.as_ref().parent() {
