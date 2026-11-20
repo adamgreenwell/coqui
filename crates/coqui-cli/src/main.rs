@@ -63,6 +63,7 @@ impl Args {
             store_html: false,
             json: false,
             ndjson: false,
+            fail_on_issues: None,
             webhook_url: None,
             delay_ms: 0,
             max_rps: 0,
@@ -97,6 +98,7 @@ struct Args {
     store_html: bool,
     json: bool,
     ndjson: bool,
+    fail_on_issues: Option<i64>,
     webhook_url: Option<String>,
     delay_ms: u64,
     max_rps: u32,
@@ -120,7 +122,7 @@ fn load_config(path: &Path, required: bool) -> Result<FileConfig, String> {
 }
 
 fn usage() -> &'static str {
-    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots] [--store-html] [--json] [--webhook URL] [--delay-ms N] [--max-rps N] [--proxy URL] [--cookie STRING]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR]\n       coqui report compare --with <crawl id> [--out DIR]\n       coqui reports\n       coqui export [--out DIR] [--family urls|issues|links|headers|images|a11y|structured|vitals|console|text|markdown|extractions|custom-js]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N] [--webhook URL] [--delay-ms N] [--max-rps N] [--proxy URL] [--cookie STRING]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui prune [--out DIR] [--keep N]\n       coqui overview [--out DIR]\n       coqui serve [--out DIR] [--addr 127.0.0.1:8787] [--token TOKEN]
+    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots] [--store-html] [--json] [--ndjson] [--fail-on-issues N] [--webhook URL] [--delay-ms N] [--max-rps N] [--proxy URL] [--cookie STRING]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR]\n       coqui report compare --with <crawl id> [--out DIR]\n       coqui reports\n       coqui export [--out DIR] [--family urls|issues|links|headers|images|a11y|structured|vitals|console|text|markdown|extractions|custom-js]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N] [--webhook URL] [--delay-ms N] [--max-rps N] [--proxy URL] [--cookie STRING]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui prune [--out DIR] [--keep N]\n       coqui overview [--out DIR]\n       coqui serve [--out DIR] [--addr 127.0.0.1:8787] [--token TOKEN]
        coqui issue-settings <export|import|diff> [--out DIR] [--file PATH] [--with CRAWL]
        coqui doctor [--out DIR]
        coqui mcp [--out DIR]"
@@ -184,6 +186,16 @@ fn parse_args(values: &[String], config: &FileConfig) -> Result<Args, String> {
             "--store-html" => args.store_html = true,
             "--json" => args.json = true,
             "--ndjson" => args.ndjson = true,
+            "--fail-on-issues" => {
+                index += 1;
+                args.fail_on_issues = Some(
+                    values
+                        .get(index)
+                        .ok_or("missing --fail-on-issues value")?
+                        .parse()
+                        .map_err(|_| "invalid --fail-on-issues".to_string())?,
+                );
+            }
             "--delay-ms" => {
                 index += 1;
                 args.delay_ms = values
@@ -2183,6 +2195,36 @@ async fn main() {
                     started.elapsed().as_secs_f64()
                 );
                 println!("csv: {}", csv.display());
+            }
+            if let Some(threshold) = args.fail_on_issues
+                && issue_count > threshold
+            {
+                if json_output {
+                    println!(
+                        "{}",
+                        serde_json::json!({
+                            "status": "failed",
+                            "crawlId": crawl_id,
+                            "reason": "issue threshold exceeded",
+                            "issues": issue_count,
+                            "threshold": threshold,
+                        })
+                    );
+                } else if ndjson {
+                    println!(
+                        "{}",
+                        serde_json::json!({
+                            "event": "failed",
+                            "crawlId": crawl_id,
+                            "reason": "issue threshold exceeded",
+                            "issues": issue_count,
+                            "threshold": threshold,
+                        })
+                    );
+                } else {
+                    eprintln!("issue threshold exceeded: {issue_count} > {threshold}");
+                }
+                std::process::exit(3);
             }
         }
         Err(error) => {
