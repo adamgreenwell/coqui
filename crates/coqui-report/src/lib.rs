@@ -436,16 +436,24 @@ fn render_canonicals(store: &Store, crawl_id: &str) -> Result<String, String> {
     let mut self_canonical = 0usize;
     let mut non_self = 0usize;
     let mut missing = 0usize;
-    for url in urls
-        .iter()
-        .filter(|url| url.status == Some(200) && !url.blocked)
-    {
+    for url in urls.iter().filter(|url| {
+        url.status == Some(200)
+            && !url.blocked
+            && url
+                .content_type
+                .as_deref()
+                .map(|value| {
+                    let value = value.to_ascii_lowercase();
+                    value.contains("text/html") || value.contains("application/xhtml")
+                })
+                .unwrap_or(false)
+    }) {
         match url.canonical.as_deref() {
             None => {
                 missing += 1;
                 rows.push((url.url.clone(), String::new(), "missing", String::new()));
             }
-            Some(canonical) if canonical.trim_end_matches('/') == url.url.trim_end_matches('/') => {
+            Some(canonical) if canonical == url.url => {
                 self_canonical += 1;
                 rows.push((
                     url.url.clone(),
@@ -456,12 +464,11 @@ fn render_canonicals(store: &Store, crawl_id: &str) -> Result<String, String> {
             }
             Some(canonical) => {
                 non_self += 1;
-                let status = statuses
-                    .get(canonical)
-                    .copied()
-                    .flatten()
-                    .map(|value| value.to_string())
-                    .unwrap_or_else(|| "not crawled".into());
+                let status = match statuses.get(canonical) {
+                    None => "not crawled".to_string(),
+                    Some(None) => "no response".to_string(),
+                    Some(Some(value)) => value.to_string(),
+                };
                 rows.push((url.url.clone(), canonical.to_string(), "non-self", status));
             }
         }
