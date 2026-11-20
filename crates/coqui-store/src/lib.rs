@@ -11,7 +11,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const SCHEMA_VERSION: i32 = 28;
+pub const SCHEMA_VERSION: i32 = 29;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -168,6 +168,7 @@ CREATE TABLE IF NOT EXISTS issue_audit_log (
     rule       TEXT NOT NULL,
     action     TEXT NOT NULL,
     reason     TEXT,
+    actor      TEXT,
     created_at INTEGER NOT NULL
 );
 
@@ -245,11 +246,18 @@ fn log_issue_action(
     reason: Option<&str>,
 ) -> Result<()> {
     conn.execute(
-        "INSERT INTO issue_audit_log (crawl_id, rule, action, reason, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![crawl_id, rule, action, reason, now_ms()],
+        "INSERT INTO issue_audit_log (crawl_id, rule, action, reason, actor, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![crawl_id, rule, action, reason, actor(), now_ms()],
     )?;
     Ok(())
+}
+
+fn actor() -> Option<String> {
+    std::env::var("USERNAME")
+        .or_else(|_| std::env::var("USER"))
+        .ok()
+        .filter(|name| !name.trim().is_empty())
 }
 
 impl Store {
@@ -616,15 +624,21 @@ impl Store {
         &self,
         crawl_id: &str,
         limit: u32,
-    ) -> Result<Vec<(String, String, Option<String>, i64)>> {
+    ) -> Result<Vec<(String, String, Option<String>, i64, Option<String>)>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
-            "SELECT rule, action, reason, created_at FROM issue_audit_log
+            "SELECT rule, action, reason, created_at, actor FROM issue_audit_log
              WHERE crawl_id = ?1 ORDER BY id DESC LIMIT ?2",
         )?;
         let rows = stmt
             .query_map(params![crawl_id, limit.clamp(1, 200)], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
@@ -2606,6 +2620,22 @@ fn migrate(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_links_crawl_from ON links (crawl_id, from_id);
          CREATE INDEX IF NOT EXISTS idx_links_crawl_to ON links (crawl_id, to_id);",
     )?;
+    if version < 29 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS issue_audit_log (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                crawl_id   TEXT NOT NULL,
+                rule       TEXT NOT NULL,
+                action     TEXT NOT NULL,
+                reason     TEXT,
+                actor      TEXT,
+                created_at INTEGER NOT NULL
+            );",
+        )?;
+        if !has_column(conn, "issue_audit_log", "actor")? {
+            conn.execute("ALTER TABLE issue_audit_log ADD COLUMN actor TEXT", [])?;
+        }
+    }
     if version < 28 {
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS issue_suppressions (
@@ -4210,7 +4240,7 @@ mod tests {
         let version: i32 = conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 28);
+        assert_eq!(version, 29);
         std::fs::remove_dir_all(dir).ok();
     }
 

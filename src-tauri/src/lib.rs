@@ -1107,12 +1107,13 @@ fn issue_audit_log(
         .map_err(|error| error.to_string())?;
     Ok(rows
         .into_iter()
-        .map(|(rule, action, reason, created_at)| {
+        .map(|(rule, action, reason, created_at, actor)| {
             serde_json::json!({
                 "rule": rule,
                 "action": action,
                 "reason": reason,
                 "createdAt": created_at,
+                "actor": actor,
             })
         })
         .collect())

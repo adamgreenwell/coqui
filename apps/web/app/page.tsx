@@ -398,7 +398,13 @@ export default function Home() {
   const [suppressed, setSuppressed] = useState<{ rule: string; reason: string | null }[]>([]);
   const [overrides, setOverrides] = useState<Record<string, string>>({});
   const [auditLog, setAuditLog] = useState<
-    { rule: string; action: string; reason: string | null; createdAt: number }[]
+    {
+      rule: string;
+      action: string;
+      reason: string | null;
+      createdAt: number;
+      actor: string | null;
+    }[]
   >([]);
   const [issueDetails, setIssueDetails] = useState<
     { id: number; url: string; detail: string | null }[]
@@ -538,7 +544,13 @@ export default function Home() {
     setOverrides(Object.fromEntries(rules.map((row) => [row.rule, row.severity])));
     setAuditLog(
       await invoke<
-        { rule: string; action: string; reason: string | null; createdAt: number }[]
+        {
+          rule: string;
+          action: string;
+          reason: string | null;
+          createdAt: number;
+          actor: string | null;
+        }[]
       >('issue_audit_log', { crawlId }),
     );
   }, []);
@@ -2641,6 +2653,7 @@ export default function Home() {
                         {new Date(entry.createdAt).toLocaleString()} — {entry.action}{' '}
                         {ISSUE_LABELS[entry.rule] ?? entry.rule}
                         {entry.reason ? ` (${entry.reason})` : ''}
+                        {entry.actor ? ` — ${entry.actor}` : ''}
                       </li>
                     ))}
                   </ul>
