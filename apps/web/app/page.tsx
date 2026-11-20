@@ -343,6 +343,8 @@ export default function Home() {
   const [authUser, setAuthUser] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [customHeaders, setCustomHeaders] = useState('');
+  const [userAgent, setUserAgent] = useState(USER_AGENT);
+  const [acceptLanguage, setAcceptLanguage] = useState('');
   const [render, setRender] = useState(false);
   const [browserPath, setBrowserPath] = useState('');
   const [renderWaitMs, setRenderWaitMs] = useState(500);
@@ -1050,14 +1052,17 @@ export default function Home() {
         maxUrls,
         concurrency,
         requestTimeoutMs: 15000,
-        userAgent: USER_AGENT,
+        userAgent: userAgent.trim() || USER_AGENT,
         sameHostOnly,
         respectRobots,
         includePatterns: splitLines(includePatterns),
         excludePatterns: splitLines(excludePatterns),
         authUser: authUser.trim() || null,
         authPassword: authPassword || null,
-        customHeaders: splitLines(customHeaders),
+        customHeaders: [
+          ...splitLines(customHeaders),
+          ...(acceptLanguage.trim() ? [`Accept-Language: ${acceptLanguage.trim()}`] : []),
+        ],
         render,
         browserPath: browserPath.trim() || null,
         renderWaitMs,
@@ -1197,6 +1202,8 @@ export default function Home() {
     authUser,
     authPassword,
     customHeaders,
+    userAgent,
+    acceptLanguage,
     render,
     browserPath,
     renderWaitMs,
@@ -1224,6 +1231,8 @@ export default function Home() {
     if (typeof value.authUser === 'string') setAuthUser(value.authUser);
     if (typeof value.authPassword === 'string') setAuthPassword(value.authPassword);
     if (typeof value.customHeaders === 'string') setCustomHeaders(value.customHeaders);
+    if (typeof value.userAgent === 'string') setUserAgent(value.userAgent);
+    if (typeof value.acceptLanguage === 'string') setAcceptLanguage(value.acceptLanguage);
     if (typeof value.render === 'boolean') setRender(value.render);
     if (typeof value.browserPath === 'string') setBrowserPath(value.browserPath);
     if (typeof value.renderWaitMs === 'number') setRenderWaitMs(value.renderWaitMs);
@@ -1373,6 +1382,8 @@ export default function Home() {
     { label: 'Exclude patterns', help: 'One regex per line; matching URLs are skipped.', value: excludePatterns ? 'set' : 'none', changed: excludePatterns.length > 0 },
     { label: 'Basic auth user', help: 'HTTP basic authentication username.', value: authUser || 'none', changed: authUser.length > 0 },
     { label: 'Custom headers', help: 'Header: value lines sent with every request.', value: customHeaders ? 'set' : 'none', changed: customHeaders.length > 0 },
+    { label: 'User-Agent', help: 'HTTP User-Agent for every request.', value: userAgent, changed: userAgent !== USER_AGENT },
+    { label: 'Accept-Language', help: 'Optional Accept-Language header.', value: acceptLanguage || 'none', changed: acceptLanguage.length > 0 },
   ];
   const validationErrors: string[] = [];
   if (seedKind !== 'list') {
