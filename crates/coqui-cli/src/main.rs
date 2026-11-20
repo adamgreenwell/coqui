@@ -62,6 +62,7 @@ impl Args {
             store_text: false,
             store_html: false,
             json: false,
+            ndjson: false,
             webhook_url: None,
             delay_ms: 0,
             max_rps: 0,
@@ -95,6 +96,7 @@ struct Args {
     store_text: bool,
     store_html: bool,
     json: bool,
+    ndjson: bool,
     webhook_url: Option<String>,
     delay_ms: u64,
     max_rps: u32,
@@ -181,6 +183,7 @@ fn parse_args(values: &[String], config: &FileConfig) -> Result<Args, String> {
             "--store-text" => args.store_text = true,
             "--store-html" => args.store_html = true,
             "--json" => args.json = true,
+            "--ndjson" => args.ndjson = true,
             "--delay-ms" => {
                 index += 1;
                 args.delay_ms = values
@@ -2094,16 +2097,19 @@ async fn main() {
         store
             .mark_running(&crawl_id, now_ms())
             .expect("mark crawl running");
-        println!(
-            "coqui: crawling {} ({}) into {}",
-            args.seed,
-            args.kind,
-            db.display()
-        );
+        if !args.json && !args.ndjson {
+            println!(
+                "coqui: crawling {} ({}) into {}",
+                args.seed,
+                args.kind,
+                db.display()
+            );
+        }
         (crawl_id, args.kind.clone(), args.seed.clone(), config, None)
     };
     let started = std::time::Instant::now();
     let json_output = args.json;
+    let ndjson = args.ndjson;
     let result = coqui_crawl::run_crawl(
         store.clone(),
         crawl_id.clone(),
@@ -2114,7 +2120,16 @@ async fn main() {
         Arc::new(AtomicBool::new(false)),
         checkpoint,
         Arc::new(move |progress: CrawlProgress| {
-            if !json_output && progress.crawled.is_multiple_of(250) {
+            if ndjson {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "event": "progress",
+                        "crawled": progress.crawled,
+                        "discovered": progress.discovered,
+                    })
+                );
+            } else if !json_output && progress.crawled.is_multiple_of(250) {
                 println!(
                     "  crawled {} / discovered {}",
                     progress.crawled, progress.discovered
@@ -2146,6 +2161,19 @@ async fn main() {
                         "csv": csv.display().to_string(),
                     })
                 );
+            } else if ndjson {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "event": "completed",
+                        "crawlId": crawl_id,
+                        "crawled": result.stats.crawled,
+                        "discovered": result.stats.discovered,
+                        "issues": issue_count,
+                        "seconds": started.elapsed().as_secs_f64(),
+                        "csv": csv.display().to_string(),
+                    })
+                );
             } else {
                 println!(
                     "done: {} crawled, {} discovered, {} issues in {:.1}s",
@@ -2164,6 +2192,15 @@ async fn main() {
                     "{}",
                     serde_json::json!({
                         "status": "failed",
+                        "crawlId": crawl_id,
+                        "error": error.to_string(),
+                    })
+                );
+            } else if ndjson {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "event": "failed",
                         "crawlId": crawl_id,
                         "error": error.to_string(),
                     })
