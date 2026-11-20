@@ -124,6 +124,8 @@ Schedules are interval-based (seconds) and stored in the crawl DB. `run-due` run
 
 ## Reports
 
+`coqui report <kind> --pdf` also writes a PDF via headless Chrome/Edge (absolute output path, `COQUI_BROWSER_PATH` override). Verified: summary report produced a 71 KB PDF.
+
 `coqui reports` lists report types; `coqui report issues --out DIR` renders an HTML report from the latest crawl in `DIR/coqui.db` to `DIR/report-issues.html`. `--top N` limits list rows and `--status CODE` filters by HTTP status. Verified end-to-end (`report performance --top 1 --status 200`).
 
 ## Output
@@ -161,6 +163,7 @@ Supports URL/sitemap/list seeds, crawl limits, user agent, custom headers, basic
 ## Custom JavaScript
 
 `--js EXPR` (repeatable) evaluates JavaScript in each rendered page after load; requires `--render`. Results are stored per URL and exported as Custom JS results (`custom-js`) in the app. Verified: `--js "document.title"` returned "Rendered title" on the JS fixture.
+
 
 
 

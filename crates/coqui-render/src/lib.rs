@@ -667,6 +667,11 @@ async fn launch(browser_path: Option<&str>) -> Result<(String, Option<Child>), R
     ))
 }
 
+/// Resolve the configured or discovered Chrome/Edge binary.
+pub fn browser_executable(configured: Option<&str>) -> Option<PathBuf> {
+    find_browser(configured)
+}
+
 fn find_browser(configured: Option<&str>) -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("COQUI_BROWSER_PATH") {
         let path = PathBuf::from(path);

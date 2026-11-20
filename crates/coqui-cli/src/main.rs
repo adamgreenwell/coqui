@@ -306,6 +306,7 @@ fn run_report(values: &[String]) -> Result<(), String> {
     let mut kind = "summary".to_string();
     let mut out = PathBuf::from("coqui-out");
     let mut with: Option<String> = None;
+    let mut pdf = false;
     let mut index = 0;
     while index < values.len() {
         match values[index].as_str() {
@@ -320,6 +321,7 @@ fn run_report(values: &[String]) -> Result<(), String> {
             "--top" | "--status" | "--title" => {
                 index += 1;
             }
+            "--pdf" => pdf = true,
             other if !other.starts_with("--") => kind = other.to_string(),
             other => return Err(format!("unknown option '{other}'")),
         }
@@ -406,6 +408,32 @@ fn run_report(values: &[String]) -> Result<(), String> {
     let path = out.join(format!("report-{kind}.html"));
     let urls = coqui_report::write_report_with(&store, &crawl.id, &path, &kind, &options)?;
     println!("report: {} ({} urls)", path.display(), urls);
+    if pdf {
+        write_pdf_report(&path, &out.join(format!("report-{kind}.pdf")))?;
+    }
+    Ok(())
+}
+
+fn write_pdf_report(html: &std::path::Path, pdf: &std::path::Path) -> Result<(), String> {
+    let browser = coqui_render::browser_executable(None).ok_or_else(|| {
+        "no Chrome/Edge browser found; set COQUI_BROWSER_PATH to render PDFs".to_string()
+    })?;
+    let html_abs = std::path::absolute(html).map_err(|error| error.to_string())?;
+    let pdf_abs = std::path::absolute(pdf).map_err(|error| error.to_string())?;
+    let url = format!("file:///{}", html_abs.to_string_lossy().replace('\\', "/"));
+    let status = std::process::Command::new(browser)
+        .arg("--headless=new")
+        .arg("--disable-gpu")
+        .arg("--no-sandbox")
+        .arg("--allow-file-access-from-files")
+        .arg(format!("--print-to-pdf={}", pdf_abs.display()))
+        .arg(url)
+        .status()
+        .map_err(|error| error.to_string())?;
+    if !status.success() {
+        return Err(format!("pdf render failed: {status}"));
+    }
+    println!("pdf: {}", pdf.display());
     Ok(())
 }
 
