@@ -3590,8 +3590,21 @@ mod tests {
             .unwrap();
         let id = store.url_id("c1", "https://example.com/").unwrap().unwrap();
         store
-            .save_page_text("c1", id, "hello world", "# Hello\n\nhello world")
+            .save_page_text("c1", id, "hello world", "# Hello\n\nhello world", None)
             .unwrap();
+        store
+            .save_page_text(
+                "c1",
+                id,
+                "hello world",
+                "# Hello\n\nhello world",
+                Some("<h1>Hello</h1>"),
+            )
+            .unwrap();
+        assert_eq!(
+            store.page_html("c1", id).unwrap().as_deref(),
+            Some("<h1>Hello</h1>")
+        );
         let text = dir.join("text.csv");
         assert_eq!(store.export_text_csv("c1", &text).unwrap(), 1);
         assert!(
@@ -4394,7 +4407,7 @@ mod tests {
         let version: i32 = conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 30);
+        assert_eq!(version, 31);
         std::fs::remove_dir_all(dir).ok();
     }
 
