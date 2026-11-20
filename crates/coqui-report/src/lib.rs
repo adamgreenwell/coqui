@@ -204,6 +204,11 @@ pub const REPORTS: &[(&str, &str, &str)] = &[
         "Canonicals",
         "Self, non-self and missing canonical declarations.",
     ),
+    (
+        "hreflang-return",
+        "Hreflang return links",
+        "Hreflang targets with status and return-link presence.",
+    ),
 ];
 
 /// Render a named report.
@@ -232,6 +237,7 @@ pub fn render_report_with(
         "segments" => render_segments(store, crawl_id),
         "serp" => render_serp(store, crawl_id),
         "canonicals" => render_canonicals(store, crawl_id),
+        "hreflang-return" => render_hreflang_return(store, crawl_id),
         _ => render_html(store, crawl_id),
     }
 }
@@ -419,6 +425,77 @@ pub fn write_comparison(
         .total_urls(left_id)
         .map(|count| count as u64)
         .map_err(|error| error.to_string())
+}
+
+fn render_hreflang_return(store: &Store, crawl_id: &str) -> Result<String, String> {
+    let crawl = store
+        .get_crawl(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let urls = store
+        .all_urls(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let by_url: std::collections::HashMap<&str, &coqui_core::UrlRecord> =
+        urls.iter().map(|url| (url.url.as_str(), url)).collect();
+    let mut rows = Vec::new();
+    let mut missing_target = 0usize;
+    let mut non_200 = 0usize;
+    let mut missing_return = 0usize;
+    for url in &urls {
+        for link in &url.hreflang {
+            if link.url == url.url {
+                continue;
+            }
+            let target = by_url.get(link.url.as_str()).copied();
+            let target_status = match target {
+                None => "not crawled".to_string(),
+                Some(target) => match target.status {
+                    None => "no response".to_string(),
+                    Some(status) => status.to_string(),
+                },
+            };
+            let has_return = target
+                .map(|target| target.hreflang.iter().any(|back| back.url == url.url))
+                .unwrap_or(false);
+            let mut flags = Vec::new();
+            if target.is_none() {
+                missing_target += 1;
+                flags.push("target not crawled");
+            } else if target.and_then(|target| target.status) != Some(200) {
+                non_200 += 1;
+                flags.push("target non-200");
+            }
+            if !has_return {
+                missing_return += 1;
+                flags.push("missing return link");
+            }
+            rows.push((
+                url.url.clone(),
+                link.lang.clone(),
+                link.url.clone(),
+                target_status,
+                has_return,
+                flags.join(", "),
+            ));
+        }
+    }
+    let mut body = format!(
+        "<p class=\"muted\">{} hreflang links; {missing_return} missing return links, {non_200} non-200 targets, {missing_target} uncrawled targets</p>",
+        rows.len()
+    );
+    body.push_str("<table><tr><th>Page</th><th>Hreflang</th><th>Target</th><th>Target status</th><th>Return</th><th>Flags</th></tr>");
+    for (page, lang, target, status, has_return, flags) in &rows {
+        body.push_str(&format!(
+            "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+            escape(page),
+            escape(lang),
+            escape(target),
+            escape(status),
+            if *has_return { "yes" } else { "no" },
+            escape(flags)
+        ));
+    }
+    body.push_str("</table>");
+    Ok(shell(&crawl.seed, "Hreflang return links", &body))
 }
 
 fn render_canonicals(store: &Store, crawl_id: &str) -> Result<String, String> {
