@@ -61,6 +61,7 @@ impl Args {
             render_workers: config.render_workers.unwrap_or(2),
             store_text: false,
             store_html: false,
+            json: false,
             webhook_url: None,
             delay_ms: 0,
             max_rps: 0,
@@ -93,6 +94,7 @@ struct Args {
     render_workers: u32,
     store_text: bool,
     store_html: bool,
+    json: bool,
     webhook_url: Option<String>,
     delay_ms: u64,
     max_rps: u32,
@@ -116,7 +118,7 @@ fn load_config(path: &Path, required: bool) -> Result<FileConfig, String> {
 }
 
 fn usage() -> &'static str {
-    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots] [--store-html] [--webhook URL] [--delay-ms N] [--max-rps N] [--proxy URL] [--cookie STRING]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR]\n       coqui report compare --with <crawl id> [--out DIR]\n       coqui reports\n       coqui export [--out DIR] [--family urls|issues|links|headers|images|a11y|structured|vitals|console|text|markdown|extractions|custom-js]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N] [--webhook URL] [--delay-ms N] [--max-rps N] [--proxy URL] [--cookie STRING]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui prune [--out DIR] [--keep N]\n       coqui overview [--out DIR]\n       coqui serve [--out DIR] [--addr 127.0.0.1:8787] [--token TOKEN]
+    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots] [--store-html] [--json] [--webhook URL] [--delay-ms N] [--max-rps N] [--proxy URL] [--cookie STRING]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR]\n       coqui report compare --with <crawl id> [--out DIR]\n       coqui reports\n       coqui export [--out DIR] [--family urls|issues|links|headers|images|a11y|structured|vitals|console|text|markdown|extractions|custom-js]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N] [--webhook URL] [--delay-ms N] [--max-rps N] [--proxy URL] [--cookie STRING]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui prune [--out DIR] [--keep N]\n       coqui overview [--out DIR]\n       coqui serve [--out DIR] [--addr 127.0.0.1:8787] [--token TOKEN]
        coqui issue-settings <export|import|diff> [--out DIR] [--file PATH] [--with CRAWL]
        coqui doctor [--out DIR]
        coqui mcp [--out DIR]"
@@ -178,6 +180,7 @@ fn parse_args(values: &[String], config: &FileConfig) -> Result<Args, String> {
             "--vitals" => args.web_vitals = true,
             "--store-text" => args.store_text = true,
             "--store-html" => args.store_html = true,
+            "--json" => args.json = true,
             "--delay-ms" => {
                 index += 1;
                 args.delay_ms = values
@@ -2100,6 +2103,7 @@ async fn main() {
         (crawl_id, args.kind.clone(), args.seed.clone(), config, None)
     };
     let started = std::time::Instant::now();
+    let json_output = args.json;
     let result = coqui_crawl::run_crawl(
         store.clone(),
         crawl_id.clone(),
@@ -2109,8 +2113,8 @@ async fn main() {
         CancellationToken::new(),
         Arc::new(AtomicBool::new(false)),
         checkpoint,
-        Arc::new(|progress: CrawlProgress| {
-            if progress.crawled.is_multiple_of(250) {
+        Arc::new(move |progress: CrawlProgress| {
+            if !json_output && progress.crawled.is_multiple_of(250) {
                 println!(
                     "  crawled {} / discovered {}",
                     progress.crawled, progress.discovered
@@ -2128,18 +2132,45 @@ async fn main() {
                 .expect("mark crawl finished");
             let csv = args.out.join("urls.csv");
             store.export_csv(&crawl_id, &csv).expect("export csv");
-            println!(
-                "done: {} crawled, {} discovered, {} issues in {:.1}s",
-                result.stats.crawled,
-                result.stats.discovered,
-                counts.iter().map(|count| count.count).sum::<i64>(),
-                started.elapsed().as_secs_f64()
-            );
-            println!("csv: {}", csv.display());
+            let issue_count = counts.iter().map(|count| count.count).sum::<i64>();
+            if json_output {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "status": "completed",
+                        "crawlId": crawl_id,
+                        "crawled": result.stats.crawled,
+                        "discovered": result.stats.discovered,
+                        "issues": issue_count,
+                        "seconds": started.elapsed().as_secs_f64(),
+                        "csv": csv.display().to_string(),
+                    })
+                );
+            } else {
+                println!(
+                    "done: {} crawled, {} discovered, {} issues in {:.1}s",
+                    result.stats.crawled,
+                    result.stats.discovered,
+                    issue_count,
+                    started.elapsed().as_secs_f64()
+                );
+                println!("csv: {}", csv.display());
+            }
         }
         Err(error) => {
             let _ = store.mark_finished(&crawl_id, CrawlStatus::Failed, now_ms());
-            eprintln!("crawl failed: {error}");
+            if json_output {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "status": "failed",
+                        "crawlId": crawl_id,
+                        "error": error.to_string(),
+                    })
+                );
+            } else {
+                eprintln!("crawl failed: {error}");
+            }
             std::process::exit(1);
         }
     }
