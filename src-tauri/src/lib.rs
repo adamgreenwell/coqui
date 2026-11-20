@@ -839,6 +839,31 @@ fn content_stats(
 }
 
 #[tauri::command]
+fn duplicate_groups(
+    state: State<'_, AppState>,
+    crawl_id: String,
+    field: String,
+) -> Result<Vec<serde_json::Value>, String> {
+    let groups = state
+        .store
+        .duplicate_groups(&crawl_id, &field, 50)
+        .map_err(|error| error.to_string())?;
+    Ok(groups
+        .into_iter()
+        .map(|(value, count, urls)| {
+            serde_json::json!({
+                "value": value,
+                "count": count,
+                "urls": urls
+                    .into_iter()
+                    .map(|(id, url)| serde_json::json!({"id": id, "url": url}))
+                    .collect::<Vec<_>>(),
+            })
+        })
+        .collect())
+}
+
+#[tauri::command]
 fn segments(
     state: State<'_, AppState>,
     crawl_id: String,
@@ -1432,6 +1457,7 @@ pub fn run() {
             indexability_stats,
             depth_counts,
             segments,
+            duplicate_groups,
             content_stats,
             response_buckets,
             get_url_detail,
