@@ -402,7 +402,7 @@ fn render_hreflang(store: &Store, crawl_id: &str) -> Result<String, String> {
         rows.len()
     );
     body.push_str("<table><tr><th>Page</th><th>Hreflang</th><th>Target</th></tr>");
-    for (page, lang, target) in rows.iter().take(200) {
+    for (page, lang, target) in &rows {
         body.push_str(&format!(
             "<tr><td>{}</td><td>{}</td><td>{}</td></tr>",
             escape(page),
