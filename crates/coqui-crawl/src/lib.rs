@@ -67,6 +67,7 @@ struct FetchOutcome {
     /// Raw HTTP body preserved when rendering replaces `body` with the DOM.
     raw_body: Option<String>,
     rendered: bool,
+    render_error: Option<String>,
     size_bytes: u64,
     elapsed_ms: u64,
     error: Option<String>,
@@ -499,6 +500,11 @@ pub async fn run_crawl(
                 {
                     store.save_screenshot(&crawl_id, page_id, data)?;
                 }
+                if page_id > 0
+                    && let Some(error) = &outcome.render_error
+                {
+                    store.save_render_error(&crawl_id, page_id, error)?;
+                }
 
                 if !extractors.is_empty() {
                     let body = outcome.body.as_deref().unwrap_or_default();
@@ -741,6 +747,7 @@ fn circuit_outcome(url: &str, message: &str) -> FetchOutcome {
         body: None,
         raw_body: None,
         rendered: false,
+        render_error: None,
         size_bytes: 0,
         elapsed_ms: 0,
         error: Some(message.to_string()),
@@ -799,6 +806,7 @@ async fn fetch(
                     body: None,
                     raw_body: None,
                     rendered: false,
+                    render_error: None,
                     size_bytes: 0,
                     elapsed_ms: started.elapsed().as_millis() as u64,
                     error: Some(truncate(&error.to_string(), 500)),
@@ -889,6 +897,7 @@ async fn fetch(
                         body: None,
                         raw_body: None,
                         rendered: false,
+                        render_error: None,
                         size_bytes,
                         elapsed_ms: started.elapsed().as_millis() as u64,
                         error: Some(truncate(&error.to_string(), 500)),
@@ -910,6 +919,7 @@ async fn fetch(
         let mut vitals = None;
         let mut raw_body: Option<String> = None;
         let mut rendered = false;
+        let mut render_error: Option<String> = None;
         let blocked = looks_blocked(status, &response_headers, body.as_deref());
         let http_elapsed_ms = started.elapsed().as_millis() as u64;
         if !blocked
@@ -930,6 +940,7 @@ async fn fetch(
                     vitals = rendered_page.vitals;
                 }
                 Err(error) => {
+                    render_error = Some(error.to_string());
                     if std::env::var_os("COQUI_DEBUG_CRAWL").is_some() {
                         eprintln!("render: failed for {current}: {error}");
                     }
@@ -944,6 +955,7 @@ async fn fetch(
             body,
             raw_body,
             rendered,
+            render_error,
             size_bytes,
             elapsed_ms: http_elapsed_ms,
             error: None,
@@ -965,6 +977,7 @@ async fn fetch(
         body: None,
         raw_body: None,
         rendered: false,
+        render_error: None,
         size_bytes: 0,
         elapsed_ms: started.elapsed().as_millis() as u64,
         error: Some("too many redirects or unresolvable redirect target".to_string()),
