@@ -56,6 +56,7 @@ interface CrawlConfig {
   customJs?: string[];
   webhookUrl?: string | null;
   crawlDelayMs?: number;
+  maxRps?: number;
 }
 
 interface UrlDetail {
@@ -353,6 +354,7 @@ export default function Home() {
   const [customJs, setCustomJs] = useState('');
   const [webhookUrl, setWebhookUrl] = useState('');
   const [crawlDelayMs, setCrawlDelayMs] = useState(0);
+  const [maxRps, setMaxRps] = useState(0);
   const [extractors, setExtractors] = useState<{ name: string; selector: string }[]>([]);
   const [extractorName, setExtractorName] = useState('');
   const [extractorSelector, setExtractorSelector] = useState('');
@@ -1046,6 +1048,7 @@ export default function Home() {
         customJs: splitLines(customJs),
         webhookUrl: webhookUrl.trim() || null,
         crawlDelayMs: Math.max(0, Math.round(crawlDelayMs)),
+        maxRps: Math.max(0, Math.round(maxRps)),
       };
       const summary = await invoke<CrawlSummary>('create_crawl', {
         seedKind,
@@ -2010,6 +2013,18 @@ export default function Home() {
                       step={50}
                       value={crawlDelayMs}
                       onChange={(event) => setCrawlDelayMs(Number(event.target.value) || 0)}
+                      disabled={isRunning}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="maxRps">Max requests/second per host (0 = unlimited)</label>
+                    <input
+                      id="maxRps"
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={maxRps}
+                      onChange={(event) => setMaxRps(Number(event.target.value) || 0)}
                       disabled={isRunning}
                     />
                   </div>

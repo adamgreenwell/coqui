@@ -85,6 +85,9 @@ pub struct CrawlConfig {
     /// Minimum delay between HTTP requests, in milliseconds (0 = none).
     #[serde(default)]
     pub crawl_delay_ms: u64,
+    /// Maximum requests per second per host (0 = unlimited).
+    #[serde(default)]
+    pub max_rps: u32,
     /// Only crawl discovered URLs matching at least one pattern (empty = all).
     #[serde(default)]
     pub include_patterns: Vec<String>,
@@ -141,6 +144,7 @@ impl Default for CrawlConfig {
             store_text: false,
             webhook_url: None,
             crawl_delay_ms: 0,
+            max_rps: 0,
             include_patterns: Vec::new(),
             exclude_patterns: Vec::new(),
             auth_user: None,

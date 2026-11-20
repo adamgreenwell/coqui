@@ -294,7 +294,11 @@ pub async fn run_crawl(
             String,
             std::time::Instant,
         >::new()));
-        let delay_ms = config.crawl_delay_ms;
+        let delay_ms = if config.max_rps > 0 {
+            config.crawl_delay_ms.max(1_000 / u64::from(config.max_rps))
+        } else {
+            config.crawl_delay_ms
+        };
         while !frontier.is_empty() && (stats.crawled as u32) < config.max_urls {
             let remaining = config.max_urls.saturating_sub(stats.crawled as u32) as usize;
             if remaining == 0 {
