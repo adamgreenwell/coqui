@@ -2852,10 +2852,23 @@ export default function Home() {
                 </button>
               ))}
             {(['0', '1', '2', '3+'] as const).map((label, index) => (
-              <div key={`depth-${label}`}>
+              <button
+                key={`depth-${label}`}
+                type="button"
+                className={`overview-card${
+                  maxDepthFilter === (label === '3+' ? '3' : label) ? ' active' : ''
+                }`}
+                title={`Show URLs at depth ≤ ${label === '3+' ? '3' : label}`}
+                onClick={() => {
+                  const next = label === '3+' ? '3' : label;
+                  setMaxDepthFilter(maxDepthFilter === next ? '' : next);
+                  setPage(1);
+                  if (crawl) void loadPage(crawl.id, 1, activeIssue);
+                }}
+              >
                 <span>Depth {label}</span>
                 <strong>{depthBuckets[index] ?? 0}</strong>
-              </div>
+              </button>
             ))}
             {contentStats &&
               (
