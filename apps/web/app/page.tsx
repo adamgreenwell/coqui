@@ -394,6 +394,9 @@ export default function Home() {
   const [compareError, setCompareError] = useState<string | null>(null);
   const [detail, setDetail] = useState<UrlDetail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [sourceHtml, setSourceHtml] = useState<string | null>(null);
+  const [sourceError, setSourceError] = useState<string | null>(null);
+  const [sourceLoading, setSourceLoading] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [linkFilter, setLinkFilter] = useState('');
   const [lighthouse, setLighthouse] = useState<LighthouseSummary | null>(null);
@@ -992,6 +995,30 @@ export default function Home() {
     }
   };
 
+  const loadSource = async () => {
+    if (!crawl || !detail) return;
+    setSourceLoading(true);
+    setSourceError(null);
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const html = await invoke<string | null>('page_html', {
+        crawlId: crawl.id,
+        urlId: detail.url.id,
+      });
+      if (html === null) {
+        setSourceError(
+          'Raw HTML was not stored for this crawl. Enable "Store raw HTML" before crawling.',
+        );
+      } else {
+        setSourceHtml(html);
+      }
+    } catch (cause) {
+      setSourceError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSourceLoading(false);
+    }
+  };
+
   const openDetailById = async (urlId: number) => {
     if (!crawl) return;
     try {
@@ -1001,6 +1028,8 @@ export default function Home() {
         urlId,
       });
       setDetail(data);
+      setSourceHtml(null);
+      setSourceError(null);
       setLinkFilter('');
       setDetailError(null);
     } catch (cause) {
@@ -2621,6 +2650,17 @@ export default function Home() {
                     </ul>
                   </>
                 )}
+                <h4>Source</h4>
+                <button
+                  type="button"
+                  className="link-button"
+                  onClick={() => void loadSource()}
+                  disabled={sourceLoading}
+                >
+                  {sourceLoading ? 'Loading…' : 'View raw HTML'}
+                </button>
+                {sourceError && <p className="error">{sourceError}</p>}
+                {sourceHtml && <pre className="source-view">{sourceHtml}</pre>}
                 {detail.screenshot && (
                   <img
                     src={detail.screenshot}
