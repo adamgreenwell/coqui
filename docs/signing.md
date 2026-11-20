@@ -122,6 +122,16 @@ Linux does not require signing to install. Optional hardening:
 4. Verify signatures in CI as a gate (`signtool verify`, `codesign --verify`, `spctl`).
 5. Keep unsigned development builds separate from tag builds.
 
+## CI status (wired 2026-11-20)
+
+`release.yml` now includes signing steps gated on secrets:
+
+- Windows: decodes `WINDOWS_CERTIFICATE`, signs every NSIS/MSI with `signtool` (DigiCert timestamp) and verifies, skipped when the secret is absent.
+- macOS: passes `APPLE_*` secrets to the Tauri build (Tauri signs/notarizes when configured) and verifies with `codesign` + `stapler validate` only when `APPLE_SIGNING_IDENTITY` is set.
+
+The steps no-op until certificates are added, so tag builds keep working unsigned in the meantime.
+
 ## Validation status
 
 Nothing in this runbook is exercised by CI yet. Until certificates are provided, release notes must state that installers are unsigned.
+
