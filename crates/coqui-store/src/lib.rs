@@ -1827,6 +1827,17 @@ impl Store {
         Ok((read(inbound_sql)?, read(outbound_sql)?))
     }
 
+    /// All hreflang links as (page url, language, target url).
+    pub fn hreflang_rows(&self, crawl_id: &str) -> Result<Vec<(String, String, String)>> {
+        let mut rows = Vec::new();
+        for url in self.all_urls(crawl_id)? {
+            for link in &url.hreflang {
+                rows.push((url.url.clone(), link.lang.clone(), link.url.clone()));
+            }
+        }
+        Ok(rows)
+    }
+
     pub fn all_links(&self, crawl_id: &str) -> Result<Vec<LinkRecord>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
