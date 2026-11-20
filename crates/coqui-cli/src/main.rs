@@ -364,6 +364,20 @@ fn run_report(values: &[String]) -> Result<(), String> {
         let csv_path = out.join("compare.csv");
         std::fs::write(&csv_path, csv).map_err(|error| error.to_string())?;
         println!("compare csv: {}", csv_path.display());
+        let diff_path = out.join("compare-urls.csv");
+        match write_url_diff(&store, &crawl.id, &other, &diff_path) {
+            Ok((matched, added, removed, changed)) => {
+                println!(
+                    "url diff: {} matched, {} added, {} removed, {} changed ({})",
+                    matched,
+                    added,
+                    removed,
+                    changed,
+                    diff_path.display()
+                );
+            }
+            Err(error) => eprintln!("url diff failed: {error}"),
+        }
         return Ok(());
     }
     if !coqui_report::REPORTS.iter().any(|(id, _, _)| *id == kind) {
@@ -472,6 +486,96 @@ fn run_export(values: &[String]) -> Result<(), String> {
         started.elapsed().as_secs_f64()
     );
     Ok(())
+}
+
+fn csv_field(value: &str) -> String {
+    if value.contains(',') || value.contains('"') || value.contains('\n') {
+        format!("\"{}\"", value.replace('"', "\"\""))
+    } else {
+        value.to_string()
+    }
+}
+
+fn write_url_diff(
+    store: &Store,
+    left_id: &str,
+    right_id: &str,
+    path: &std::path::Path,
+) -> Result<(usize, usize, usize, usize), String> {
+    use std::collections::{BTreeSet, HashMap};
+
+    fn status_of(row: Option<&coqui_core::UrlRecord>) -> String {
+        row.and_then(|url| url.status)
+            .map(|status| status.to_string())
+            .unwrap_or_default()
+    }
+
+    fn text_of(
+        row: Option<&coqui_core::UrlRecord>,
+        pick: fn(&coqui_core::UrlRecord) -> &Option<String>,
+    ) -> String {
+        row.and_then(|url| pick(url).clone()).unwrap_or_default()
+    }
+
+    let left = store.all_urls(left_id).map_err(|error| error.to_string())?;
+    let right = store
+        .all_urls(right_id)
+        .map_err(|error| error.to_string())?;
+    let left_map: HashMap<&str, &coqui_core::UrlRecord> =
+        left.iter().map(|url| (url.url.as_str(), url)).collect();
+    let right_map: HashMap<&str, &coqui_core::UrlRecord> =
+        right.iter().map(|url| (url.url.as_str(), url)).collect();
+    let keys: BTreeSet<&str> = left_map
+        .keys()
+        .copied()
+        .chain(right_map.keys().copied())
+        .collect();
+    let mut csv = String::from(
+        "url,change,left_status,right_status,left_title,right_title,left_meta_description,right_meta_description,left_h1,right_h1\n",
+    );
+    let (mut matched, mut added, mut removed, mut changed) = (0usize, 0usize, 0usize, 0usize);
+    for key in keys {
+        let left_row = left_map.get(key).copied();
+        let right_row = right_map.get(key).copied();
+        let (change, before, after) = match (left_row, right_row) {
+            (Some(before), Some(after)) => {
+                matched += 1;
+                if before.status == after.status
+                    && before.title == after.title
+                    && before.meta_description == after.meta_description
+                    && before.h1 == after.h1
+                {
+                    continue;
+                }
+                changed += 1;
+                ("changed", Some(before), Some(after))
+            }
+            (Some(before), None) => {
+                removed += 1;
+                ("removed", Some(before), None)
+            }
+            (None, Some(after)) => {
+                added += 1;
+                ("added", None, Some(after))
+            }
+            (None, None) => continue,
+        };
+        csv.push_str(&format!(
+            "{},{},{},{},{},{},{},{},{},{}\n",
+            csv_field(key),
+            change,
+            status_of(before),
+            status_of(after),
+            csv_field(&text_of(before, |url| &url.title)),
+            csv_field(&text_of(after, |url| &url.title)),
+            csv_field(&text_of(before, |url| &url.meta_description)),
+            csv_field(&text_of(after, |url| &url.meta_description)),
+            csv_field(&text_of(before, |url| &url.h1)),
+            csv_field(&text_of(after, |url| &url.h1)),
+        ));
+    }
+    std::fs::write(path, csv).map_err(|error| error.to_string())?;
+    Ok((matched, added, removed, changed))
 }
 
 fn first_existing(paths: &[&str]) -> Option<String> {
