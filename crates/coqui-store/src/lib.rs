@@ -4652,4 +4652,3 @@ fn lastmod_from_headers(json: Option<&str>) -> Option<String> {
         .ok()?;
     Some(formatted.replace("+00:00", "Z"))
 }
-

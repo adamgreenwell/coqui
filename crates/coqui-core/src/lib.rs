@@ -769,4 +769,3 @@ mod export_catalog_tests {
         assert!(catalogue.iter().all(|entry| !entry.view.is_empty()));
     }
 }
-
