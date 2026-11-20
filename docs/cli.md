@@ -102,7 +102,7 @@ Schedules are interval-based (seconds) and stored in the crawl DB. `run-due` run
 
 ## Custom extraction
 
-`coqui schedule add ... --webhook URL` stores the webhook in the schedule config so scheduled runs notify too.
+`coqui schedule add ... --webhook URL --delay-ms N --max-rps N` stores those in the schedule config so scheduled runs notify and stay within rate limits.
 
 `--delay-ms N` waits at least N milliseconds between HTTP requests; `--max-rps N` caps requests per second per host (effective delay = max of both).
 
@@ -153,6 +153,7 @@ Supports URL/sitemap/list seeds, crawl limits, user agent, custom headers, basic
 ## Custom JavaScript
 
 `--js EXPR` (repeatable) evaluates JavaScript in each rendered page after load; requires `--render`. Results are stored per URL and exported as Custom JS results (`custom-js`) in the app. Verified: `--js "document.title"` returned "Rendered title" on the JS fixture.
+
 
 
 
