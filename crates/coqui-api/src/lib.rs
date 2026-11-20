@@ -4,8 +4,10 @@ use std::sync::Arc;
 
 use axum::{
     Json, Router,
+    body::Body,
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{StatusCode, header},
+    response::Response,
     routing::get,
 };
 use coqui_core::{CrawlSummary, IssueCount, UrlPage};
@@ -25,6 +27,7 @@ pub fn router(store: Arc<Store>) -> Router {
         .route("/crawls/{id}", get(get_crawl))
         .route("/crawls/{id}/issues", get(issue_counts))
         .route("/crawls/{id}/urls", get(list_urls))
+        .route("/crawls/{id}/export/{family}", get(export_csv))
         .with_state(AppState { store })
 }
 
@@ -105,6 +108,60 @@ async fn list_urls(
             .map_err(internal)?,
     };
     Ok(Json(page_result))
+}
+
+async fn export_csv(
+    State(state): State<AppState>,
+    Path((id, family)): Path<(String, String)>,
+) -> Result<Response, (StatusCode, String)> {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    let path =
+        std::env::temp_dir().join(format!("coqui-export-{}-{stamp}.csv", std::process::id()));
+    export_family(&state.store, &id, &family, &path)
+        .map_err(|message| (StatusCode::BAD_REQUEST, message))?;
+    let bytes = std::fs::read(&path).map_err(|error| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("read export: {error}"),
+        )
+    })?;
+    let _ = std::fs::remove_file(&path);
+    Response::builder()
+        .header(header::CONTENT_TYPE, "text/csv; charset=utf-8")
+        .header(
+            header::CONTENT_DISPOSITION,
+            format!("attachment; filename=\"{family}.csv\""),
+        )
+        .body(Body::from(bytes))
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))
+}
+
+fn export_family(
+    store: &Store,
+    crawl_id: &str,
+    family: &str,
+    path: &std::path::Path,
+) -> Result<u64, String> {
+    let result = match family {
+        "urls" => store.export_urls_csv(crawl_id, path, &[], None),
+        "issues" => store.export_issues_csv(crawl_id, path),
+        "links" => store.export_links_csv(crawl_id, path),
+        "headers" => store.export_headers_csv(crawl_id, path),
+        "images" => store.export_images_csv(crawl_id, path),
+        "a11y" => store.export_accessibility_csv(crawl_id, path),
+        "structured" => store.export_structured_data_csv(crawl_id, path),
+        "vitals" => store.export_vitals_csv(crawl_id, path),
+        "console" => store.export_console_csv(crawl_id, path),
+        "text" => store.export_text_csv(crawl_id, path),
+        "markdown" => store.export_markdown_csv(crawl_id, path),
+        "extractions" => store.export_extractions_csv(crawl_id, path),
+        "custom-js" => store.export_custom_js_csv(crawl_id, path),
+        other => return Err(format!("unknown export family '{other}'")),
+    };
+    result.map_err(|error| error.to_string())
 }
 
 fn internal(error: coqui_store::StoreError) -> (StatusCode, String) {
