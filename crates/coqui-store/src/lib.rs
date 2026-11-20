@@ -3650,6 +3650,8 @@ mod tests {
                     fcp_ms: 1200,
                     dom_nodes: None,
                     render_blocking: None,
+                    transfer_bytes: None,
+                    resource_count: None,
                 }),
                 headers: vec![("content-type".into(), "text/html".into())],
                 redirect_target: None,

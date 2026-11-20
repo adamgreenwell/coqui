@@ -285,6 +285,11 @@ pub const RULES: &[RuleDef] = &[
         label: "Render-blocking requests",
         severity: IssueSeverity::Opportunity,
     },
+    RuleDef {
+        id: "avoid_enormous_network_payload",
+        label: "Enormous network payload",
+        severity: IssueSeverity::Warning,
+    },
 ];
 
 pub fn rule_label(rule: &str) -> &str {
@@ -866,6 +871,21 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
                     &url.url,
                     "render_blocking_requests",
                     Some(format!("{blocking} blocking scripts/stylesheets")),
+                )?;
+            }
+            if let Some(bytes) = vitals.transfer_bytes
+                && bytes > 2_000_000
+            {
+                issue(
+                    store,
+                    crawl_id,
+                    &url.url,
+                    "avoid_enormous_network_payload",
+                    Some(format!(
+                        "{:.1} MB across {} requests",
+                        bytes as f64 / 1_048_576.0,
+                        vitals.resource_count.unwrap_or(0)
+                    )),
                 )?;
             }
         }
