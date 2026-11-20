@@ -424,6 +424,10 @@ export default function Home() {
   } | null>(null);
   const [depthCounts, setDepthCounts] = useState<{ depth: number; count: number }[]>([]);
   const [segments, setSegments] = useState<{ segment: string; count: number }[]>([]);
+  const [duplicateKind, setDuplicateKind] = useState<'title' | 'meta_description' | 'h1'>('title');
+  const [duplicateGroups, setDuplicateGroups] = useState<
+    { value: string; count: number; urls: { id: number; url: string }[] }[]
+  >([]);
   const [contentStats, setContentStats] = useState<{
     html: number;
     xml: number;
@@ -1441,6 +1445,28 @@ export default function Home() {
     if (seconds <= 0) return null;
     return crawl.totalUrls / seconds;
   }, [crawl]);
+
+  useEffect(() => {
+    if (!crawl) {
+      setDuplicateGroups([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const { invoke } = await import('@tauri-apps/api/core');
+      try {
+        const rows = await invoke<
+          { value: string; count: number; urls: { id: number; url: string }[] }[]
+        >('duplicate_groups', { crawlId: crawl.id, field: duplicateKind });
+        if (!cancelled) setDuplicateGroups(rows);
+      } catch {
+        if (!cancelled) setDuplicateGroups([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [crawl, duplicateKind]);
 
   const depthBuckets = useMemo(() => {
     const buckets = [0, 0, 0, 0];
@@ -2932,6 +2958,44 @@ export default function Home() {
                 })}
               </div>
             )}
+            <div className="overview-bars" style={{ flexBasis: '100%' }}>
+              <h3>
+                Duplicates{' '}
+                <select
+                  value={duplicateKind}
+                  onChange={(event) =>
+                    setDuplicateKind(event.target.value as 'title' | 'meta_description' | 'h1')
+                  }
+                  aria-label="Duplicate field"
+                >
+                  <option value="title">Title</option>
+                  <option value="meta_description">Meta description</option>
+                  <option value="h1">H1</option>
+                </select>
+              </h3>
+              {duplicateGroups.length === 0 && <span className="muted">No duplicate groups.</span>}
+              {duplicateGroups.slice(0, 5).map((group) => (
+                <div key={group.value} className="duplicate-group">
+                  <div>
+                    <strong>{group.count}×</strong>{' '}
+                    {group.value.length > 90 ? `${group.value.slice(0, 90)}…` : group.value}
+                  </div>
+                  <ul>
+                    {group.urls.slice(0, 3).map((entry) => (
+                      <li key={entry.id}>
+                        <button
+                          type="button"
+                          className="link-button"
+                          onClick={() => void openDetailById(entry.id)}
+                        >
+                          {entry.url}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
           </section>
 
           <section className="panel results">

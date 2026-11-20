@@ -1019,6 +1019,51 @@ impl Store {
     }
 
     /// URL counts grouped by crawl depth.
+    /// Duplicate groups for `title`, `meta_description` or `h1`.
+    pub fn duplicate_groups(
+        &self,
+        crawl_id: &str,
+        field: &str,
+        limit: u32,
+    ) -> Result<Vec<(String, i64, Vec<(i64, String)>)>> {
+        let column = match field {
+            "title" => "title",
+            "meta_description" => "meta_description",
+            "h1" => "h1",
+            other => {
+                return Err(StoreError::Io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("unknown duplicate field '{other}'"),
+                )));
+            }
+        };
+        let conn = self.lock()?;
+        let sql = format!(
+            "SELECT {column}, COUNT(*),
+                    GROUP_CONCAT(id, char(30)), GROUP_CONCAT(url, char(31))
+             FROM urls
+             WHERE crawl_id = ?1 AND {column} IS NOT NULL AND {column} <> ''
+             GROUP BY {column} HAVING COUNT(*) > 1
+             ORDER BY COUNT(*) DESC, {column} LIMIT ?2"
+        );
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt
+            .query_map(params![crawl_id, limit.clamp(1, 200)], |row| {
+                let value: String = row.get(0)?;
+                let count: i64 = row.get(1)?;
+                let ids: String = row.get(2)?;
+                let urls: String = row.get(3)?;
+                let ids: Vec<i64> = ids
+                    .split('\u{1e}')
+                    .filter_map(|id| id.parse().ok())
+                    .collect();
+                let urls: Vec<String> = urls.split('\u{1f}').map(str::to_string).collect();
+                Ok((value, count, ids.into_iter().zip(urls).collect()))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     /// Top-level path segments and how many URLs each contains.
     pub fn segment_counts(&self, crawl_id: &str) -> Result<Vec<(String, i64)>> {
         let conn = self.lock()?;
@@ -4030,6 +4075,37 @@ mod tests {
             store.insert_url(&record).unwrap();
         }
         assert_eq!(store.content_counts("c1").unwrap(), (1, 1, 1, 1));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn duplicate_groups_pair_urls() {
+        let dir = std::env::temp_dir().join(format!("coqui-dupes-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        store
+            .create_crawl(
+                "c1",
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        for (url, title) in [
+            ("https://example.com/a", Some("Same")),
+            ("https://example.com/b", Some("Same")),
+            ("https://example.com/c", Some("Other")),
+        ] {
+            let mut record = sample_record("c1", url);
+            record.title = title.map(str::to_string);
+            store.insert_url(&record).unwrap();
+        }
+        let groups = store.duplicate_groups("c1", "title", 10).unwrap();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].0, "Same");
+        assert_eq!(groups[0].1, 2);
+        assert_eq!(groups[0].2.len(), 2);
         std::fs::remove_dir_all(dir).ok();
     }
 
