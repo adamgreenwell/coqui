@@ -64,6 +64,36 @@ Read endpoints: `/crawls`, `/crawls/{id}`, `/issues`, `/issues/{rule}`, `/urls` 
 
 Prefer the workflow `schedule` trigger over in-process scheduling unless you need sub-hour intervals. `coqui schedule` remains useful on a long-lived runner.
 
+## GitLab CI
+
+```yaml
+stages: [crawl]
+
+crawl:
+  stage: crawl
+  image: rust:1.90
+  script:
+    - cargo build --release -p coqui-cli
+    - ./target/release/coqui crawl url "$SEED" --max-urls 200 --json --out crawl | tee crawl.json
+    - ./target/release/coqui export --out crawl --family all
+  artifacts:
+    paths:
+      - crawl/
+      - crawl.json
+```
+
+`--json` gives one machine-readable summary; `--ndjson` streams progress events for log viewers. The same recipes work on a self-hosted runner.
+
+## Multi-arch container
+
+```bash
+docker buildx create --use
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t ghcr.io/adamgreenwell/coqui-api:latest --push .
+```
+
+Buildx needs QEMU for cross-building (`docker run --privileged --rm tonistiigi/binfmt --install all`). The current Dockerfile ships the CLI/API only, without Chromium/Node; rendering and Lighthouse need a browser-enabled image or the host sidecars.
+
 ## Notes
 
 - Crawls are sequential per process; increase `--concurrency` for faster runs.
