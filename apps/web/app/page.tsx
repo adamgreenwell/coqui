@@ -628,7 +628,11 @@ export default function Home() {
 
   const suppressIssueUrl = async (rule: string, url: string) => {
     if (!crawl) return;
-    const reason = window.prompt('Reason for ignoring this URL for this rule?') ?? undefined;
+    const reason = window.prompt('Reason for ignoring this URL for this rule?') ?? '';
+    if (!reason.trim()) {
+      window.alert('A reason is required to suppress an issue.');
+      return;
+    }
     const days = window.prompt('Expire after how many days? Leave blank for no expiry.') ?? '';
     const expiresAt =
       days.trim() && Number(days) > 0 ? Date.now() + Number(days) * 86_400_000 : null;
@@ -637,7 +641,7 @@ export default function Home() {
       crawlId: crawl.id,
       rule,
       url,
-      reason: reason || null,
+      reason: reason.trim(),
       expiresAt,
     });
     setIssueDetails((current) => current.filter((row) => row.url !== url));
@@ -754,7 +758,11 @@ export default function Home() {
 
   const ignoreIssue = async (rule: string) => {
     if (!crawl) return;
-    const reason = window.prompt('Reason for ignoring this rule?') ?? undefined;
+    const reason = window.prompt('Reason for ignoring this rule?') ?? '';
+    if (!reason.trim()) {
+      window.alert('A reason is required to suppress an issue.');
+      return;
+    }
     const days = window.prompt('Expire after how many days? Leave blank for no expiry.') ?? '';
     const expiresAt =
       days.trim() && Number(days) > 0 ? Date.now() + Number(days) * 86_400_000 : null;
@@ -762,7 +770,7 @@ export default function Home() {
     await invoke('suppress_rule', {
       crawlId: crawl.id,
       rule,
-      reason: reason || null,
+      reason: reason.trim(),
       expiresAt,
     });
     await loadIssues(crawl.id);
