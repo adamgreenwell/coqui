@@ -380,6 +380,8 @@ pub struct WebVitals {
     pub tbt_ms: u64,
     pub ttfb_ms: u64,
     pub fcp_ms: u64,
+    #[serde(default)]
+    pub dom_nodes: Option<u32>,
 }
 
 /// One axe-core accessibility violation.

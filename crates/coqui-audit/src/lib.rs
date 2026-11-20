@@ -275,6 +275,11 @@ pub const RULES: &[RuleDef] = &[
         label: "Long blocking time",
         severity: IssueSeverity::Opportunity,
     },
+    RuleDef {
+        id: "dom_size_large",
+        label: "Large DOM size",
+        severity: IssueSeverity::Warning,
+    },
 ];
 
 pub fn rule_label(rule: &str) -> &str {
@@ -834,6 +839,17 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
                     &url.url,
                     "long_blocking_time",
                     Some(format!("{} ms blocking", vitals.tbt_ms)),
+                )?;
+            }
+            if let Some(nodes) = vitals.dom_nodes
+                && nodes > 1_500
+            {
+                issue(
+                    store,
+                    crawl_id,
+                    &url.url,
+                    "dom_size_large",
+                    Some(format!("{nodes} DOM nodes")),
                 )?;
             }
         }

@@ -216,6 +216,7 @@ const ISSUE_LABELS: Record<string, string> = {
   layout_shift: 'Layout shift',
   slow_ttfb: 'Slow server response',
   long_blocking_time: 'Long blocking time',
+  dom_size_large: 'Large DOM size',
 };
 
 const ISSUE_DESCRIPTIONS: Record<string, string> = {
@@ -263,6 +264,7 @@ const ISSUE_DESCRIPTIONS: Record<string, string> = {
   layout_shift: 'Cumulative Layout Shift is above the good threshold.',
   slow_ttfb: 'Time to First Byte is above the good threshold.',
   long_blocking_time: 'Total Blocking Time is above the good threshold.',
+  dom_size_large: 'The rendered DOM has more than 1,500 nodes.',
 };
 
 const issueLabel = (rule: string): string => {
