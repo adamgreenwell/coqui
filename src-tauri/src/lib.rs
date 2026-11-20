@@ -1038,6 +1038,28 @@ fn status_counts(
 }
 
 #[tauri::command]
+fn issue_audit_log(
+    state: State<'_, AppState>,
+    crawl_id: String,
+) -> Result<Vec<serde_json::Value>, String> {
+    let rows = state
+        .store
+        .issue_audit_log(&crawl_id, 50)
+        .map_err(|error| error.to_string())?;
+    Ok(rows
+        .into_iter()
+        .map(|(rule, action, reason, created_at)| {
+            serde_json::json!({
+                "rule": rule,
+                "action": action,
+                "reason": reason,
+                "createdAt": created_at,
+            })
+        })
+        .collect())
+}
+
+#[tauri::command]
 fn overrides(
     state: State<'_, AppState>,
     crawl_id: String,
@@ -1357,6 +1379,7 @@ pub fn run() {
             list_views,
             issues_for_rule,
             overrides,
+            issue_audit_log,
             set_override,
             clear_override,
             save_view,

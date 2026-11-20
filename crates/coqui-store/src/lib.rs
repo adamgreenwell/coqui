@@ -11,7 +11,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const SCHEMA_VERSION: i32 = 25;
+pub const SCHEMA_VERSION: i32 = 26;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -160,6 +160,15 @@ CREATE TABLE IF NOT EXISTS issue_overrides (
     severity TEXT NOT NULL,
     PRIMARY KEY (crawl_id, rule)
 );
+
+CREATE TABLE IF NOT EXISTS issue_audit_log (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    crawl_id   TEXT NOT NULL,
+    rule       TEXT NOT NULL,
+    action     TEXT NOT NULL,
+    reason     TEXT,
+    created_at INTEGER NOT NULL
+);
 "#;
 
 #[derive(Debug, thiserror::Error)]
@@ -215,6 +224,21 @@ pub struct Store {
     conn: Mutex<Connection>,
     ids: Mutex<std::collections::HashMap<(String, String), i64>>,
     root: std::path::PathBuf,
+}
+
+fn log_issue_action(
+    conn: &Connection,
+    crawl_id: &str,
+    rule: &str,
+    action: &str,
+    reason: Option<&str>,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO issue_audit_log (crawl_id, rule, action, reason, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![crawl_id, rule, action, reason, now_ms()],
+    )?;
+    Ok(())
 }
 
 impl Store {
@@ -501,20 +525,45 @@ impl Store {
     }
 
     pub fn suppress_rule(&self, crawl_id: &str, rule: &str, reason: Option<&str>) -> Result<()> {
-        self.lock()?.execute(
+        let conn = self.lock()?;
+        conn.execute(
             "INSERT INTO issue_suppressions (crawl_id, rule, reason) VALUES (?1, ?2, ?3)
              ON CONFLICT(crawl_id, rule) DO UPDATE SET reason = excluded.reason",
             params![crawl_id, rule, reason],
         )?;
+        log_issue_action(&conn, crawl_id, rule, "suppress", reason)?;
         Ok(())
     }
 
     pub fn restore_rule(&self, crawl_id: &str, rule: &str) -> Result<usize> {
-        let changed = self.lock()?.execute(
+        let conn = self.lock()?;
+        let changed = conn.execute(
             "DELETE FROM issue_suppressions WHERE crawl_id = ?1 AND rule = ?2",
             params![crawl_id, rule],
         )?;
+        if changed > 0 {
+            log_issue_action(&conn, crawl_id, rule, "restore", None)?;
+        }
         Ok(changed)
+    }
+
+    /// Recent suppression/override actions for a crawl.
+    pub fn issue_audit_log(
+        &self,
+        crawl_id: &str,
+        limit: u32,
+    ) -> Result<Vec<(String, String, Option<String>, i64)>> {
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT rule, action, reason, created_at FROM issue_audit_log
+             WHERE crawl_id = ?1 ORDER BY id DESC LIMIT ?2",
+        )?;
+        let rows = stmt
+            .query_map(params![crawl_id, limit.clamp(1, 200)], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
     }
 
     pub fn suppressed_rules(&self, crawl_id: &str) -> Result<Vec<(String, Option<String>)>> {
@@ -550,19 +599,25 @@ impl Store {
     }
 
     pub fn set_override(&self, crawl_id: &str, rule: &str, severity: &str) -> Result<()> {
-        self.lock()?.execute(
+        let conn = self.lock()?;
+        conn.execute(
             "INSERT INTO issue_overrides (crawl_id, rule, severity) VALUES (?1, ?2, ?3)
              ON CONFLICT(crawl_id, rule) DO UPDATE SET severity = excluded.severity",
             params![crawl_id, rule, severity],
         )?;
+        log_issue_action(&conn, crawl_id, rule, "override", Some(severity))?;
         Ok(())
     }
 
     pub fn clear_override(&self, crawl_id: &str, rule: &str) -> Result<usize> {
-        let changed = self.lock()?.execute(
+        let conn = self.lock()?;
+        let changed = conn.execute(
             "DELETE FROM issue_overrides WHERE crawl_id = ?1 AND rule = ?2",
             params![crawl_id, rule],
         )?;
+        if changed > 0 {
+            log_issue_action(&conn, crawl_id, rule, "clear_override", None)?;
+        }
         Ok(changed)
     }
 
@@ -2339,6 +2394,18 @@ fn migrate(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_links_crawl_from ON links (crawl_id, from_id);
          CREATE INDEX IF NOT EXISTS idx_links_crawl_to ON links (crawl_id, to_id);",
     )?;
+    if version < 26 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS issue_audit_log (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                crawl_id   TEXT NOT NULL,
+                rule       TEXT NOT NULL,
+                action     TEXT NOT NULL,
+                reason     TEXT,
+                created_at INTEGER NOT NULL
+            );",
+        )?;
+    }
     if version < 25 {
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS issue_suppressions (
@@ -3384,6 +3451,29 @@ mod tests {
     }
 
     #[test]
+    fn audit_log_records_issue_actions() {
+        let dir = std::env::temp_dir().join(format!("coqui-audit-log-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        store
+            .suppress_rule("c", "missing_title", Some("client request"))
+            .unwrap();
+        store
+            .set_override("c", "missing_title", "opportunity")
+            .unwrap();
+        store.restore_rule("c", "missing_title").unwrap();
+        let log = store.issue_audit_log("c", 10).unwrap();
+        assert_eq!(log.len(), 3);
+        assert_eq!(log[0].1, "restore");
+        assert!(
+            log.iter()
+                .any(|entry| entry.1 == "suppress" && entry.2.as_deref() == Some("client request"))
+        );
+        assert!(log.iter().any(|entry| entry.1 == "override"));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
     fn suppressed_rules_hide_issue_counts() {
         let dir = std::env::temp_dir().join(format!("coqui-suppress-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -3661,7 +3751,7 @@ mod tests {
         let version: i32 = conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 25);
+        assert_eq!(version, 26);
         std::fs::remove_dir_all(dir).ok();
     }
 
