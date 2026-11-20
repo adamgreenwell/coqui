@@ -430,7 +430,10 @@ fn render_serp(store: &Store, crawl_id: &str) -> Result<String, String> {
                 && url
                     .content_type
                     .as_deref()
-                    .map(|value| value.to_ascii_lowercase().contains("text/html"))
+                    .map(|value| {
+                        let value = value.to_ascii_lowercase();
+                        value.contains("text/html") || value.contains("application/xhtml")
+                    })
                     .unwrap_or(false)
                 && !url
                     .meta_robots
