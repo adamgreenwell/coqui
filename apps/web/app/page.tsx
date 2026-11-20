@@ -397,6 +397,9 @@ export default function Home() {
   const [issues, setIssues] = useState<IssueCount[]>([]);
   const [suppressed, setSuppressed] = useState<{ rule: string; reason: string | null }[]>([]);
   const [overrides, setOverrides] = useState<Record<string, string>>({});
+  const [auditLog, setAuditLog] = useState<
+    { rule: string; action: string; reason: string | null; createdAt: number }[]
+  >([]);
   const [issueDetails, setIssueDetails] = useState<
     { id: number; url: string; detail: string | null }[]
   >([]);
@@ -532,6 +535,11 @@ export default function Home() {
     setSuppressed(ignored);
     const rules = await invoke<{ rule: string; severity: string }[]>('overrides', { crawlId });
     setOverrides(Object.fromEntries(rules.map((row) => [row.rule, row.severity])));
+    setAuditLog(
+      await invoke<
+        { rule: string; action: string; reason: string | null; createdAt: number }[]
+      >('issue_audit_log', { crawlId }),
+    );
   }, []);
 
   useEffect(() => {
@@ -2594,6 +2602,20 @@ export default function Home() {
                       {ISSUE_LABELS[entry.rule] ?? entry.rule} ×
                     </button>
                   ))}
+                </div>
+              )}
+              {auditLog.length > 0 && (
+                <div className="issue-details">
+                  <h4>Recent issue actions</h4>
+                  <ul className="settings-reference">
+                    {auditLog.slice(0, 8).map((entry, index) => (
+                      <li key={`${entry.createdAt}-${index}`}>
+                        {new Date(entry.createdAt).toLocaleString()} — {entry.action}{' '}
+                        {ISSUE_LABELS[entry.rule] ?? entry.rule}
+                        {entry.reason ? ` (${entry.reason})` : ''}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               )}
               {activeIssue && issueDetails.length > 0 && (
