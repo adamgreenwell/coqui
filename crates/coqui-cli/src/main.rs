@@ -106,7 +106,8 @@ fn load_config(path: &Path, required: bool) -> Result<FileConfig, String> {
 }
 
 fn usage() -> &'static str {
-    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots] [--webhook URL]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR]\n       coqui report compare --with <crawl id> [--out DIR]\n       coqui reports\n       coqui export [--out DIR] [--family urls|issues|links|headers|images|a11y|structured|vitals|console|text|markdown|extractions|custom-js]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N] [--webhook URL]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui doctor [--out DIR]
+    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots] [--webhook URL]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR]\n       coqui report compare --with <crawl id> [--out DIR]\n       coqui reports\n       coqui export [--out DIR] [--family urls|issues|links|headers|images|a11y|structured|vitals|console|text|markdown|extractions|custom-js]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N] [--webhook URL]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui issue-settings <export|import> [--out DIR] [--file PATH]
+       coqui doctor [--out DIR]
        coqui mcp [--out DIR]"
 }
 
@@ -436,6 +437,62 @@ fn first_existing(paths: &[&str]) -> Option<String> {
         .iter()
         .find(|path| std::path::Path::new(path).exists())
         .map(|path| (*path).to_string())
+}
+
+fn run_issue_settings(values: &[String]) -> Result<(), String> {
+    let action = values
+        .first()
+        .ok_or("usage: issue-settings <export|import> [--out DIR] [--file PATH]")?;
+    let mut out = PathBuf::from("coqui-out");
+    let mut file = None;
+    let mut index = 1;
+    while index < values.len() {
+        match values[index].as_str() {
+            "--out" => {
+                index += 1;
+                out = PathBuf::from(values.get(index).ok_or("missing --out value")?);
+            }
+            "--file" => {
+                index += 1;
+                file = Some(PathBuf::from(
+                    values.get(index).ok_or("missing --file value")?,
+                ));
+            }
+            other => return Err(format!("unknown option '{other}'")),
+        }
+        index += 1;
+    }
+    let store = Store::open(out.join("coqui.db")).map_err(|error| error.to_string())?;
+    let crawl = store
+        .latest_crawl()
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "no crawl found".to_string())?;
+    match action.as_str() {
+        "export" => {
+            let path = file.unwrap_or_else(|| out.join("issue-settings.json"));
+            let value = store
+                .issue_settings(&crawl.id)
+                .map_err(|error| error.to_string())?;
+            std::fs::write(
+                &path,
+                serde_json::to_string_pretty(&value).map_err(|error| error.to_string())?,
+            )
+            .map_err(|error| error.to_string())?;
+            println!("issue-settings: {}", path.display());
+        }
+        "import" => {
+            let path = file.ok_or("import requires --file PATH")?;
+            let text = std::fs::read_to_string(&path).map_err(|error| error.to_string())?;
+            let value: serde_json::Value =
+                serde_json::from_str(&text).map_err(|error| error.to_string())?;
+            store
+                .apply_issue_settings(&crawl.id, &value)
+                .map_err(|error| error.to_string())?;
+            println!("issue-settings imported from {}", path.display());
+        }
+        other => return Err(format!("unknown action '{other}'")),
+    }
+    Ok(())
 }
 
 fn run_doctor(values: &[String]) -> Result<(), String> {
@@ -1349,6 +1406,15 @@ async fn main() {
     }
     if values.get(1).map(String::as_str) == Some("mcp") {
         match run_mcp(&values[2..]) {
+            Ok(()) => return,
+            Err(message) => {
+                eprintln!("{message}");
+                std::process::exit(2);
+            }
+        }
+    }
+    if values.get(1).map(String::as_str) == Some("issue-settings") {
+        match run_issue_settings(&values[2..]) {
             Ok(()) => return,
             Err(message) => {
                 eprintln!("{message}");
