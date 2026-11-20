@@ -33,6 +33,9 @@ Named after the *coquí*, the tiny frog native to Puerto Rico whose call is ever
 - [Packaging](docs/packaging.md) — installers, sidecars, release jobs
 - [Code signing runbook](docs/signing.md) — Windows/macOS signing steps (pending certificates)
 - [Benchmarks](docs/benchmarks.md) — 10k/50k/1M measurements
+- [Status](docs/status.md) — current milestone snapshot and next candidates
+- [Changelog](CHANGELOG.md) — release notes
+- [Regression validation](docs/validation/2026-11-20-regression.md) — post-change real-site crawl
 - [Wiki](https://github.com/adamgreenwell/coqui/wiki) — architecture and feature notes
 - [Parity matrix](docs/reference/parity-matrix.csv) — every feature, phase, size, priority
 - [Backlog](https://github.com/adamgreenwell/coqui/issues) and [project board](https://github.com/users/adamgreenwell/projects/16/views/1?layout_template=board)
