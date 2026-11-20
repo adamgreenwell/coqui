@@ -3487,6 +3487,7 @@ export default function Home() {
                   <option value="markdown">Page Markdown</option>
                   <option value="extractions">Custom extraction</option>
                   <option value="custom-js">Custom JS results</option>
+                  <option value="anchors">Anchor texts</option>
                   <option value="sitemap">Sitemap XML</option>
                   <option value="screenshots">Screenshots (folder)</option>
                   <option value="sitemap-bundle">Sitemap bundle (gzip)</option>
