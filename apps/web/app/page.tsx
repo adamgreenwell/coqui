@@ -219,6 +219,7 @@ const ISSUE_LABELS: Record<string, string> = {
   dom_size_large: 'Large DOM size',
   render_blocking_requests: 'Render-blocking requests',
   avoid_enormous_network_payload: 'Enormous network payload',
+  improve_image_delivery: 'Heavy image delivery',
 };
 
 const ISSUE_DESCRIPTIONS: Record<string, string> = {
@@ -269,6 +270,7 @@ const ISSUE_DESCRIPTIONS: Record<string, string> = {
   dom_size_large: 'The rendered DOM has more than 1,500 nodes.',
   render_blocking_requests: 'More than two render-blocking resources were found.',
   avoid_enormous_network_payload: 'Total transfer size exceeds 2 MB.',
+  improve_image_delivery: 'Image transfer size exceeds 1 MB.',
 };
 
 const issueLabel = (rule: string): string => {
@@ -3798,6 +3800,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 

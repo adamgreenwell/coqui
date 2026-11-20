@@ -388,6 +388,8 @@ pub struct WebVitals {
     pub transfer_bytes: Option<u64>,
     #[serde(default)]
     pub resource_count: Option<u32>,
+    #[serde(default)]
+    pub image_bytes: Option<u64>,
 }
 
 /// One axe-core accessibility violation.

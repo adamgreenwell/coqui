@@ -321,23 +321,62 @@ impl Renderer {
         }
 
         let network_bytes = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let image_bytes = Arc::new(std::sync::atomic::AtomicU64::new(0));
         let network_session = session.clone();
         let bytes_counter = network_bytes.clone();
+        let image_counter = image_bytes.clone();
         let mut byte_events = self.client.subscribe();
         let bytes_task = AbortOnDrop(tokio::spawn(async move {
+            let mut images: std::collections::HashSet<String> = std::collections::HashSet::new();
             while let Ok(event) = byte_events.recv().await {
-                if event.get("method").and_then(Value::as_str) == Some("Network.loadingFinished")
-                    && event.get("sessionId").and_then(Value::as_str)
-                        == Some(network_session.as_str())
-                    && let Some(length) = event
-                        .get("params")
-                        .and_then(|params| params.get("encodedDataLength"))
-                        .and_then(Value::as_u64)
+                if event.get("sessionId").and_then(Value::as_str) != Some(network_session.as_str())
                 {
-                    bytes_counter.fetch_add(length, Ordering::Relaxed);
+                    continue;
+                }
+                let method = event
+                    .get("method")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                let params = event.get("params");
+                match method {
+                    "Network.responseReceived" => {
+                        let request = params
+                            .and_then(|params| params.get("requestId"))
+                            .and_then(Value::as_str);
+                        let mime = params
+                            .and_then(|params| params.get("response"))
+                            .and_then(|response| response.get("mimeType"))
+                            .and_then(Value::as_str)
+                            .unwrap_or_default();
+                        let kind = params
+                            .and_then(|params| params.get("type"))
+                            .and_then(Value::as_str)
+                            .unwrap_or_default();
+                        if let Some(request) = request
+                            && (kind.eq_ignore_ascii_case("image") || mime.starts_with("image/"))
+                        {
+                            images.insert(request.to_string());
+                        }
+                    }
+                    "Network.loadingFinished" => {
+                        if let Some(request) = params
+                            .and_then(|params| params.get("requestId"))
+                            .and_then(Value::as_str)
+                            && let Some(length) = params
+                                .and_then(|params| params.get("encodedDataLength"))
+                                .and_then(Value::as_u64)
+                        {
+                            bytes_counter.fetch_add(length, Ordering::Relaxed);
+                            if images.remove(request) {
+                                image_counter.fetch_add(length, Ordering::Relaxed);
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
         }));
+
         let _ = self
             .client
             .call(
@@ -449,7 +488,7 @@ impl Renderer {
                 .call(
                     "Runtime.evaluate",
                     json!({
-                        "expression": "(async () => new Promise((resolve) => { let lcp = 0, cls = 0, tbt = 0; try { new PerformanceObserver((list) => { for (const entry of list.getEntries()) lcp = entry.startTime; }).observe({ type: 'largest-contentful-paint', buffered: true }); } catch (error) {} try { new PerformanceObserver((list) => { for (const entry of list.getEntries()) { if (!entry.hadRecentInput) cls += entry.value; } }).observe({ type: 'layout-shift', buffered: true }); } catch (error) {} try { new PerformanceObserver((list) => { for (const entry of list.getEntries()) tbt += Math.max(0, entry.duration - 50); }).observe({ type: 'longtask', buffered: true }); } catch (error) {} setTimeout(() => { const nav = performance.getEntriesByType('navigation')[0]; const paint = performance.getEntriesByName('first-contentful-paint')[0]; const resources = performance.getEntriesByType('resource'); const blockingSupported = resources.some((entry) => 'renderBlockingStatus' in entry); const blocking = blockingSupported ? resources.filter((entry) => entry.renderBlockingStatus === 'blocking').length : document.querySelectorAll('head script[src]:not([async]):not([defer]):not([type=\"module\"])').length + [...document.querySelectorAll('head link[rel=\"stylesheet\"][href]')].filter((link) => !link.media || window.matchMedia(link.media).matches).length; const transferBytes = (nav ? nav.transferSize || 0 : 0) + resources.reduce((sum, entry) => sum + (entry.transferSize || 0), 0); resolve(JSON.stringify({ lcpMs: Math.round(lcp), cls: Number(cls.toFixed(3)), tbtMs: Math.round(tbt), ttfbMs: nav ? Math.round(nav.responseStart) : 0, fcpMs: paint ? Math.round(paint.startTime) : 0, domNodes: document.getElementsByTagName('*').length, renderBlocking: blocking, transferBytes, resourceCount: resources.length })); }, 300); }))()",
+                        "expression": "(async () => new Promise((resolve) => { let lcp = 0, cls = 0, tbt = 0; try { new PerformanceObserver((list) => { for (const entry of list.getEntries()) lcp = entry.startTime; }).observe({ type: 'largest-contentful-paint', buffered: true }); } catch (error) {} try { new PerformanceObserver((list) => { for (const entry of list.getEntries()) { if (!entry.hadRecentInput) cls += entry.value; } }).observe({ type: 'layout-shift', buffered: true }); } catch (error) {} try { new PerformanceObserver((list) => { for (const entry of list.getEntries()) tbt += Math.max(0, entry.duration - 50); }).observe({ type: 'longtask', buffered: true }); } catch (error) {} setTimeout(() => { const nav = performance.getEntriesByType('navigation')[0]; const paint = performance.getEntriesByName('first-contentful-paint')[0]; const resources = performance.getEntriesByType('resource'); const blockingSupported = resources.some((entry) => 'renderBlockingStatus' in entry); const blocking = blockingSupported ? resources.filter((entry) => entry.renderBlockingStatus === 'blocking').length : document.querySelectorAll('head script[src]:not([async]):not([defer]):not([type=\"module\"])').length + [...document.querySelectorAll('head link[rel=\"stylesheet\"][href]')].filter((link) => !link.media || window.matchMedia(link.media).matches).length; const transferBytes = (nav ? nav.transferSize || 0 : 0) + resources.reduce((sum, entry) => sum + (entry.transferSize || 0), 0); resolve(JSON.stringify({ lcpMs: Math.round(lcp), cls: Number(cls.toFixed(3)), tbtMs: Math.round(tbt), ttfbMs: nav ? Math.round(nav.responseStart) : 0, fcpMs: paint ? Math.round(paint.startTime) : 0, domNodes: document.getElementsByTagName('*').length, renderBlocking: blocking, transferBytes, resourceCount: resources.length, imageBytes: resources.filter((entry) => entry.initiatorType === 'img').reduce((sum, entry) => sum + (entry.transferSize || 0), 0) })); }, 300); }))()",
                         "awaitPromise": true,
                         "returnByValue": true
                     }),
@@ -468,6 +507,10 @@ impl Renderer {
             let total = network_bytes.load(Ordering::Relaxed);
             if total > 0 {
                 vitals.transfer_bytes = Some(total);
+            }
+            let images = image_bytes.load(Ordering::Relaxed);
+            if images > 0 {
+                vitals.image_bytes = Some(vitals.image_bytes.unwrap_or(0).max(images));
             }
         }
         bytes_task.0.abort();

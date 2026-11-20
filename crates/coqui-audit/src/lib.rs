@@ -290,6 +290,11 @@ pub const RULES: &[RuleDef] = &[
         label: "Enormous network payload",
         severity: IssueSeverity::Warning,
     },
+    RuleDef {
+        id: "improve_image_delivery",
+        label: "Heavy image delivery",
+        severity: IssueSeverity::Warning,
+    },
 ];
 
 pub fn rule_label(rule: &str) -> &str {
@@ -886,6 +891,17 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
                         bytes as f64 / 1_048_576.0,
                         vitals.resource_count.unwrap_or(0)
                     )),
+                )?;
+            }
+            if let Some(bytes) = vitals.image_bytes
+                && bytes > 1_000_000
+            {
+                issue(
+                    store,
+                    crawl_id,
+                    &url.url,
+                    "improve_image_delivery",
+                    Some(format!("{:.1} MB of images", bytes as f64 / 1_048_576.0)),
                 )?;
             }
         }

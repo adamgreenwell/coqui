@@ -3652,6 +3652,7 @@ mod tests {
                     render_blocking: None,
                     transfer_bytes: None,
                     resource_count: None,
+                    image_bytes: None,
                 }),
                 headers: vec![("content-type".into(), "text/html".into())],
                 redirect_target: None,
