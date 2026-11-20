@@ -26,6 +26,7 @@ pub fn router(store: Arc<Store>) -> Router {
         .route("/crawls", get(list_crawls))
         .route("/crawls/{id}", get(get_crawl))
         .route("/crawls/{id}/issues", get(issue_counts))
+        .route("/crawls/{id}/issues/{rule}", get(issue_rule))
         .route("/crawls/{id}/urls", get(list_urls))
         .route("/crawls/{id}/export/{family}", get(export_csv))
         .route("/crawls/{id}/report/{kind}", get(report))
@@ -64,6 +65,20 @@ async fn issue_counts(
     Path(id): Path<String>,
 ) -> Result<Json<Vec<IssueCount>>, (StatusCode, String)> {
     state.store.issue_counts(&id).map(Json).map_err(internal)
+}
+
+async fn issue_rule(
+    State(state): State<AppState>,
+    Path((id, rule)): Path<(String, String)>,
+) -> Result<Json<Vec<serde_json::Value>>, (StatusCode, String)> {
+    let rows = state.store.issues_for_rule(&id, &rule).map_err(internal)?;
+    Ok(Json(
+        rows.into_iter()
+            .map(|(url_id, url, detail)| {
+                serde_json::json!({"id": url_id, "url": url, "detail": detail})
+            })
+            .collect(),
+    ))
 }
 
 #[derive(Deserialize)]
