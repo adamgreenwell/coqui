@@ -505,6 +505,14 @@ fn render_performance(
         body.push_str(&format!("<tr><td>{}</td><td>{ms}</td></tr>", escape(url)));
     }
     body.push_str("</table>");
+    let timeline = store.throughput_buckets(crawl_id).unwrap_or_default();
+    if !timeline.is_empty() {
+        body.push_str("<h2>Throughput by second</h2><table><tr><th>Second</th><th>URLs</th></tr>");
+        for (second, count) in timeline.iter().take(120) {
+            body.push_str(&format!("<tr><td>{second}</td><td>{count}</td></tr>"));
+        }
+        body.push_str("</table>");
+    }
     Ok(shell(&crawl.seed, "Performance", &body))
 }
 
