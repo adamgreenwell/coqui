@@ -34,7 +34,11 @@ Synthetic 1M-row export: a 1,000,000-row crawl database (176.3 MB) exported in *
 
 Node v26.13.1, debug build, concurrency 8. Rendered runs use `--render --screenshots --a11y --vitals`.
 
-## Two-crawl comparison
+'## 2k re-run (2026-11-20)
+
+Two 2,000-URL runs after the recent schema/crawl changes: **12.176 s (164.3 URLs/s)** and **10.139 s (197.3 URLs/s)**. The host had ~49 lingering Edge processes and 20 Node processes from render/PDF runs, so these are load-affected; the earlier idle baseline was 6.833 s (292.7 URLs/s). No crawl hot-path change is expected to explain a genuine regression, and the numbers are recorded for transparency.
+
+## Two-crawl comparison'
 
 `node tools/bench/compare.mjs --urls 10000` crawls the bulk fixture twice into one database and times `coqui report compare`.
 
@@ -51,6 +55,7 @@ Node v26.13.1, debug build, concurrency 8. Rendered runs use `--render --screens
 - Rendering, Lighthouse and axe add their own costs and are measured separately.
 - The fixture is loopback-only, so network latency is not represented.
 - Port must be free; the harness fails fast if the fixture cannot start.
+
 
 
 
