@@ -2546,6 +2546,13 @@ export default function Home() {
                   <button
                     className="secondary"
                     type="button"
+                    onClick={() => void copyValue('Detail', JSON.stringify(detail, null, 2))}
+                  >
+                    {copied === 'Detail' ? 'Copied JSON' : 'Copy JSON'}
+                  </button>
+                  <button
+                    className="secondary"
+                    type="button"
                     disabled={!detail.url.title}
                     onClick={() => void copyValue('title', String(detail.url.title ?? ''))}
                   >
@@ -2696,6 +2703,11 @@ export default function Home() {
                     placeholder="Find in source"
                     style={{ marginTop: 8, width: '100%' }}
                   />
+                )}
+                {sourceHtml && (
+                  <span className="muted" style={{ marginLeft: 8 }}>
+                    {(sourceHtml.length / 1024).toFixed(0)} KB
+                  </span>
                 )}
                 {sourceHtml && <pre className="source-view">{highlightSource(sourceHtml)}</pre>}
                 {detail.screenshot && (
