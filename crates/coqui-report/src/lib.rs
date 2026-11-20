@@ -68,6 +68,12 @@ pub fn render_html(store: &Store, crawl_id: &str) -> Result<String, String> {
         blocked,
         noindex
     ));
+    if let (Some(started), Some(finished)) = (crawl.started_at, crawl.finished_at) {
+        let seconds = (finished - started) as f64 / 1000.0;
+        if seconds > 0.0 {
+            html.push_str(&format!("<br>{:.1} URLs/s", urls.len() as f64 / seconds));
+        }
+    }
     html.push_str("</div>");
 
     html.push_str("<h2>Status codes</h2><table><tr><th>Status</th><th>URLs</th></tr>");
@@ -479,7 +485,18 @@ fn render_performance(
         .collect();
     slowest.sort_by_key(|item| std::cmp::Reverse(item.0));
     slowest.truncate(top.unwrap_or(25));
-    let mut body = String::from("<table><tr><th>URL</th><th>ms</th></tr>");
+    let mut body = String::new();
+    if let (Some(started), Some(finished)) = (crawl.started_at, crawl.finished_at) {
+        let seconds = (finished - started) as f64 / 1000.0;
+        if seconds > 0.0 {
+            body.push_str(&format!(
+                "<p class=\"muted\">{:.1} URLs/s over {:.1}s</p>",
+                urls.len() as f64 / seconds,
+                seconds
+            ));
+        }
+    }
+    body.push_str("<table><tr><th>URL</th><th>ms</th></tr>");
     for (ms, url) in &slowest {
         body.push_str(&format!("<tr><td>{}</td><td>{ms}</td></tr>", escape(url)));
     }

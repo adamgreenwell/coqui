@@ -1,6 +1,6 @@
 //! Headless Coqui CLI. First cut: `coqui crawl`.
 
-use coqui_core::{CrawlConfig, CrawlProgress, now_ms};
+use coqui_core::{CrawlConfig, CrawlProgress, CrawlStatus, now_ms};
 use coqui_store::Store;
 use serde::Deserialize;
 use std::io::{BufRead, Write};
@@ -1681,6 +1681,9 @@ async fn main() {
                 .add_extractor(&crawl_id, name, selector)
                 .expect("save extractor");
         }
+        store
+            .mark_running(&crawl_id, now_ms())
+            .expect("mark crawl running");
         println!(
             "coqui: crawling {} ({}) into {}",
             args.seed,
@@ -1713,6 +1716,9 @@ async fn main() {
     match result {
         Ok(result) => {
             let counts = coqui_audit::analyze_crawl(&store, &crawl_id).expect("analyse crawl");
+            store
+                .mark_finished(&crawl_id, CrawlStatus::Completed, now_ms())
+                .expect("mark crawl finished");
             let csv = args.out.join("urls.csv");
             store.export_csv(&crawl_id, &csv).expect("export csv");
             println!(
@@ -1725,6 +1731,7 @@ async fn main() {
             println!("csv: {}", csv.display());
         }
         Err(error) => {
+            let _ = store.mark_finished(&crawl_id, CrawlStatus::Failed, now_ms());
             eprintln!("crawl failed: {error}");
             std::process::exit(1);
         }
