@@ -67,10 +67,18 @@ async fn issue_counts(
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct UrlQuery {
     page: Option<u32>,
     limit: Option<u32>,
     query: Option<String>,
+    status: Option<u16>,
+    status_class: Option<u16>,
+    content_class: Option<String>,
+    max_depth: Option<u32>,
+    indexability: Option<String>,
+    sort: Option<String>,
+    descending: Option<bool>,
 }
 
 async fn list_urls(
@@ -80,34 +88,28 @@ async fn list_urls(
 ) -> Result<Json<UrlPage>, (StatusCode, String)> {
     let page = params.page.unwrap_or(1).max(1);
     let limit = params.limit.unwrap_or(50).clamp(1, 500);
-    let page_result = match params
+    let search = params
         .query
         .as_deref()
         .map(str::trim)
-        .filter(|q| !q.is_empty())
-    {
-        Some(search) => state
-            .store
-            .list_urls_filtered(
-                &id,
-                page,
-                limit,
-                None,
-                Some(search),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                false,
-            )
-            .map_err(internal)?,
-        None => state
-            .store
-            .list_urls(&id, page, limit, None)
-            .map_err(internal)?,
-    };
+        .filter(|query| !query.is_empty());
+    let page_result = state
+        .store
+        .list_urls_filtered(
+            &id,
+            page,
+            limit,
+            None,
+            search,
+            params.status,
+            params.status_class,
+            params.content_class.as_deref(),
+            params.max_depth,
+            params.indexability.as_deref(),
+            params.sort.as_deref(),
+            params.descending.unwrap_or(false),
+        )
+        .map_err(internal)?;
     Ok(Json(page_result))
 }
 
