@@ -64,6 +64,9 @@ struct FetchOutcome {
     chain: Vec<String>,
     content_type: Option<String>,
     body: Option<String>,
+    /// Raw HTTP body preserved when rendering replaces `body` with the DOM.
+    raw_body: Option<String>,
+    rendered: bool,
     size_bytes: u64,
     elapsed_ms: u64,
     error: Option<String>,
@@ -470,6 +473,11 @@ pub async fn run_crawl(
                     store.replace_images(&crawl_id, page_id, &page.images)?;
                     if config.store_text || config.store_html {
                         let html = if config.store_html {
+                            outcome.raw_body.as_deref().or(outcome.body.as_deref())
+                        } else {
+                            None
+                        };
+                        let rendered_html = if config.store_html && outcome.rendered {
                             outcome.body.as_deref()
                         } else {
                             None
@@ -480,6 +488,7 @@ pub async fn run_crawl(
                             &page.text,
                             &page.markdown,
                             html,
+                            rendered_html,
                         )?;
                     }
                     for link in &page.links {
@@ -719,6 +728,8 @@ async fn fetch(
                     chain,
                     content_type: None,
                     body: None,
+                    raw_body: None,
+                    rendered: false,
                     size_bytes: 0,
                     elapsed_ms: started.elapsed().as_millis() as u64,
                     error: Some(truncate(&error.to_string(), 500)),
@@ -807,6 +818,8 @@ async fn fetch(
                         chain,
                         content_type,
                         body: None,
+                        raw_body: None,
+                        rendered: false,
                         size_bytes,
                         elapsed_ms: started.elapsed().as_millis() as u64,
                         error: Some(truncate(&error.to_string(), 500)),
@@ -826,6 +839,8 @@ async fn fetch(
         let mut axe = Vec::new();
         let mut custom_js: Vec<serde_json::Value> = Vec::new();
         let mut vitals = None;
+        let mut raw_body: Option<String> = None;
+        let mut rendered = false;
         let blocked = looks_blocked(status, &response_headers, body.as_deref());
         let http_elapsed_ms = started.elapsed().as_millis() as u64;
         if !blocked
@@ -834,14 +849,16 @@ async fn fetch(
             && (200..300).contains(&status)
         {
             match renderer.render_page(&current).await {
-                Ok(rendered) => {
-                    size_bytes = rendered.html.len() as u64;
-                    body = Some(rendered.html);
-                    console = rendered.console;
-                    screenshot = rendered.screenshot;
-                    axe = rendered.axe;
-                    custom_js = rendered.custom_js;
-                    vitals = rendered.vitals;
+                Ok(rendered_page) => {
+                    raw_body = body.take();
+                    rendered = true;
+                    size_bytes = rendered_page.html.len() as u64;
+                    body = Some(rendered_page.html);
+                    console = rendered_page.console;
+                    screenshot = rendered_page.screenshot;
+                    axe = rendered_page.axe;
+                    custom_js = rendered_page.custom_js;
+                    vitals = rendered_page.vitals;
                 }
                 Err(error) => {
                     if std::env::var_os("COQUI_DEBUG_CRAWL").is_some() {
@@ -856,6 +873,8 @@ async fn fetch(
             chain,
             content_type,
             body,
+            raw_body,
+            rendered,
             size_bytes,
             elapsed_ms: http_elapsed_ms,
             error: None,
@@ -875,6 +894,8 @@ async fn fetch(
         chain,
         content_type: None,
         body: None,
+        raw_body: None,
+        rendered: false,
         size_bytes: 0,
         elapsed_ms: started.elapsed().as_millis() as u64,
         error: Some("too many redirects or unresolvable redirect target".to_string()),

@@ -1200,7 +1200,7 @@ mod tests {
                 .unwrap()
                 .unwrap();
             store
-                .save_page_text(id, url_id, &text, &text, None)
+                .save_page_text(id, url_id, &text, &text, None, None)
                 .unwrap();
         }
         let counts = analyze_crawl(&store, id).unwrap();
@@ -1229,6 +1229,7 @@ mod tests {
                 url_id,
                 "We recieve teh data",
                 "We recieve teh data",
+                None,
                 None,
             )
             .unwrap();

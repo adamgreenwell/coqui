@@ -11,7 +11,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const SCHEMA_VERSION: i32 = 31;
+pub const SCHEMA_VERSION: i32 = 32;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -189,6 +189,7 @@ CREATE TABLE IF NOT EXISTS page_text (
     text     TEXT NOT NULL,
     markdown TEXT NOT NULL,
     html     TEXT,
+    rendered_html TEXT,
     PRIMARY KEY (crawl_id, url_id)
 );
 "#;
@@ -1645,14 +1646,16 @@ impl Store {
         text: &str,
         markdown: &str,
         html: Option<&str>,
+        rendered_html: Option<&str>,
     ) -> Result<()> {
         self.lock()?.execute(
-            "INSERT INTO page_text (crawl_id, url_id, text, markdown, html)
-             VALUES (?1, ?2, ?3, ?4, ?5)
+            "INSERT INTO page_text (crawl_id, url_id, text, markdown, html, rendered_html)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
              ON CONFLICT(crawl_id, url_id) DO UPDATE SET text = excluded.text,
                                                         markdown = excluded.markdown,
-                                                        html = COALESCE(excluded.html, page_text.html)",
-            params![crawl_id, url_id, text, markdown, html],
+                                                        html = COALESCE(excluded.html, page_text.html),
+                                                        rendered_html = COALESCE(excluded.rendered_html, page_text.rendered_html)",
+            params![crawl_id, url_id, text, markdown, html, rendered_html],
         )?;
         Ok(())
     }
@@ -1663,6 +1666,19 @@ impl Store {
             .lock()?
             .query_row(
                 "SELECT html FROM page_text WHERE crawl_id = ?1 AND url_id = ?2",
+                params![crawl_id, url_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(html.flatten())
+    }
+
+    /// Stored rendered DOM for a URL, when rendering stored it.
+    pub fn page_rendered_html(&self, crawl_id: &str, url_id: i64) -> Result<Option<String>> {
+        let html: Option<Option<String>> = self
+            .lock()?
+            .query_row(
+                "SELECT rendered_html FROM page_text WHERE crawl_id = ?1 AND url_id = ?2",
                 params![crawl_id, url_id],
                 |row| row.get(0),
             )
@@ -2704,6 +2720,22 @@ fn migrate(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_links_crawl_from ON links (crawl_id, from_id);
          CREATE INDEX IF NOT EXISTS idx_links_crawl_to ON links (crawl_id, to_id);",
     )?;
+    if version < 32 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS page_text (
+                crawl_id TEXT NOT NULL,
+                url_id   INTEGER NOT NULL,
+                text     TEXT NOT NULL,
+                markdown TEXT NOT NULL,
+                html     TEXT,
+                rendered_html TEXT,
+                PRIMARY KEY (crawl_id, url_id)
+            );",
+        )?;
+        if !has_column(conn, "page_text", "rendered_html")? {
+            conn.execute("ALTER TABLE page_text ADD COLUMN rendered_html TEXT", [])?;
+        }
+    }
     if version < 31 {
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS page_text (
@@ -3590,7 +3622,14 @@ mod tests {
             .unwrap();
         let id = store.url_id("c1", "https://example.com/").unwrap().unwrap();
         store
-            .save_page_text("c1", id, "hello world", "# Hello\n\nhello world", None)
+            .save_page_text(
+                "c1",
+                id,
+                "hello world",
+                "# Hello\n\nhello world",
+                None,
+                None,
+            )
             .unwrap();
         store
             .save_page_text(
@@ -3599,11 +3638,16 @@ mod tests {
                 "hello world",
                 "# Hello\n\nhello world",
                 Some("<h1>Hello</h1>"),
+                Some("<html><body><h1>Hello</h1></body></html>"),
             )
             .unwrap();
         assert_eq!(
             store.page_html("c1", id).unwrap().as_deref(),
             Some("<h1>Hello</h1>")
+        );
+        assert_eq!(
+            store.page_rendered_html("c1", id).unwrap().as_deref(),
+            Some("<html><body><h1>Hello</h1></body></html>")
         );
         let text = dir.join("text.csv");
         assert_eq!(store.export_text_csv("c1", &text).unwrap(), 1);
@@ -4407,7 +4451,7 @@ mod tests {
         let version: i32 = conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 31);
+        assert_eq!(version, 32);
         std::fs::remove_dir_all(dir).ok();
     }
 
