@@ -3648,6 +3648,7 @@ mod tests {
                     tbt_ms: 250,
                     ttfb_ms: 900,
                     fcp_ms: 1200,
+                    dom_nodes: None,
                 }),
                 headers: vec![("content-type".into(), "text/html".into())],
                 redirect_target: None,
