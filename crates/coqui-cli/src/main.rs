@@ -106,7 +106,7 @@ fn load_config(path: &Path, required: bool) -> Result<FileConfig, String> {
 }
 
 fn usage() -> &'static str {
-    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots] [--webhook URL]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR]\n       coqui report compare --with <crawl id> [--out DIR]\n       coqui reports\n       coqui export [--out DIR] [--family urls|issues|links|headers|images|a11y|structured|vitals|console|text|markdown|extractions|custom-js]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N] [--webhook URL]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui serve [--out DIR] [--addr 127.0.0.1:8787]
+    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots] [--webhook URL]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR]\n       coqui report compare --with <crawl id> [--out DIR]\n       coqui reports\n       coqui export [--out DIR] [--family urls|issues|links|headers|images|a11y|structured|vitals|console|text|markdown|extractions|custom-js]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N] [--webhook URL]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui serve [--out DIR] [--addr 127.0.0.1:8787] [--token TOKEN] [--token TOKEN]
        coqui issue-settings <export|import|diff> [--out DIR] [--file PATH] [--with CRAWL]
        coqui doctor [--out DIR]
        coqui mcp [--out DIR]"
@@ -443,6 +443,7 @@ fn first_existing(paths: &[&str]) -> Option<String> {
 async fn run_serve(values: &[String]) -> Result<(), String> {
     let mut out = PathBuf::from("coqui-out");
     let mut addr = "127.0.0.1:8787".to_string();
+    let mut token = std::env::var("COQUI_API_TOKEN").ok();
     let mut index = 0;
     while index < values.len() {
         match values[index].as_str() {
@@ -454,14 +455,25 @@ async fn run_serve(values: &[String]) -> Result<(), String> {
                 index += 1;
                 addr = values.get(index).ok_or("missing --addr value")?.clone();
             }
+            "--token" => {
+                index += 1;
+                token = Some(values.get(index).ok_or("missing --token value")?.clone());
+            }
             other => return Err(format!("unknown option '{other}'")),
         }
         index += 1;
     }
     let store =
         std::sync::Arc::new(Store::open(out.join("coqui.db")).map_err(|error| error.to_string())?);
-    println!("coqui serve: http://{addr}");
-    coqui_api::serve(store, &addr).await
+    println!(
+        "coqui serve: http://{addr}{}",
+        if token.is_some() {
+            " (bearer token required)"
+        } else {
+            ""
+        }
+    );
+    coqui_api::serve(store, &addr, token).await
 }
 
 fn run_issue_settings(values: &[String]) -> Result<(), String> {
