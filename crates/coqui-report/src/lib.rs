@@ -453,9 +453,13 @@ fn render_hreflang_return(store: &Store, crawl_id: &str) -> Result<String, Strin
                     Some(status) => status.to_string(),
                 },
             };
-            let has_return = target
-                .map(|target| target.hreflang.iter().any(|back| back.url == url.url))
-                .unwrap_or(false);
+            let has_return = target.and_then(|target| {
+                if target.status == Some(200) && !target.blocked {
+                    Some(target.hreflang.iter().any(|back| back.url == url.url))
+                } else {
+                    None
+                }
+            });
             let mut flags = Vec::new();
             if target.is_none() {
                 missing_target += 1;
@@ -464,9 +468,13 @@ fn render_hreflang_return(store: &Store, crawl_id: &str) -> Result<String, Strin
                 non_200 += 1;
                 flags.push("target non-200");
             }
-            if !has_return {
-                missing_return += 1;
-                flags.push("missing return link");
+            match has_return {
+                Some(true) => {}
+                Some(false) => {
+                    missing_return += 1;
+                    flags.push("missing return link");
+                }
+                None => flags.push("return unknown"),
             }
             rows.push((
                 url.url.clone(),
@@ -490,7 +498,11 @@ fn render_hreflang_return(store: &Store, crawl_id: &str) -> Result<String, Strin
             escape(lang),
             escape(target),
             escape(status),
-            if *has_return { "yes" } else { "no" },
+            match has_return {
+                Some(true) => "yes",
+                Some(false) => "no",
+                None => "unknown",
+            },
             escape(flags)
         ));
     }
