@@ -30,12 +30,13 @@ curl http://127.0.0.1:4321/crawls
 curl "http://127.0.0.1:4321/crawls/<id>/urls?limit=2"
 ```
 
-Verified locally: `/health` returned `ok`, `/crawls` returned the validation crawl (`totalUrls=40`), `/urls?limit=2` returned 2 rows, and `?status=200&contentClass=html&sort=url&descending=true` applied the same filters as the grid (39 status-200 rows, 40 HTML) and `/issues` returned 15 rule rows; `/issues/title_too_long` returned 14 URLs with details. `/export/vitals` returned 200 with 3,124 bytes of `text/csv`; `/report/overview` returned 200 with 1,211 bytes of `text/html` and an unknown kind returned 400.
+With `--token secret123` verified locally: `/health` 200, `/crawls` 401 without the header and 200 with `Authorization: Bearer secret123`; `/health` returned `ok`, `/crawls` returned the validation crawl (`totalUrls=40`), `/urls?limit=2` returned 2 rows, and `?status=200&contentClass=html&sort=url&descending=true` applied the same filters as the grid (39 status-200 rows, 40 HTML) and `/issues` returned 15 rule rows; `/issues/title_too_long` returned 14 URLs with details. `/export/vitals` returned 200 with 3,124 bytes of `text/csv`; `/report/overview` returned 200 with 1,211 bytes of `text/html` and an unknown kind returned 400.
 
 ## Notes
 
 - Writes (starting crawls, exports) are not exposed yet.
 - The server uses the same SQLite database as the CLI/app; running it while a crawl writes is safe for reads.
+
 
 
 

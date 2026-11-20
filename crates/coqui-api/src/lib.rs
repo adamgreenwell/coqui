@@ -5,8 +5,9 @@ use std::sync::Arc;
 use axum::{
     Json, Router,
     body::Body,
-    extract::{Path, Query, State},
+    extract::{Path, Query, Request, State},
     http::{StatusCode, header},
+    middleware::{self, Next},
     response::Response,
     routing::get,
 };
@@ -19,10 +20,10 @@ struct AppState {
     store: Arc<Store>,
 }
 
-/// Build the read-only API router for a store.
-pub fn router(store: Arc<Store>) -> Router {
-    Router::new()
-        .route("/health", get(health))
+/// Build the read-only API router. When `token` is set, every route except `/health`
+/// requires `Authorization: Bearer <token>`.
+pub fn router(store: Arc<Store>, token: Option<String>) -> Router {
+    let protected = Router::new()
         .route("/crawls", get(list_crawls))
         .route("/crawls/{id}", get(get_crawl))
         .route("/crawls/{id}/issues", get(issue_counts))
@@ -30,15 +31,45 @@ pub fn router(store: Arc<Store>) -> Router {
         .route("/crawls/{id}/urls", get(list_urls))
         .route("/crawls/{id}/export/{family}", get(export_csv))
         .route("/crawls/{id}/report/{kind}", get(report))
-        .with_state(AppState { store })
+        .with_state(AppState { store });
+    let protected = if token.is_some() {
+        protected.layer(middleware::from_fn_with_state(token, require_token))
+    } else {
+        protected
+    };
+    Router::new().route("/health", get(health)).merge(protected)
+}
+
+async fn require_token(
+    State(token): State<Option<String>>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let Some(expected) = token else {
+        return next.run(request).await;
+    };
+    let authorized = request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value == format!("Bearer {expected}"))
+        .unwrap_or(false);
+    if authorized {
+        next.run(request).await
+    } else {
+        Response::builder()
+            .status(StatusCode::UNAUTHORIZED)
+            .body(Body::from("unauthorized"))
+            .unwrap_or_default()
+    }
 }
 
 /// Serve the API on an address until the process exits.
-pub async fn serve(store: Arc<Store>, addr: &str) -> Result<(), String> {
+pub async fn serve(store: Arc<Store>, addr: &str, token: Option<String>) -> Result<(), String> {
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .map_err(|error| error.to_string())?;
-    axum::serve(listener, router(store))
+    axum::serve(listener, router(store, token))
         .await
         .map_err(|error| error.to_string())
 }
