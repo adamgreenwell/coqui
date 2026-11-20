@@ -290,6 +290,7 @@ pub async fn run_crawl(
             accessibility: config.accessibility,
             custom_js: config.custom_js.clone(),
             web_vitals: config.web_vitals,
+            wait_selector: config.render_wait_selector.clone(),
         };
         Some(
             RenderPool::connect(

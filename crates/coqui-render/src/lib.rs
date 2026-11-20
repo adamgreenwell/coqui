@@ -45,6 +45,7 @@ pub struct RenderOptions {
     pub accessibility: bool,
     pub custom_js: Vec<String>,
     pub web_vitals: bool,
+    pub wait_selector: Option<String>,
 }
 
 /// Rendered HTML plus page evidence.
@@ -341,6 +342,35 @@ impl Renderer {
                 return Err(RenderError::Timeout(20_000));
             }
             tokio::time::sleep(Duration::from_millis(60)).await;
+        }
+        if let Some(selector) = &self.options.wait_selector {
+            let expression = format!(
+                "!!document.querySelector({})",
+                serde_json::to_string(selector).unwrap_or_else(|_| "\"\"".to_string())
+            );
+            let selector_deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+            loop {
+                let probe = self
+                    .client
+                    .call(
+                        "Runtime.evaluate",
+                        json!({"expression": expression, "returnByValue": true}),
+                        Some(&session),
+                    )
+                    .await?;
+                let found = probe
+                    .get("result")
+                    .and_then(|value| value.get("value"))
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                if found {
+                    break;
+                }
+                if tokio::time::Instant::now() >= selector_deadline {
+                    return Err(RenderError::Timeout(10_000));
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
         }
         if self.wait_ms > 0 {
             tokio::time::sleep(Duration::from_millis(self.wait_ms)).await;

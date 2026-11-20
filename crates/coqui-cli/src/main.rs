@@ -64,6 +64,7 @@ impl Args {
             json: false,
             ndjson: false,
             fail_on_issues: None,
+            wait_selector: None,
             webhook_url: None,
             delay_ms: 0,
             max_rps: 0,
@@ -99,6 +100,7 @@ struct Args {
     json: bool,
     ndjson: bool,
     fail_on_issues: Option<i64>,
+    wait_selector: Option<String>,
     webhook_url: Option<String>,
     delay_ms: u64,
     max_rps: u32,
@@ -122,7 +124,7 @@ fn load_config(path: &Path, required: bool) -> Result<FileConfig, String> {
 }
 
 fn usage() -> &'static str {
-    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots] [--store-html] [--json] [--ndjson] [--fail-on-issues N] [--webhook URL] [--delay-ms N] [--max-rps N] [--proxy URL] [--cookie STRING]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR]\n       coqui report compare --with <crawl id> [--out DIR]\n       coqui reports\n       coqui export [--out DIR] [--family urls|issues|links|headers|images|a11y|structured|vitals|console|text|markdown|extractions|custom-js|anchors]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip] [--images]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N] [--webhook URL] [--delay-ms N] [--max-rps N] [--proxy URL] [--cookie STRING]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui prune [--out DIR] [--keep N]\n       coqui overview [--out DIR]\n       coqui serve [--out DIR] [--addr 127.0.0.1:8787] [--token TOKEN]
+    "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots] [--store-html] [--json] [--ndjson] [--fail-on-issues N] [--render-wait-selector CSS] [--webhook URL] [--delay-ms N] [--max-rps N] [--proxy URL] [--cookie STRING]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR]\n       coqui report compare --with <crawl id> [--out DIR]\n       coqui reports\n       coqui export [--out DIR] [--family urls|issues|links|headers|images|a11y|structured|vitals|console|text|markdown|extractions|custom-js|anchors]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip] [--images]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N] [--webhook URL] [--delay-ms N] [--max-rps N] [--proxy URL] [--cookie STRING]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui prune [--out DIR] [--keep N]\n       coqui overview [--out DIR]\n       coqui serve [--out DIR] [--addr 127.0.0.1:8787] [--token TOKEN]
        coqui issue-settings <export|import|diff> [--out DIR] [--file PATH] [--with CRAWL]
        coqui doctor [--out DIR]
        coqui mcp [--out DIR]"
@@ -194,6 +196,15 @@ fn parse_args(values: &[String], config: &FileConfig) -> Result<Args, String> {
                         .ok_or("missing --fail-on-issues value")?
                         .parse()
                         .map_err(|_| "invalid --fail-on-issues".to_string())?,
+                );
+            }
+            "--render-wait-selector" => {
+                index += 1;
+                args.wait_selector = Some(
+                    values
+                        .get(index)
+                        .ok_or("missing --render-wait-selector value")?
+                        .clone(),
                 );
             }
             "--delay-ms" => {
@@ -2097,6 +2108,7 @@ async fn main() {
             webhook_url: args.webhook_url.clone(),
             crawl_delay_ms: args.delay_ms,
             max_rps: args.max_rps,
+            render_wait_selector: args.wait_selector.clone(),
             proxy_url: args.proxy_url.clone(),
             cookie: args.cookie.clone(),
             custom_js: args.custom_js.clone(),

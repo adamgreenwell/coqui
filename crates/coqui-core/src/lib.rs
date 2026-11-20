@@ -97,6 +97,9 @@ pub struct CrawlConfig {
     /// Store raw HTML alongside text/Markdown (off by default).
     #[serde(default)]
     pub store_html: bool,
+    /// Optional CSS selector to wait for after load when rendering.
+    #[serde(default)]
+    pub render_wait_selector: Option<String>,
     /// Only crawl discovered URLs matching at least one pattern (empty = all).
     #[serde(default)]
     pub include_patterns: Vec<String>,
@@ -157,6 +160,7 @@ impl Default for CrawlConfig {
             proxy_url: None,
             cookie: None,
             store_html: false,
+            render_wait_selector: None,
             include_patterns: Vec::new(),
             exclude_patterns: Vec::new(),
             auth_user: None,
