@@ -655,6 +655,18 @@ impl Store {
         Ok(rows)
     }
 
+    /// Issue count per URL (unsuppressed raw rows).
+    pub fn issue_counts_by_url(&self, crawl_id: &str) -> Result<Vec<(String, i64)>> {
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT url, COUNT(*) FROM issues WHERE crawl_id = ?1 GROUP BY url ORDER BY url",
+        )?;
+        let rows = stmt
+            .query_map(params![crawl_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     /// URLs and details for one issue rule.
     pub fn issues_for_rule(
         &self,

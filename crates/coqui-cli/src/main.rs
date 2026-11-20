@@ -525,18 +525,34 @@ fn write_url_diff(
         left.iter().map(|url| (url.url.as_str(), url)).collect();
     let right_map: HashMap<&str, &coqui_core::UrlRecord> =
         right.iter().map(|url| (url.url.as_str(), url)).collect();
+    let left_issue_rows = store
+        .issue_counts_by_url(left_id)
+        .map_err(|error| error.to_string())?;
+    let right_issue_rows = store
+        .issue_counts_by_url(right_id)
+        .map_err(|error| error.to_string())?;
+    let left_issues: HashMap<&str, i64> = left_issue_rows
+        .iter()
+        .map(|(url, count)| (url.as_str(), *count))
+        .collect();
+    let right_issues: HashMap<&str, i64> = right_issue_rows
+        .iter()
+        .map(|(url, count)| (url.as_str(), *count))
+        .collect();
     let keys: BTreeSet<&str> = left_map
         .keys()
         .copied()
         .chain(right_map.keys().copied())
         .collect();
     let mut csv = String::from(
-        "url,change,left_status,right_status,left_title,right_title,left_meta_description,right_meta_description,left_h1,right_h1\n",
+        "url,change,left_status,right_status,left_title,right_title,left_meta_description,right_meta_description,left_h1,right_h1,left_issues,right_issues\n",
     );
     let (mut matched, mut added, mut removed, mut changed) = (0usize, 0usize, 0usize, 0usize);
     for key in keys {
         let left_row = left_map.get(key).copied();
         let right_row = right_map.get(key).copied();
+        let left_issue_count = *left_issues.get(key).unwrap_or(&0);
+        let right_issue_count = *right_issues.get(key).unwrap_or(&0);
         let (change, before, after) = match (left_row, right_row) {
             (Some(before), Some(after)) => {
                 matched += 1;
@@ -544,6 +560,7 @@ fn write_url_diff(
                     && before.title == after.title
                     && before.meta_description == after.meta_description
                     && before.h1 == after.h1
+                    && left_issue_count == right_issue_count
                 {
                     continue;
                 }
@@ -561,7 +578,7 @@ fn write_url_diff(
             (None, None) => continue,
         };
         csv.push_str(&format!(
-            "{},{},{},{},{},{},{},{},{},{}\n",
+            "{},{},{},{},{},{},{},{},{},{},{},{}\n",
             csv_field(key),
             change,
             status_of(before),
@@ -572,6 +589,8 @@ fn write_url_diff(
             csv_field(&text_of(after, |url| &url.meta_description)),
             csv_field(&text_of(before, |url| &url.h1)),
             csv_field(&text_of(after, |url| &url.h1)),
+            left_issue_count,
+            right_issue_count,
         ));
     }
     std::fs::write(path, csv).map_err(|error| error.to_string())?;
