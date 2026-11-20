@@ -174,6 +174,11 @@ pub const REPORTS: &[(&str, &str, &str)] = &[
         "Status, indexability, content, depth and issue totals.",
     ),
     ("hreflang", "Hreflang", "Hreflang link pairs per page."),
+    (
+        "canonical-chains",
+        "Canonical chains",
+        "Canonical targets followed across the crawl, with loops.",
+    ),
 ];
 
 /// Render a named report.
@@ -196,6 +201,7 @@ pub fn render_report_with(
         "broken-links" => render_broken_links(store, crawl_id),
         "overview" => render_overview(store, crawl_id),
         "hreflang" => render_hreflang(store, crawl_id),
+        "canonical-chains" => render_canonical_chains(store, crawl_id),
         _ => render_html(store, crawl_id),
     }
 }
@@ -383,6 +389,61 @@ pub fn write_comparison(
         .total_urls(left_id)
         .map(|count| count as u64)
         .map_err(|error| error.to_string())
+}
+
+fn render_canonical_chains(store: &Store, crawl_id: &str) -> Result<String, String> {
+    let crawl = store
+        .get_crawl(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let urls = store
+        .all_urls(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let canonicals: std::collections::HashMap<&str, &str> = urls
+        .iter()
+        .filter_map(|url| {
+            url.canonical
+                .as_deref()
+                .map(|canonical| (url.url.as_str(), canonical))
+        })
+        .collect();
+    let mut chains = Vec::new();
+    for url in &urls {
+        let mut chain = vec![url.url.clone()];
+        let mut seen = std::collections::HashSet::new();
+        seen.insert(url.url.clone());
+        let mut current = url.url.as_str();
+        while let Some(target) = canonicals.get(current).copied() {
+            if !seen.insert(target.to_string()) {
+                chain.push(format!("{target} (loop)"));
+                break;
+            }
+            chain.push(target.to_string());
+            current = target;
+            if chain.len() > 10 {
+                chain.push("…".to_string());
+                break;
+            }
+        }
+        if chain.len() > 1 {
+            chains.push((url.url.clone(), chain));
+        }
+    }
+    let mut body = format!(
+        "<p class=\"muted\">{} URLs with a non-self canonical chain</p>",
+        chains.len()
+    );
+    body.push_str("<table><tr><th>Start</th><th>Canonical target</th><th>Chain</th></tr>");
+    for (start, chain) in &chains {
+        let canonical = chain.get(1).cloned().unwrap_or_default();
+        body.push_str(&format!(
+            "<tr><td>{}</td><td>{}</td><td>{}</td></tr>",
+            escape(start),
+            escape(&canonical),
+            escape(&chain.join(" → "))
+        ));
+    }
+    body.push_str("</table>");
+    Ok(shell(&crawl.seed, "Canonical chains", &body))
 }
 
 fn render_hreflang(store: &Store, crawl_id: &str) -> Result<String, String> {
