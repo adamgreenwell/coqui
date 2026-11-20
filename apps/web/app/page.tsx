@@ -2657,8 +2657,18 @@ export default function Home() {
                   onClick={() => void loadSource()}
                   disabled={sourceLoading}
                 >
-                  {sourceLoading ? 'Loading…' : 'View raw HTML'}
+                    {sourceLoading ? 'Loading…' : 'View raw HTML'}
                 </button>
+                {sourceHtml && (
+                  <button
+                    type="button"
+                    className="link-button"
+                    style={{ marginLeft: 8 }}
+                    onClick={() => void copyValue('Source', sourceHtml)}
+                  >
+                    Copy HTML
+                  </button>
+                )}
                 {sourceError && <p className="error">{sourceError}</p>}
                 {sourceHtml && <pre className="source-view">{sourceHtml}</pre>}
                 {detail.screenshot && (
