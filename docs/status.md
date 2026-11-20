@@ -8,14 +8,14 @@ Snapshot of the Coqui build for the milestone review.
 | --- | --- |
 | Open issues | 75 |
 | Closed issues | 11 (including A-02, P-05, U-04, C-08) |
-| Commits since 2026-11-18 | 477 |
-| Main CI | green (PR #298 run) |
+| Commits since 2026-11-18 | 507 |
+| Main CI | green (PR #312 run) |
 
 ## Shipped
 
 - **Crawl:** URL/sitemap/list seeds, regex scope with testers, robots.txt, redirects, auth headers, **cookies**, **custom User-Agent/Accept-Language**, **HTTP/SOCKS proxy**, checkpoints, profiles, completion webhooks, per-host delay and max-RPS, 429 retries.
 - **Render:** Chromium/CDP, screenshots, console, axe, Web Vitals, custom JS, resource blocking, selector-based wait strategy.
-- **Exports/reports:** 14 CSV families (incl. anchors), XLSX, sitemaps (split/gzip/image), HTML and PDF reports (incl. hreflang, canonical chains, pagination, orphans, segments, SERP, canonicals and hreflang returns) with print styles and batch generation, filename tokens.
+- **Exports/reports:** 14 CSV families (incl. anchors), XLSX, sitemaps (split/gzip/image), HTML and PDF reports (summary, issues, status, performance, redirects, broken-links, overview, hreflang, hreflang-return, canonical-chains, canonicals, pagination, orphans, segments, SERP) with print styles and batch generation, filename tokens.
 - **Audit:** 44 static rules plus enumerated `axe_*` rules per violation; suppression (rule + per-URL, reason required, optional expiry, actor); severity overrides; audit log; settings export/import/diff.
 - **Results UI:** filters, tabs, saved views, history, overview cards (status, severity, response stats, throughput, indexability, depth, content, segments, duplicates), issue drill-down, inspector (links/images/axe/headers/screenshot/**raw HTML source viewer**).
 - **Automation:** CLI (`crawl`, `resume`, `report`, `export`, `issue-settings`, `sitemap`, `schedule`, `serve`, `overview`, `prune`, `doctor`, `mcp`), MCP server, scheduler, HTTP API (bearer auth, health states, exports/reports, start crawl), Dockerfile, GitHub/GitLab CI recipes, **JSON/NDJSON crawl output with crawlId correlation**, `--fail-on-issues` exit code, comparison CSVs with per-URL issue deltas, PDF and batch reports.
