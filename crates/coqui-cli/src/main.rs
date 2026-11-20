@@ -2122,6 +2122,7 @@ async fn main() {
     let started = std::time::Instant::now();
     let json_output = args.json;
     let ndjson = args.ndjson;
+    let event_crawl_id = crawl_id.clone();
     let result = coqui_crawl::run_crawl(
         store.clone(),
         crawl_id.clone(),
@@ -2137,6 +2138,8 @@ async fn main() {
                     "{}",
                     serde_json::json!({
                         "event": "progress",
+                        "crawlId": &event_crawl_id,
+                        "ts": now_ms(),
                         "crawled": progress.crawled,
                         "discovered": progress.discovered,
                     })
