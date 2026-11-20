@@ -89,8 +89,8 @@ const SYNONYMS = {
   'meta description 1': 'meta_description',
   'h1-1': 'h1',
   'h1 1': 'h1',
-  'word count': 'words',
-  'response time': 'response_ms',
+  'word count': 'word_count',
+  'response time': 'response_time_ms',
 };
 
 function normalizeHeader(header) {
