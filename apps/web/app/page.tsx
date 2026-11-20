@@ -400,6 +400,7 @@ export default function Home() {
   const [sourceKind, setSourceKind] = useState<'raw' | 'rendered'>('raw');
   const [sourceQuery, setSourceQuery] = useState('');
   const [sourceLimit, setSourceLimit] = useState(200_000);
+  const [diffSummary, setDiffSummary] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [linkFilter, setLinkFilter] = useState('');
   const [lighthouse, setLighthouse] = useState<LighthouseSummary | null>(null);
@@ -1014,6 +1015,41 @@ export default function Home() {
     );
   };
 
+  const compareSources = async () => {
+    if (!crawl || !detail) return;
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const [raw, rendered] = await Promise.all([
+        invoke<string | null>('page_html', { crawlId: crawl.id, urlId: detail.url.id }),
+        invoke<string | null>('page_rendered_html', {
+          crawlId: crawl.id,
+          urlId: detail.url.id,
+        }),
+      ]);
+      if (!raw || !rendered) {
+        setDiffSummary(
+          'Both raw and rendered HTML must be stored: enable Store raw HTML and crawl with rendering.',
+        );
+        return;
+      }
+      if (raw === rendered) {
+        setDiffSummary(`Identical (${raw.length} bytes).`);
+        return;
+      }
+      const limit = Math.min(raw.length, rendered.length);
+      let index = 0;
+      while (index < limit && raw[index] === rendered[index]) index += 1;
+      setDiffSummary(
+        `Different: raw ${raw.length} B, rendered ${rendered.length} B; first difference at byte ${index}.\nraw: ${raw.slice(
+          Math.max(0, index - 40),
+          index + 60,
+        )}\nrendered: ${rendered.slice(Math.max(0, index - 40), index + 60)}`,
+      );
+    } catch (cause) {
+      setDiffSummary(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
   const loadSource = async (kind: 'raw' | 'rendered' = sourceKind) => {
     if (!crawl || !detail) return;
     setSourceLoading(true);
@@ -1055,6 +1091,7 @@ export default function Home() {
       setSourceHtml(null);
       setSourceError(null);
       setSourceQuery('');
+      setDiffSummary(null);
       setLinkFilter('');
       setDetailError(null);
     } catch (cause) {
