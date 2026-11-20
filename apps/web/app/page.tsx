@@ -1435,6 +1435,13 @@ export default function Home() {
     return totals;
   }, [issues]);
 
+  const throughput = useMemo(() => {
+    if (!crawl?.startedAt || !crawl.finishedAt) return null;
+    const seconds = (crawl.finishedAt - crawl.startedAt) / 1000;
+    if (seconds <= 0) return null;
+    return crawl.totalUrls / seconds;
+  }, [crawl]);
+
   const depthBuckets = useMemo(() => {
     const buckets = [0, 0, 0, 0];
     for (const row of depthCounts) {
@@ -2750,6 +2757,10 @@ export default function Home() {
             <div>
               <span>Crawled</span>
               <strong>{crawl?.totalUrls ?? 0}</strong>
+            </div>
+            <div>
+              <span>Throughput</span>
+              <strong>{throughput ? `${throughput.toFixed(1)}/s` : '—'}</strong>
             </div>
             {(['2xx', '3xx', '4xx', '5xx', 'other'] as const).map((key) => (
               <button
