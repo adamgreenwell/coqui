@@ -112,7 +112,9 @@ Schedules are interval-based (seconds) and stored in the crawl DB. `run-due` run
 
 `coqui schedule add ... --webhook URL --delay-ms N --max-rps N` stores those in the schedule config so scheduled runs notify and stay within rate limits.
 
-`--json` prints a single machine-readable crawl summary (`status`, `crawlId`, `crawled`, `discovered`, `issues`, `seconds`, `csv`) and suppresses progress lines; errors print JSON too.\n\n`--delay-ms N` waits at least N milliseconds between HTTP requests; `--max-rps N` caps requests per second per host (effective delay = max of both). `--proxy URL` routes requests through an http/https/socks5 proxy; invalid proxies fail with a configuration error. `--cookie "a=b; c=d"` sends a Cookie header for logged-in crawling (verified with a local echo server).
+`--json` prints a single machine-readable crawl summary (`status`, `crawlId`, `crawled`, `discovered`, `issues`, `seconds`, `csv`) and suppresses progress lines; errors print JSON too.
+
+`--delay-ms N` waits at least N milliseconds between HTTP requests; `--max-rps N` caps requests per second per host (effective delay = max of both). `--proxy URL` routes requests through an http/https/socks5 proxy; invalid proxies fail with a configuration error. `--cookie "a=b; c=d"` sends a Cookie header for logged-in crawling (verified with a local echo server).
 
 `--webhook URL` posts a JSON completion payload (`crawl.finished`, crawlId, paused, stats) with a 5-second timeout.
 
