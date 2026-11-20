@@ -1,0 +1,13 @@
+stages: [crawl]
+
+crawl:
+  stage: crawl
+  image: rust:1.90
+  script:
+    - cargo build --release -p coqui-cli
+    - ./target/release/coqui crawl url "$SEED" --max-urls 200 --json --out crawl | tee crawl.json
+    - ./target/release/coqui export --out crawl --family all
+  artifacts:
+    paths:
+      - crawl/
+      - crawl.json
