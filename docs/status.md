@@ -6,8 +6,8 @@ Snapshot of the Coqui build for the milestone review.
 
 | Metric | Value |
 | --- | --- |
-| Open issues | 78 |
-| Closed issues | 8 (including A-02 overrides/suppression) |
+| Open issues | 76 |
+| Closed issues | 10 (including A-02 overrides/suppression, P-05 comparison, U-04 overview) |
 | Commits since 2026-11-18 | 370 |
 | Main CI | green (PR #246 run) |
 
@@ -33,3 +33,4 @@ Snapshot of the Coqui build for the milestone review.
 - P-05 URL-level diff export + 10k benchmark.
 - C-08 auto-throttle/circuit breaker and crawl timeline.
 - X-04 srcset/natural-size/assets.
+
