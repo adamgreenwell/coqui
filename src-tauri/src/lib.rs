@@ -839,6 +839,21 @@ fn content_stats(
 }
 
 #[tauri::command]
+fn throughput_buckets(
+    state: State<'_, AppState>,
+    crawl_id: String,
+) -> Result<Vec<serde_json::Value>, String> {
+    let rows = state
+        .store
+        .throughput_buckets(&crawl_id)
+        .map_err(|error| error.to_string())?;
+    Ok(rows
+        .into_iter()
+        .map(|(second, count)| serde_json::json!({"second": second, "count": count}))
+        .collect())
+}
+
+#[tauri::command]
 fn duplicate_groups(
     state: State<'_, AppState>,
     crawl_id: String,
@@ -1482,6 +1497,7 @@ pub fn run() {
             depth_counts,
             segments,
             duplicate_groups,
+            throughput_buckets,
             content_stats,
             response_buckets,
             get_url_detail,
