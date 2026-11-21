@@ -1004,6 +1004,7 @@ fn run_import(values: &[String]) -> Result<(), String> {
         return Err("usage: coqui import sf --file <crawl.dbseospider> [--out DIR]".into());
     }
     let mut file = None;
+    let mut pages_only = false;
     let mut out = PathBuf::from("coqui-out");
     let mut index = 1;
     while index < values.len() {
@@ -1018,6 +1019,7 @@ fn run_import(values: &[String]) -> Result<(), String> {
                 index += 1;
                 out = PathBuf::from(values.get(index).ok_or("missing --out value")?);
             }
+            "--pages-only" => pages_only = true,
             other => return Err(format!("unknown option '{other}'")),
         }
         index += 1;
@@ -1025,7 +1027,7 @@ fn run_import(values: &[String]) -> Result<(), String> {
     let file = file.ok_or("usage: coqui import sf --file <crawl.dbseospider> [--out DIR]")?;
     let store = Store::open(out.join("coqui.db")).map_err(|error| error.to_string())?;
     let stats = store
-        .import_seospider(&file)
+        .import_seospider_with(&file, coqui_store::SfImportOptions { pages_only })
         .map_err(|error| error.to_string())?;
     println!(
         "imported {} urls and {} links into crawl {} (seed {})",

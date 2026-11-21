@@ -6,7 +6,7 @@
 
 mod sf_import;
 
-pub use sf_import::SfImportStats;
+pub use sf_import::{SfImportOptions, SfImportStats};
 
 use coqui_core::{
     AxeViolation, CrawlCheckpoint, CrawlConfig, CrawlStatus, CrawlSummary, Issue, IssueCount,

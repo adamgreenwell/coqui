@@ -10,6 +10,13 @@ use rusqlite::{Connection, OpenFlags, Row};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+/// Options for importing a Screaming Frog crawl.
+#[derive(Debug, Clone, Default)]
+pub struct SfImportOptions {
+    /// Import only HTML/XHTML rows (skip CSS/JS/image resources).
+    pub pages_only: bool,
+}
+
 /// Summary of an imported Screaming Frog crawl.
 #[derive(Debug, Clone)]
 pub struct SfImportStats {
@@ -81,6 +88,15 @@ fn meta_description(row: &Row<'_>) -> Option<String> {
 impl Store {
     /// Import a Screaming Frog crawl file into a new crawl in this store.
     pub fn import_seospider(&self, path: &Path) -> Result<SfImportStats> {
+        self.import_seospider_with(path, SfImportOptions::default())
+    }
+
+    /// Import a Screaming Frog crawl file with explicit options.
+    pub fn import_seospider_with(
+        &self,
+        path: &Path,
+        options: SfImportOptions,
+    ) -> Result<SfImportStats> {
         let sqlite_path = extract_sql_member(path)?;
         let source = Connection::open_with_flags(&sqlite_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
             .map_err(StoreError::Sqlite)?;
@@ -111,13 +127,17 @@ impl Store {
             let mut ids: HashMap<String, i64> = HashMap::new();
             let mut urls = 0usize;
             {
-                let mut statement = source
-                    .prepare(
-                        "select * from urls
-                     where is_internal = 1 and ifnull(loaded_as_a_resource, 0) = 0
-                     order by crawl_depth, rowid",
-                    )
-                    .map_err(StoreError::Sqlite)?;
+                let filter = if options.pages_only {
+                    "and (content_type like 'text/html%' or content_type like 'application/xhtml%')"
+                } else {
+                    ""
+                };
+                let query = format!(
+                    "select * from urls
+                     where is_internal = 1 and ifnull(loaded_as_a_resource, 0) = 0 {filter}
+                     order by crawl_depth, rowid"
+                );
+                let mut statement = source.prepare(&query).map_err(StoreError::Sqlite)?;
                 let mut rows = statement.query([]).map_err(StoreError::Sqlite)?;
                 while let Some(row) = rows.next().map_err(StoreError::Sqlite)? {
                     let Some(url) = text(row, "encoded_url") else {
@@ -276,6 +296,11 @@ mod tests {
                 [],
             )
             .unwrap();
+            conn.execute(
+                "insert into urls values ('https://example.com/style.css', 200, 'OK', 0, 'text/css', '', '', 0, 0, 0, 1, 10, 500, 1, 0)",
+                [],
+            )
+            .unwrap();
             conn.execute("insert into links values (1, 1, 2, 'About', 0, 1)", [])
                 .unwrap();
         }
@@ -291,10 +316,27 @@ mod tests {
         }
         let store = Store::open(dir.join("coqui.db")).unwrap();
         let stats = store.import_seospider(&archive_path).unwrap();
-        assert_eq!(stats.urls, 2);
+        assert_eq!(stats.urls, 3);
         assert_eq!(stats.links, 1);
-        assert_eq!(store.all_urls(&stats.crawl_id).unwrap().len(), 2);
+        assert_eq!(store.all_urls(&stats.crawl_id).unwrap().len(), 3);
         assert_eq!(store.all_links(&stats.crawl_id).unwrap().len(), 1);
+
+        let pages_store = Store::open(dir.join("coqui-pages.db")).unwrap();
+        let pages = pages_store
+            .import_seospider_with(&archive_path, SfImportOptions { pages_only: true })
+            .unwrap();
+        assert_eq!(pages.urls, 2);
+        assert!(
+            pages_store
+                .all_urls(&pages.crawl_id)
+                .unwrap()
+                .iter()
+                .all(|url| url
+                    .content_type
+                    .as_deref()
+                    .unwrap_or("")
+                    .starts_with("text/html"))
+        );
         std::fs::remove_dir_all(dir).ok();
     }
 }
