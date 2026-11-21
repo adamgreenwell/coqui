@@ -6,7 +6,7 @@
 
 mod sf_import;
 
-pub use sf_import::{SfImportOptions, SfImportStats};
+pub use sf_import::{SfImportOptions, SfImportProgress, SfImportStage, SfImportStats};
 
 use coqui_core::{
     AxeViolation, CrawlCheckpoint, CrawlConfig, CrawlStatus, CrawlSummary, Issue, IssueCount,
@@ -16,7 +16,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const SCHEMA_VERSION: i32 = 35;
+pub const SCHEMA_VERSION: i32 = 36;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -24,6 +24,7 @@ PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS crawls (
     id           TEXT PRIMARY KEY,
+    source       TEXT NOT NULL DEFAULT 'desktop',
     seed         TEXT NOT NULL,
     seed_kind    TEXT NOT NULL DEFAULT 'url',
     status       TEXT NOT NULL,
@@ -346,11 +347,25 @@ impl Store {
         config: &CrawlConfig,
         created_at: i64,
     ) -> Result<CrawlSummary> {
+        self.create_crawl_with_source(id, seed, seed_kind, "desktop", config, created_at)
+    }
+
+    /// Create a crawl with an explicit source (`desktop` or `import`).
+    pub fn create_crawl_with_source(
+        &self,
+        id: &str,
+        seed: &str,
+        seed_kind: &str,
+        source: &str,
+        config: &CrawlConfig,
+        created_at: i64,
+    ) -> Result<CrawlSummary> {
         let config_json = serde_json::to_string(config)?;
         self.lock()?.execute(
-            "INSERT INTO crawls (id, seed, seed_kind, status, config_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO crawls (id, source, seed, seed_kind, status, config_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 id,
+                source,
                 seed,
                 seed_kind,
                 CrawlStatus::Pending.as_str(),
@@ -375,25 +390,26 @@ impl Store {
     pub fn get_crawl(&self, id: &str) -> Result<CrawlSummary> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
-            "SELECT id, seed, seed_kind, status, config_json, created_at, started_at, finished_at,
+            "SELECT id, source, seed, seed_kind, status, config_json, created_at, started_at, finished_at,
                     (SELECT COUNT(*) FROM urls WHERE urls.crawl_id = crawls.id),
                     (SELECT COUNT(*) FROM urls WHERE urls.crawl_id = crawls.id AND urls.blocked = 1)
              FROM crawls WHERE id = ?1",
         )?;
         let summary = stmt
             .query_row(params![id], |row| {
-                let config_json: String = row.get(4)?;
+                let config_json: String = row.get(5)?;
                 Ok(CrawlSummary {
                     id: row.get(0)?,
-                    seed: row.get(1)?,
-                    seed_kind: row.get(2)?,
-                    status: CrawlStatus::parse(&row.get::<_, String>(3)?),
+                    source: row.get(1)?,
+                    seed: row.get(2)?,
+                    seed_kind: row.get(3)?,
+                    status: CrawlStatus::parse(&row.get::<_, String>(4)?),
                     config: serde_json::from_str(&config_json).unwrap_or_default(),
-                    created_at: row.get(5)?,
-                    started_at: row.get(6)?,
-                    finished_at: row.get(7)?,
-                    total_urls: row.get(8)?,
-                    blocked_urls: row.get(9)?,
+                    created_at: row.get(6)?,
+                    started_at: row.get(7)?,
+                    finished_at: row.get(8)?,
+                    total_urls: row.get(9)?,
+                    blocked_urls: row.get(10)?,
                 })
             })
             .optional()?;
@@ -1421,6 +1437,117 @@ impl Store {
             .query_map(params![crawl_id], map_url_row)?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
+    }
+
+    /// One page of URL rows after `after_id`, for streaming uploads.
+    pub fn url_rows_after(
+        &self,
+        crawl_id: &str,
+        after_id: i64,
+        limit: u32,
+    ) -> Result<Vec<UrlRecord>> {
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, crawl_id, url, status, content_type, title, meta_description, h1, h1_count,
+                    canonical, meta_robots, redirect_target, redirect_chain, word_count, depth,
+                    response_time_ms, size_bytes, error, discovered_at, blocked, hreflang_json,
+                    pagination_next, pagination_prev, structured_data_json, console_json,
+                    axe_json, vitals_json, headers_json, social_json
+             FROM urls WHERE crawl_id = ?1 AND id > ?2 ORDER BY id LIMIT ?3",
+        )?;
+        let rows = stmt
+            .query_map(params![crawl_id, after_id, limit], map_url_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// One page of link rows after `after_id`, for streaming uploads.
+    pub fn link_rows_after(
+        &self,
+        crawl_id: &str,
+        after_id: i64,
+        limit: u32,
+    ) -> Result<Vec<(i64, LinkRecord)>> {
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT l.id, f.url, t.url, l.anchor, l.rel, l.internal
+             FROM links l
+             JOIN url_map f ON f.id = l.from_id
+             JOIN url_map t ON t.id = l.to_id
+             WHERE l.crawl_id = ?1 AND l.id > ?2
+             ORDER BY l.id LIMIT ?3",
+        )?;
+        let rows = stmt
+            .query_map(params![crawl_id, after_id, limit], |row| {
+                Ok((
+                    row.get(0)?,
+                    LinkRecord {
+                        from_url: row.get(1)?,
+                        to_url: row.get(2)?,
+                        anchor: {
+                            let anchor: String = row.get(3)?;
+                            if anchor.is_empty() {
+                                None
+                            } else {
+                                Some(anchor)
+                            }
+                        },
+                        rel: row.get(4)?,
+                        internal: row.get::<_, i64>(5)? != 0,
+                    },
+                ))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// One page of issue rows after `after_id`, for streaming uploads.
+    pub fn issue_rows_after(
+        &self,
+        crawl_id: &str,
+        after_id: i64,
+        limit: u32,
+    ) -> Result<Vec<(i64, Issue)>> {
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, crawl_id, url, rule, severity, detail
+             FROM issues WHERE crawl_id = ?1 AND id > ?2 ORDER BY id LIMIT ?3",
+        )?;
+        let rows = stmt
+            .query_map(params![crawl_id, after_id, limit], |row| {
+                Ok((
+                    row.get(0)?,
+                    Issue {
+                        crawl_id: row.get(1)?,
+                        url: row.get(2)?,
+                        rule: row.get(3)?,
+                        severity: IssueSeverity::parse(&row.get::<_, String>(4)?),
+                        detail: row.get(5)?,
+                    },
+                ))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// `(urls, links, issues)` row counts for a crawl.
+    pub fn crawl_counts(&self, crawl_id: &str) -> Result<(u64, u64, u64)> {
+        let conn = self.lock()?;
+        let (urls, links, issues) = conn.query_row(
+            "SELECT
+                (SELECT COUNT(*) FROM urls WHERE crawl_id = ?1),
+                (SELECT COUNT(*) FROM links WHERE crawl_id = ?1),
+                (SELECT COUNT(*) FROM issues WHERE crawl_id = ?1)",
+            params![crawl_id],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)? as u64,
+                    row.get::<_, i64>(1)? as u64,
+                    row.get::<_, i64>(2)? as u64,
+                ))
+            },
+        )?;
+        Ok((urls, links, issues))
     }
 
     pub fn save_screenshot(&self, crawl_id: &str, url_id: i64, data: &[u8]) -> Result<()> {
@@ -3462,6 +3589,19 @@ CREATE TABLE IF NOT EXISTS profiles (
             }
         }
     }
+    if !has_column(conn, "crawls", "source")? {
+        conn.execute(
+            "ALTER TABLE crawls ADD COLUMN source TEXT NOT NULL DEFAULT 'desktop'",
+            [],
+        )?;
+        // Databases created before v36 stored Screaming Frog imports with an
+        // `sf-` prefix. Keep their source label even though their crawl id
+        // predates the stable UUID scheme.
+        conn.execute(
+            "UPDATE crawls SET source = 'import' WHERE id LIKE 'sf-%'",
+            [],
+        )?;
+    }
     conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     Ok(())
 }
@@ -4770,7 +4910,7 @@ mod tests {
         let version: i32 = conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 35);
+        assert_eq!(version, 36);
         std::fs::remove_dir_all(dir).ok();
     }
 

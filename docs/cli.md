@@ -179,7 +179,7 @@ Screaming Frog's `.dbseospider` file is a ZIP whose `results_*/sql` member is a 
 coqui import sf --file path/to/crawl.dbseospider --out DIR [--pages-only]
 ```
 
-It creates a new crawl (`sf-<timestamp>`) and imports internal URLs (title, meta description, H1, status, word count, depth, response time, size) plus anchor rows for internal and external links (anchor, nofollow, internal/external). Verified against a 267-URL reference crawl: **211 URLs and 3,826 links** imported, after which reports/exports work normally.
+It creates a crawl whose UUID is derived from the file's SHA-256 (so re-importing the same file reuses that crawl) and imports internal URLs (title, meta description, H1, status, word count, depth, response time, size) plus anchor rows for internal and external links (anchor, nofollow, internal/external). Verified against a 267-URL reference crawl: **211 URLs and 3,826 links** imported, after which reports/exports work normally. `--json` prints the crawl id, seed, counts and `reused` flag.
 
 Notes:
 - Resource rows (CSS/JS/images) are imported when the reference includes them; filter by content type in the grid/reports.
@@ -187,3 +187,19 @@ Notes:
 
 
 
+
+
+## sync
+
+Push a completed crawl to a Coqui project with the desktop sync contract.
+
+```bash
+coqui sync <crawlId> --project <uuid> --token <token> [--api-url URL] [--out DIR] [--dry-run] [--json]
+```
+
+- `--project` is the project UUID; `--token` is a workspace token with `crawls:sync`. `COQUI_SYNC_TOKEN`/`COQUI_API_TOKEN` and `COQUI_API_URL` act as fallbacks.
+- `--api-url` defaults to `https://api.coquiseo.com`; a trailing `/api/v1` is accepted.
+- `--dry-run` prints the URL/link/issue counts and the endpoints it would call, without making a request.
+- Imported crawls send `source: "import"` and no issues; native crawls send their stored issues.
+- Auth passwords, cookies, proxy credentials, webhook URLs and `Authorization`/`Cookie`/`X-Api-Key` headers are stripped before upload.
+- Imported crawl ids are UUID v5 values derived from the source file, so re-sending the same file is idempotent.

@@ -101,6 +101,8 @@ interface LighthouseSummary {
 
 interface CrawlSummary {
   id: string;
+  /** Where the crawl came from: `desktop` for native crawls, `import` for Screaming Frog imports. */
+  source: string;
   seed: string;
   seedKind: 'url' | 'sitemap' | 'list';
   status: CrawlStatus;
@@ -110,6 +112,50 @@ interface CrawlSummary {
   finishedAt: number | null;
   totalUrls: number;
   blockedUrls: number;
+}
+
+/** Result of importing a Screaming Frog `.dbseospider` archive. */
+interface SfImportStats {
+  crawlId: string;
+  seed: string;
+  urls: number;
+  links: number;
+  /** True when the same file was already imported and the existing crawl is reused. */
+  reused: boolean;
+}
+
+/** Progress emitted on `sf-import-progress` while a Screaming Frog import runs. */
+interface SfImportProgress {
+  stage: 'reading' | 'urls' | 'links' | 'finished';
+  done: number;
+  total: number;
+}
+
+/** A cloud project the current workspace token can sync to. */
+interface CloudProject {
+  id: string;
+  name: string;
+  domain: string;
+  workspaceName?: string | null;
+}
+
+/** Progress emitted on `sync-progress` while a crawl is sent to the cloud. */
+interface SyncProgress {
+  phase: 'preparing' | 'urls' | 'links' | 'issues' | 'finalizing' | 'done';
+  done: number;
+  total: number;
+}
+
+/** Result of `cloud_sync_crawl`. */
+interface CloudSyncReport {
+  externalCrawlId: string;
+  project: string;
+  source: string;
+  urls: number;
+  links: number;
+  issues: number;
+  chunks: number;
+  dryRun: boolean;
 }
 
 interface UrlRow {
@@ -295,6 +341,28 @@ const STATUS_LABEL: Record<string, string> = {
   cancelled: 'Cancelled',
 };
 
+const DEFAULT_CLOUD_API_URL = 'https://api.coquiseo.com';
+
+const SF_IMPORT_STAGE_LABEL: Record<SfImportProgress['stage'], string> = {
+  reading: 'Reading database',
+  urls: 'Importing URLs',
+  links: 'Importing links',
+  finished: 'Finished',
+};
+
+const SYNC_PHASE_LABEL: Record<SyncProgress['phase'], string> = {
+  preparing: 'Preparing',
+  urls: 'Uploading URLs',
+  links: 'Uploading links',
+  issues: 'Uploading issues',
+  finalizing: 'Finalizing',
+  done: 'Done',
+};
+
+function cloudProjectLabel(project: CloudProject): string {
+  return project.domain ? `${project.name} · ${project.domain}` : project.name;
+}
+
 const COLUMNS = [
   { key: 'status', label: 'Status' },
   { key: 'url', label: 'URL' },
@@ -431,6 +499,29 @@ export default function Home() {
   const [lighthouseBusy, setLighthouseBusy] = useState(false);
   const [lighthouseError, setLighthouseError] = useState<string | null>(null);
   const [lighthouseSample, setLighthouseSample] = useState(0);
+
+  // Screaming Frog import (native menu File → Import or the header Import button).
+  const [importOpen, setImportOpen] = useState(false);
+  const [importPath, setImportPath] = useState('');
+  const [importBusy, setImportBusy] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importProgress, setImportProgress] = useState<SfImportProgress | null>(null);
+  const [importReport, setImportReport] = useState<SfImportStats | null>(null);
+
+  // Send-to-cloud dialog. The workspace token intentionally lives only in this state: it is
+  // never written to localStorage and is cleared whenever the dialog closes.
+  const [syncOpen, setSyncOpen] = useState(false);
+  const [syncCrawlId, setSyncCrawlId] = useState<string | null>(null);
+  const [syncCrawlLabel, setSyncCrawlLabel] = useState('');
+  const [syncApiUrl, setSyncApiUrl] = useState(DEFAULT_CLOUD_API_URL);
+  const [syncToken, setSyncToken] = useState('');
+  const [syncProjects, setSyncProjects] = useState<CloudProject[]>([]);
+  const [syncProject, setSyncProject] = useState('');
+  const [syncLoadingProjects, setSyncLoadingProjects] = useState(false);
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
+  const [syncReport, setSyncReport] = useState<CloudSyncReport | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   const [crawl, setCrawl] = useState<CrawlSummary | null>(null);
   const [phase, setPhase] = useState<CrawlStatus | 'idle'>('idle');
@@ -640,6 +731,40 @@ export default function Home() {
       cleanups.forEach((fn) => fn());
     };
   }, [isTauri, loadPage, loadIssues]);
+
+  // Native menu "File → Import → Screaming Frog database" plus import/sync progress events.
+  useEffect(() => {
+    if (!isTauri) return;
+    let active = true;
+    const cleanups: Array<() => void> = [];
+    (async () => {
+      const { listen } = await import('@tauri-apps/api/event');
+      const offMenu = await listen('open-sf-import', () => {
+        setImportOpen(true);
+        setImportPath('');
+        setImportError(null);
+        setImportProgress(null);
+        setImportReport(null);
+      });
+      const offImport = await listen<SfImportProgress>('sf-import-progress', (event) => {
+        setImportProgress(event.payload);
+      });
+      const offSync = await listen<SyncProgress>('sync-progress', (event) => {
+        setSyncProgress(event.payload);
+      });
+      if (!active) {
+        offMenu();
+        offImport();
+        offSync();
+        return;
+      }
+      cleanups.push(offMenu, offImport, offSync);
+    })();
+    return () => {
+      active = false;
+      cleanups.forEach((fn) => fn());
+    };
+  }, [isTauri]);
 
   useEffect(() => {
     if (!isTauri || phase !== 'running' || !crawl) return;
@@ -935,6 +1060,169 @@ export default function Home() {
     setActiveIssue(null);
     await Promise.all([loadPage(summary.id, 1, null), loadIssues(summary.id)]);
   };
+
+  const openImportDialog = () => {
+    setImportOpen(true);
+    setImportPath('');
+    setImportError(null);
+    setImportProgress(null);
+    setImportReport(null);
+  };
+
+  const chooseImportFile = async () => {
+    if (!isTauri) return;
+    setImportError(null);
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: 'Screaming Frog database', extensions: ['dbseospider'] }],
+      });
+      if (typeof selected === 'string') setImportPath(selected);
+    } catch (cause) {
+      setImportError(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
+  const runImport = async () => {
+    const path = importPath.trim();
+    if (!isTauri || !path) return;
+    setImportBusy(true);
+    setImportError(null);
+    setImportProgress(null);
+    setImportReport(null);
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const stats = await invoke<SfImportStats>('import_screaming_frog', { path });
+      setImportReport(stats);
+      await refreshHistory();
+      // Load the imported crawl into the grid as a normal crawl would be loaded; the crawl
+      // overview stats then refresh from the existing `crawl?.id` effect.
+      const summary = await invoke<CrawlSummary>('get_crawl', { crawlId: stats.crawlId });
+      await openCrawl(summary);
+    } catch (cause) {
+      setImportError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setImportBusy(false);
+    }
+  };
+
+  const openSyncFor = (crawlId: string, label: string) => {
+    setSyncCrawlId(crawlId);
+    setSyncCrawlLabel(label);
+    setSyncOpen(true);
+    setSyncApiUrl(DEFAULT_CLOUD_API_URL);
+    setSyncToken('');
+    setSyncProjects([]);
+    setSyncProject('');
+    setSyncLoadingProjects(false);
+    setSyncBusy(false);
+    setSyncProgress(null);
+    setSyncReport(null);
+    setSyncError(null);
+  };
+
+  const closeImportDialog = useCallback(() => {
+    setImportOpen(false);
+  }, []);
+
+  const closeSyncModal = useCallback(() => {
+    setSyncOpen(false);
+    setSyncCrawlId(null);
+    setSyncCrawlLabel('');
+    // Never keep the workspace token around once the dialog is gone.
+    setSyncToken('');
+    setSyncProjects([]);
+    setSyncProject('');
+    setSyncProgress(null);
+    setSyncReport(null);
+    setSyncError(null);
+  }, []);
+
+  const loadCloudProjects = async () => {
+    const apiUrl = syncApiUrl.trim();
+    const token = syncToken.trim();
+    if (!apiUrl) {
+      setSyncError('API URL is required.');
+      return;
+    }
+    if (!token) {
+      setSyncError('Workspace token is required.');
+      return;
+    }
+    setSyncLoadingProjects(true);
+    setSyncError(null);
+    setSyncReport(null);
+    setSyncProject('');
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const projects = await invoke<CloudProject[]>('list_cloud_projects', { apiUrl, token });
+      setSyncProjects(projects);
+      if (projects.length > 0) {
+        setSyncProject(projects[0].id);
+      } else {
+        setSyncError('No projects were returned for this workspace token.');
+      }
+    } catch (cause) {
+      setSyncProjects([]);
+      setSyncError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSyncLoadingProjects(false);
+    }
+  };
+
+  const runCloudSync = async () => {
+    if (!isTauri || !syncCrawlId) return;
+    const apiUrl = syncApiUrl.trim();
+    const token = syncToken.trim();
+    if (!apiUrl) {
+      setSyncError('API URL is required.');
+      return;
+    }
+    if (!token) {
+      setSyncError('Workspace token is required.');
+      return;
+    }
+    if (!syncProject) {
+      setSyncError('Choose a project before sending.');
+      return;
+    }
+    setSyncBusy(true);
+    setSyncError(null);
+    setSyncProgress(null);
+    setSyncReport(null);
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const report = await invoke<CloudSyncReport>('cloud_sync_crawl', {
+        crawlId: syncCrawlId,
+        apiUrl,
+        token,
+        project: syncProject,
+        dryRun: false,
+      });
+      setSyncReport(report);
+    } catch (cause) {
+      setSyncError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSyncBusy(false);
+    }
+  };
+
+  // Escape closes whichever import/sync dialog is on top, matching the backdrop pattern.
+  // While a request is in flight the dialog stays open so its progress and result are visible.
+  useEffect(() => {
+    if (!importOpen && !syncOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (syncOpen) {
+        if (!syncBusy) closeSyncModal();
+      } else if (!importBusy) {
+        closeImportDialog();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [importOpen, syncOpen, importBusy, syncBusy, closeSyncModal, closeImportDialog]);
 
   const copyValue = async (label: string, value: string) => {
     try {
@@ -1579,6 +1867,16 @@ export default function Home() {
     ? Math.min(100, Math.round((progress.crawled / target) * 100))
     : 0;
   const displayUrl = phase === 'running' ? progress?.currentUrl : crawl?.seed;
+  const importPercent =
+    importProgress && importProgress.total > 0
+      ? Math.min(100, Math.round((importProgress.done / importProgress.total) * 100))
+      : 0;
+  const syncPercent =
+    syncProgress && syncProgress.total > 0
+      ? Math.min(100, Math.round((syncProgress.done / syncProgress.total) * 100))
+      : 0;
+  const selectedSyncProject =
+    syncProjects.find((project) => project.id === syncProject) ?? null;
   const issueTotal = useMemo(
     () => issues.reduce((sum, issue) => sum + issue.count, 0),
     [issues],
@@ -1806,6 +2104,15 @@ export default function Home() {
           <span className="badge">M4 · crawl, audit &amp; render</span>
         </div>
         <div className="topbar-right">
+          <button
+            className="secondary import-trigger"
+            type="button"
+            onClick={openImportDialog}
+            aria-haspopup="dialog"
+            title="Import a Screaming Frog .dbseospider database"
+          >
+            Import
+          </button>
           <span className="badge">{isTauri ? 'Desktop' : 'Browser preview'}</span>
         </div>
       </header>
@@ -2456,11 +2763,25 @@ export default function Home() {
                       className="history-open"
                       onClick={() => void openCrawl(entry)}
                     >
-                      <span>{seedLabel(entry)}</span>
+                      <span className="history-seed">
+                        <span className="history-seed-label">{seedLabel(entry)}</span>
+                        {entry.source === 'import' && (
+                          <span className="badge imported-badge">Imported</span>
+                        )}
+                      </span>
                       <small>
                         {entry.totalUrls} URLs · {entry.status}
                       </small>
                     </button>
+                    {entry.source === 'import' && (
+                      <button
+                        type="button"
+                        className="history-sync"
+                        onClick={() => openSyncFor(entry.id, seedLabel(entry))}
+                      >
+                        Send to cloud
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="history-delete"
@@ -2896,6 +3217,278 @@ export default function Home() {
             </div>
           )}
 
+          {importOpen && (
+            <div
+              className="modal-backdrop"
+              role="presentation"
+              onClick={() => {
+                if (!importBusy) setImportOpen(false);
+              }}
+            >
+              <div
+                className="modal import-modal"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Import Screaming Frog database"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <h3>Import Screaming Frog database</h3>
+                <p className="hint">
+                  Import internal URLs, titles and links from a Screaming Frog{' '}
+                  <code>.dbseospider</code> archive. The result is stored locally as an imported
+                  crawl and appears in Recent crawls.
+                </p>
+                {!isTauri && (
+                  <div className="notice">
+                    Importing needs the desktop app. Start the Tauri shell with{' '}
+                    <code>npm run dev</code> to import a database.
+                  </div>
+                )}
+                <div className="field">
+                  <label htmlFor="sfImportPath">Database path</label>
+                  <div className="path-row">
+                    <input
+                      id="sfImportPath"
+                      type="text"
+                      value={importPath}
+                      onChange={(event) => setImportPath(event.target.value)}
+                      placeholder="/path/to/crawl.dbseospider"
+                      autoFocus
+                      spellCheck={false}
+                      disabled={importBusy}
+                    />
+                    <button
+                      className="secondary"
+                      type="button"
+                      onClick={() => void chooseImportFile()}
+                      disabled={!isTauri || importBusy}
+                    >
+                      Choose…
+                    </button>
+                  </div>
+                </div>
+                {(importBusy || importProgress) && (
+                  <div className="import-progress">
+                    <div className="progress-line">
+                      <span>
+                        {importProgress
+                          ? SF_IMPORT_STAGE_LABEL[importProgress.stage]
+                          : 'Starting import'}
+                      </span>
+                      <strong>
+                        {importProgress
+                          ? `${importProgress.done.toLocaleString()} / ${importProgress.total.toLocaleString()}`
+                          : '…'}
+                      </strong>
+                    </div>
+                    <div className="progress-track" aria-hidden="true">
+                      <div className="progress-bar" style={{ width: `${importPercent}%` }} />
+                    </div>
+                  </div>
+                )}
+                {importError && <div className="error">{importError}</div>}
+                {importReport && (
+                  <div className="report-card" role="status">
+                    <div className="report-head">
+                      <strong>
+                        {importReport.reused
+                          ? 'Already imported — reused existing crawl'
+                          : 'Import complete'}
+                      </strong>
+                      <span className="badge imported-badge">Imported</span>
+                    </div>
+                    <ul className="settings-reference">
+                      <li>
+                        Crawl id: <code>{importReport.crawlId}</code>
+                      </li>
+                      <li>
+                        Seed: <code>{importReport.seed}</code>
+                      </li>
+                      <li>URLs: {importReport.urls.toLocaleString()}</li>
+                      <li>Links: {importReport.links.toLocaleString()}</li>
+                      <li>
+                        Reused:{' '}
+                        {importReport.reused ? 'yes — existing crawl' : 'no — new crawl'}
+                      </li>
+                    </ul>
+                    <div className="modal-actions">
+                      <button
+                        className="secondary"
+                        type="button"
+                        onClick={() => {
+                          setImportOpen(false);
+                          openSyncFor(importReport.crawlId, importReport.seed);
+                        }}
+                      >
+                        Send to cloud
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <div className="modal-actions">
+                  <button
+                    className="secondary"
+                    type="button"
+                    onClick={() => setImportOpen(false)}
+                    disabled={importBusy}
+                  >
+                    {importReport ? 'Close' : 'Cancel'}
+                  </button>
+                  <button
+                    className="primary"
+                    type="button"
+                    onClick={() => void runImport()}
+                    disabled={!isTauri || importBusy || importPath.trim().length === 0}
+                  >
+                    {importBusy ? 'Importing…' : 'Import'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {syncOpen && (
+            <div
+              className="modal-backdrop"
+              role="presentation"
+              onClick={() => {
+                if (!syncBusy) closeSyncModal();
+              }}
+            >
+              <div
+                className="modal sync-modal"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Send crawl to cloud"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <h3>Send to cloud</h3>
+                <p className="hint">
+                  Upload “{syncCrawlLabel || 'crawl'}” to a Coqui cloud project.
+                </p>
+                <div className="field">
+                  <label htmlFor="syncApiUrl">API URL</label>
+                  <input
+                    id="syncApiUrl"
+                    type="url"
+                    value={syncApiUrl}
+                    onChange={(event) => setSyncApiUrl(event.target.value)}
+                    placeholder={DEFAULT_CLOUD_API_URL}
+                    spellCheck={false}
+                    disabled={syncBusy}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="syncToken">Workspace token</label>
+                  <input
+                    id="syncToken"
+                    type="password"
+                    value={syncToken}
+                    onChange={(event) => setSyncToken(event.target.value)}
+                    placeholder="Paste a workspace token"
+                    autoComplete="off"
+                    autoFocus
+                    disabled={syncBusy}
+                  />
+                  <p className="field-hint">
+                    Kept in memory for this dialog only — never saved to disk.
+                  </p>
+                </div>
+                <div className="field">
+                  <label htmlFor="syncProject">Project</label>
+                  <div className="path-row">
+                    <select
+                      id="syncProject"
+                      value={syncProject}
+                      onChange={(event) => setSyncProject(event.target.value)}
+                      disabled={syncBusy || syncLoadingProjects || syncProjects.length === 0}
+                    >
+                      <option value="">
+                        {syncProjects.length === 0 ? 'Load projects first…' : 'Choose a project…'}
+                      </option>
+                      {syncProjects.map((project) => (
+                        <option key={project.id} value={project.id}>
+                          {cloudProjectLabel(project)}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      className="secondary"
+                      type="button"
+                      onClick={() => void loadCloudProjects()}
+                      disabled={syncBusy || syncLoadingProjects}
+                    >
+                      {syncLoadingProjects ? 'Loading…' : 'Load projects'}
+                    </button>
+                  </div>
+                  {selectedSyncProject?.workspaceName && (
+                    <p className="field-hint">Workspace: {selectedSyncProject.workspaceName}</p>
+                  )}
+                </div>
+                {(syncBusy || syncProgress) && (
+                  <div className="sync-progress">
+                    <div className="progress-line">
+                      <span>
+                        {syncProgress ? SYNC_PHASE_LABEL[syncProgress.phase] : 'Starting sync'}
+                      </span>
+                      <strong>
+                        {syncProgress
+                          ? `${syncProgress.done.toLocaleString()} / ${syncProgress.total.toLocaleString()}`
+                          : '…'}
+                      </strong>
+                    </div>
+                    <div className="progress-track" aria-hidden="true">
+                      <div className="progress-bar" style={{ width: `${syncPercent}%` }} />
+                    </div>
+                  </div>
+                )}
+                {syncError && <div className="error">{syncError}</div>}
+                {syncReport && (
+                  <div className="report-card" role="status">
+                    <div className="report-head">
+                      <strong>Sync complete</strong>
+                      <span className="badge imported-badge">{syncReport.source}</span>
+                    </div>
+                    <ul className="settings-reference">
+                      <li>Project: {syncReport.project}</li>
+                      <li>
+                        External crawl id: <code>{syncReport.externalCrawlId}</code>
+                      </li>
+                      <li>URLs: {syncReport.urls.toLocaleString()}</li>
+                      <li>Links: {syncReport.links.toLocaleString()}</li>
+                      <li>Issues: {syncReport.issues.toLocaleString()}</li>
+                      <li>Chunks: {syncReport.chunks.toLocaleString()}</li>
+                    </ul>
+                  </div>
+                )}
+                <div className="modal-actions">
+                  <button
+                    className="secondary"
+                    type="button"
+                    onClick={closeSyncModal}
+                    disabled={syncBusy}
+                  >
+                    Close
+                  </button>
+                  <button
+                    className="primary"
+                    type="button"
+                    onClick={() => void runCloudSync()}
+                    disabled={
+                      !isTauri ||
+                      syncBusy ||
+                      !syncProject ||
+                      !syncToken.trim() ||
+                      !syncApiUrl.trim()
+                    }
+                  >
+                    {syncBusy ? 'Sending…' : 'Send'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {crawl && crawl.blockedUrls > 0 && (
             <div className="notice">
               {crawl.blockedUrls.toLocaleString()} URLs were blocked by the site edge
@@ -2910,6 +3503,11 @@ export default function Home() {
                 <span className={`dot ${phase}`} />
                 {STATUS_LABEL[phase] ?? phase}
                 {crawl && <span className="badge">{seedLabel(crawl)}</span>}
+                {crawl?.source === 'import' && (
+                  <span className="badge imported-badge" title="Imported from Screaming Frog">
+                    Imported
+                  </span>
+                )}
               </div>
               <div className="status-sub">
                 {displayUrl ??

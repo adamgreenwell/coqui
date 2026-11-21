@@ -7,8 +7,11 @@
 use crate::{Result, Store, StoreError};
 use coqui_core::{CrawlConfig, CrawlStatus, NewUrl, now_ms};
 use rusqlite::{Connection, OpenFlags, Row};
+use serde::Serialize;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use uuid::Uuid;
 
 /// Options for importing a Screaming Frog crawl.
 #[derive(Debug, Clone, Default)]
@@ -18,12 +21,41 @@ pub struct SfImportOptions {
 }
 
 /// Summary of an imported Screaming Frog crawl.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SfImportStats {
+    /// Stable UUID v5 derived from the source file's SHA-256. Re-importing the
+    /// same file returns the existing crawl and the same id.
     pub crawl_id: String,
     pub seed: String,
     pub urls: usize,
     pub links: usize,
+    /// True when the file had already been imported into this store.
+    pub reused: bool,
+}
+
+/// Stage of a Screaming Frog import.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SfImportStage {
+    Reading,
+    Urls,
+    Links,
+    Finished,
+}
+
+/// Progress emitted while a Screaming Frog import runs.
+#[derive(Debug, Clone)]
+pub struct SfImportProgress {
+    pub stage: SfImportStage,
+    pub done: usize,
+    pub total: usize,
+}
+
+fn file_sha256(path: &Path) -> Result<[u8; 32]> {
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    std::io::copy(&mut file, &mut hasher)?;
+    Ok(hasher.finalize().into())
 }
 
 fn text(row: &Row<'_>, name: &str) -> Option<String> {
@@ -97,6 +129,52 @@ impl Store {
         path: &Path,
         options: SfImportOptions,
     ) -> Result<SfImportStats> {
+        self.import_seospider_with_progress(path, options, |_| {})
+    }
+
+    /// Import with a progress callback. The crawl id is a UUID v5 of the
+    /// source file's SHA-256, so importing the same file twice is a no-op.
+    pub fn import_seospider_with_progress<F>(
+        &self,
+        path: &Path,
+        options: SfImportOptions,
+        mut progress: F,
+    ) -> Result<SfImportStats>
+    where
+        F: FnMut(SfImportProgress),
+    {
+        progress(SfImportProgress {
+            stage: SfImportStage::Reading,
+            done: 0,
+            total: 0,
+        });
+        let hash = file_sha256(path)?;
+        let crawl_id = Uuid::new_v5(&Uuid::NAMESPACE_URL, &hash).to_string();
+        match self.get_crawl(&crawl_id) {
+            Ok(existing) => {
+                if existing.source != "import" {
+                    return Err(StoreError::Io(std::io::Error::other(
+                        "import id collides with a non-import crawl",
+                    )));
+                }
+                let (urls, links, _) = self.crawl_counts(&crawl_id)?;
+                progress(SfImportProgress {
+                    stage: SfImportStage::Finished,
+                    done: urls as usize,
+                    total: urls as usize,
+                });
+                return Ok(SfImportStats {
+                    crawl_id,
+                    seed: existing.seed,
+                    urls: urls as usize,
+                    links: links as usize,
+                    reused: true,
+                });
+            }
+            Err(StoreError::NotFound(_)) => {}
+            Err(error) => return Err(error),
+        }
+
         let sqlite_path = extract_sql_member(path)?;
         let source = Connection::open_with_flags(&sqlite_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
             .map_err(StoreError::Sqlite)?;
@@ -109,16 +187,38 @@ impl Store {
             )
             .optional_seed()
             .unwrap_or_else(|| "https://imported.invalid/".to_string());
-        static IMPORT_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let crawl_id = format!(
-            "sf-{}-{}-{}",
+        let filter = if options.pages_only {
+            "and (content_type like 'text/html%' or content_type like 'application/xhtml%')"
+        } else {
+            ""
+        };
+        let url_total: usize = source
+            .query_row(
+                &format!(
+                    "select count(*) from urls
+                     where is_internal = 1 and ifnull(loaded_as_a_resource, 0) = 0 {filter}"
+                ),
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(StoreError::Sqlite)? as usize;
+        let link_total: usize = source
+            .query_row(
+                "select count(*) from links
+                 where link_type = 1
+                    or (link_type = 13 and element_path like '%/a[%')",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(StoreError::Sqlite)? as usize;
+        if let Err(error) = self.create_crawl_with_source(
+            &crawl_id,
+            &seed,
+            "url",
+            "import",
+            &CrawlConfig::default(),
             now_ms(),
-            std::process::id(),
-            IMPORT_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-        );
-        if let Err(error) =
-            self.create_crawl(&crawl_id, &seed, "url", &CrawlConfig::default(), now_ms())
-        {
+        ) {
             drop(source);
             std::fs::remove_file(&sqlite_path).ok();
             return Err(error);
@@ -126,12 +226,12 @@ impl Store {
         let populated = (|| -> Result<(usize, usize)> {
             let mut ids: HashMap<String, i64> = HashMap::new();
             let mut urls = 0usize;
+            progress(SfImportProgress {
+                stage: SfImportStage::Urls,
+                done: 0,
+                total: url_total,
+            });
             {
-                let filter = if options.pages_only {
-                    "and (content_type like 'text/html%' or content_type like 'application/xhtml%')"
-                } else {
-                    ""
-                };
                 let query = format!(
                     "select * from urls
                      where is_internal = 1 and ifnull(loaded_as_a_resource, 0) = 0 {filter}
@@ -183,10 +283,22 @@ impl Store {
                     let id = self.ensure_url_id(&crawl_id, &url)?;
                     ids.insert(url, id);
                     urls += 1;
+                    if urls.is_multiple_of(100) {
+                        progress(SfImportProgress {
+                            stage: SfImportStage::Urls,
+                            done: urls,
+                            total: url_total,
+                        });
+                    }
                 }
             }
 
             let mut links = 0usize;
+            progress(SfImportProgress {
+                stage: SfImportStage::Links,
+                done: 0,
+                total: link_total,
+            });
             {
                 let mut statement = source
                 .prepare(
@@ -226,6 +338,13 @@ impl Store {
                         internal,
                     )?;
                     links += 1;
+                    if links.is_multiple_of(100) {
+                        progress(SfImportProgress {
+                            stage: SfImportStage::Links,
+                            done: links,
+                            total: link_total,
+                        });
+                    }
                 }
             }
 
@@ -243,11 +362,17 @@ impl Store {
         };
         drop(source);
         std::fs::remove_file(&sqlite_path).ok();
+        progress(SfImportProgress {
+            stage: SfImportStage::Finished,
+            done: urls,
+            total: urls,
+        });
         Ok(SfImportStats {
             crawl_id,
             seed,
             urls,
             links,
+            reused: false,
         })
     }
 }
@@ -333,6 +458,17 @@ mod tests {
         assert_eq!(stats.links, 1);
         assert_eq!(store.all_urls(&stats.crawl_id).unwrap().len(), 3);
         assert_eq!(store.all_links(&stats.crawl_id).unwrap().len(), 1);
+        assert!(uuid::Uuid::parse_str(&stats.crawl_id).is_ok());
+        assert_eq!(store.get_crawl(&stats.crawl_id).unwrap().source, "import");
+        assert!(!stats.reused);
+
+        // The same file maps to the same UUID v5 crawl, so a second import is a no-op.
+        let again = store.import_seospider(&archive_path).unwrap();
+        assert!(again.reused);
+        assert_eq!(again.crawl_id, stats.crawl_id);
+        assert_eq!(again.urls, stats.urls);
+        assert_eq!(again.links, stats.links);
+        assert_eq!(store.list_crawls().unwrap().len(), 1);
 
         let pages_store = Store::open(dir.join("coqui-pages.db")).unwrap();
         let pages = pages_store

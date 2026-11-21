@@ -6,6 +6,7 @@ All notable changes to Coqui are documented here. Format follows [Keep a Changel
 
 ### Added
 
+- **Cloud migration:** File → Import → Screaming Frog database with progress and the import report, "Send to cloud" with a project picker and workspace token, and `coqui sync <crawlId> --project <uuid> --token <token> [--dry-run]`. Imported crawls use a stable UUID v5 of the file SHA-256, send `source: "import"` and no issues, and can be compared as a baseline (issue deltas are marked not measured by the platform).
 - **Crawl engine:** URL/sitemap/list seeds (sitemap indexes, gzip), regex include/exclude scope with live testers, robots.txt (allow/disallow, wildcards, `$`), manual redirect chains, basic auth, custom headers, cookies, custom User-Agent/Accept-Language, HTTP/SOCKS proxy, bounded concurrency, per-host crawl delay and max-RPS caps, 429 retry with Retry-After, pause/resume with checkpoints, crawl profiles, completion webhooks (CLI, app, schedules).
 - **Rendering:** headless Chromium over CDP, screenshots, console capture, axe accessibility, Web Vitals, custom JavaScript evaluation, asset blocking and render wait options.
 - **Audit:** 48 rules plus per-violation `axe_*`; four PSI-derived checks (DOM size, render-blocking, transfer payload, image bytes); rule and per-URL suppression with required reasons, optional expiry, and actor attribution; severity overrides; all actions audited.

@@ -10,6 +10,7 @@ members = [
   "crates/coqui-api",
   "crates/coqui-cli",
   "crates/coqui-report",
+  "crates/coqui-sync",
   "src-tauri",
 ]
 
@@ -26,6 +27,7 @@ coqui-audit = { path = "crates/coqui-audit" }
 coqui-render = { path = "crates/coqui-render" }
 coqui-lighthouse = { path = "crates/coqui-lighthouse" }
 coqui-report = { path = "crates/coqui-report" }
+coqui-sync = { path = "crates/coqui-sync" }
 coqui-api = { path = "crates/coqui-api" }
 
 serde = { version = "1", features = ["derive"] }
@@ -37,7 +39,7 @@ tokio-tungstenite = { version = "0.28", features = ["connect"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = "2"
-uuid = { version = "1", features = ["v4", "serde"] }
+uuid = { version = "1", features = ["v4", "v5", "serde"] }
 rusqlite = { version = "0.43", features = ["bundled"] }
 csv = "1.4"
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "webpki-roots", "charset", "http2", "gzip", "brotli", "json"] }
@@ -47,6 +49,7 @@ regex = "1"
 flate2 = "1"
 roxmltree = "0.21"
 base64 = "0.22"
+sha2 = "0.10"
 
 [profile.dev]
 # Keep debug builds usable for a crawler: dependencies optimised, our crates fast to rebuild.
