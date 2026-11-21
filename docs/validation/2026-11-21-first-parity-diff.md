@@ -78,3 +78,16 @@ After skipping `?replytocom=` comment links (the reference does) and crawling at
 - Status **156/156**, title **156/156**, depth **156/156**.
 - Word count **aggregate ratio 1.000** (24,8xx vs 24,8xx); 3 pages exact per page.
 - Link sets among shared pages: **2,253 in both**, 1,139 reference-only, 470 Coqui-only — remaining differences are reference duplicate/classification artifacts.
+## Issue-level parity (missing metadata)
+
+Coqui previously skipped non-2xx HTML for missing title/meta/H1; the reference flags error pages too. After aligning:
+
+| Rule | Reference | Coqui |
+| --- | --- | --- |
+| Missing title | 3 | **3** |
+| Missing meta description | 39 | **39** |
+| Missing H1 | 3 | **3** |
+| Duplicate title URLs | 13 (computed) | **13** |
+| Duplicate meta URLs | 5 (computed) | **5** |
+
+(The reference `duplicates_*` tables count more rows than distinct duplicated URLs; recomputing distinct groups from `urls` yields 13/5, matching Coqui.)

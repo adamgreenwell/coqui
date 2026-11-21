@@ -542,18 +542,41 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
     }
 
     for url in &urls {
-        let is_ok_html = url
+        let is_html_page = url
             .content_type
             .as_deref()
-            .map(|value| value.to_ascii_lowercase().contains("text/html"))
+            .map(|value| {
+                let value = value.to_ascii_lowercase();
+                value.contains("text/html") || value.contains("application/xhtml")
+            })
             .unwrap_or(false)
+            && !url.blocked;
+        let is_ok_html = is_html_page
             && url
                 .status
                 .map(|status| (200..300).contains(&status))
-                .unwrap_or(false)
-            && !url.blocked;
+                .unwrap_or(false);
 
+        if !is_html_page {
+            continue;
+        }
         if !is_ok_html {
+            // The reference reports empty title/meta/H1 on error pages too.
+            if url.title.as_deref().unwrap_or("").trim().is_empty() {
+                issue(store, crawl_id, &url.url, "missing_title", None)?;
+            }
+            if url
+                .meta_description
+                .as_deref()
+                .unwrap_or("")
+                .trim()
+                .is_empty()
+            {
+                issue(store, crawl_id, &url.url, "missing_meta_description", None)?;
+            }
+            if url.h1.as_deref().unwrap_or("").trim().is_empty() {
+                issue(store, crawl_id, &url.url, "missing_h1", None)?;
+            }
             continue;
         }
 
@@ -2124,6 +2147,64 @@ mod wordpress_rules {
         assert_eq!(count("avoid_enormous_network_payload"), Some(1));
         assert_eq!(count("improve_image_delivery"), Some(1));
         assert_eq!(count("viewport_not_set"), Some(1));
+        std::fs::remove_dir_all(dir).ok();
+    }
+    #[test]
+    fn flags_missing_metadata_on_error_pages() {
+        let dir = std::env::temp_dir().join(format!("coqui-audit-404-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        store
+            .create_crawl(
+                "c1",
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        store
+            .insert_url(&NewUrl {
+                crawl_id: "c1".to_string(),
+                url: "https://example.com/missing".to_string(),
+                status: Some(404),
+                blocked: false,
+                content_type: Some("text/html; charset=utf-8".into()),
+                title: None,
+                meta_description: None,
+                h1: None,
+                h1_count: 0,
+                canonical: None,
+                meta_robots: None,
+                hreflang: Vec::new(),
+                pagination_next: None,
+                pagination_prev: None,
+                structured_data: Default::default(),
+                console_errors: Vec::new(),
+                axe: Vec::new(),
+                vitals: None,
+                headers: Vec::new(),
+                redirect_target: None,
+                redirect_chain: Vec::new(),
+                word_count: Some(10),
+                depth: 1,
+                response_time_ms: Some(10),
+                size_bytes: Some(100),
+                error: None,
+                discovered_at: now_ms(),
+            })
+            .unwrap();
+        analyze_crawl(&store, "c1").unwrap();
+        let counts = store.issue_counts("c1").unwrap();
+        let count = |rule: &str| {
+            counts
+                .iter()
+                .find(|count| count.rule == rule)
+                .map(|count| count.count)
+        };
+        assert_eq!(count("missing_title"), Some(1));
+        assert_eq!(count("missing_meta_description"), Some(1));
+        assert_eq!(count("missing_h1"), Some(1));
         std::fs::remove_dir_all(dir).ok();
     }
 }
