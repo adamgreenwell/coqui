@@ -1242,7 +1242,13 @@ async fn run_browser(values: &[String]) -> Result<(), String> {
         chrome.display()
     );
     println!("sha256 {digest}");
+    #[cfg(windows)]
     println!("set COQUI_BROWSER_PATH={}", chrome.display());
+    #[cfg(not(windows))]
+    println!(
+        "export COQUI_BROWSER_PATH='{}'",
+        chrome.display().to_string().replace('\'', "'\\''")
+    );
     Ok(())
 }
 
