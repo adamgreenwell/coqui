@@ -188,12 +188,18 @@ for (const file of referenceFiles) {
     }
   }
   const shared = headers.filter((header) => coquiHeaders.has(normalizeHeader(header)));
-  const valueFiles = (args.compareValuesFor ?? 'urls.csv')
-    .split(',')
-    .map((name) => name.trim())
-    .filter(Boolean);
+  const valueFiles = args.compareValuesFor
+    ? args.compareValuesFor
+        .split(',')
+        .map((name) => name.trim())
+        .filter(Boolean)
+    : null;
   const compareValues =
-    urlIndex >= 0 && coquiUrlIndex >= 0 && valueFiles.includes(path.basename(relative));
+    urlIndex >= 0 &&
+    coquiUrlIndex >= 0 &&
+    (valueFiles
+      ? valueFiles.includes(path.basename(relative))
+      : /urls\.csv$/i.test(path.basename(relative)));
   if (compareValues) {
     let fileMismatches = 0;
     for (const row of rows) {
