@@ -210,4 +210,29 @@ async fn captures_web_vitals() {
     let vitals = output.vitals.expect("vitals");
     assert!(vitals.ttfb_ms > 0, "ttfb missing: {vitals:?}");
     assert!(vitals.lcp_ms > 0, "lcp missing: {vitals:?}");
+    assert!(
+        vitals.dom_nodes.unwrap_or(0) > 0,
+        "dom nodes missing: {vitals:?}"
+    );
+    assert_eq!(
+        vitals.has_viewport,
+        Some(false),
+        "viewport detection wrong: {vitals:?}"
+    );
+    assert!(
+        vitals.transfer_bytes.unwrap_or(0) > 0,
+        "transfer bytes missing: {vitals:?}"
+    );
+    assert!(
+        vitals.render_blocking.is_some(),
+        "blocking missing: {vitals:?}"
+    );
+    assert!(
+        vitals.image_bytes.is_some(),
+        "image bytes missing: {vitals:?}"
+    );
+    assert!(
+        vitals.resource_count.is_some(),
+        "resource count missing: {vitals:?}"
+    );
 }
