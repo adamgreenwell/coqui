@@ -193,7 +193,7 @@ impl Store {
                      from links l
                      join urls s on s.rowid = l.src_id
                      join urls d on d.rowid = l.dst_id
-                     where l.link_type = 1",
+                     where l.link_type in (1, 13)",
                 )
                 .map_err(StoreError::Sqlite)?;
                 let mut rows = statement.query([]).map_err(StoreError::Sqlite)?;

@@ -84,4 +84,5 @@ Sampling the `links` table shows what each `link_type` stores:
 | 15 | Analytics/beacon and scripted requests | (no element path) |
 | 29/30 | Meta-driven resource references | `//head/meta` |
 
-The importer currently ingests **type 1** (anchors) only, which is why link-set comparisons against a live crawl differ: the reference stores resource links separately, and its anchor rows include duplicate occurrences.
+The importer ingests **types 1 and 13** (internal and external anchors). Resource links (2/3/4/6/29/30) stay out of the link graph, matching Coqui crawls, which only record anchors; the reference type-1 rows can still include duplicate occurrences.
+
