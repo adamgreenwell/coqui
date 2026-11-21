@@ -3,6 +3,8 @@
 use coqui_core::{CrawlConfig, CrawlProgress, CrawlStatus, NewUrl, now_ms};
 use coqui_store::Store;
 use serde::Deserialize;
+#[cfg(unix)]
+use std::io::Read;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -128,6 +130,7 @@ fn usage() -> &'static str {
     "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots] [--store-html] [--json] [--ndjson] [--fail-on-issues N] [--render-wait-selector CSS] [--webhook URL] [--delay-ms N] [--max-rps N] [--proxy URL] [--cookie STRING]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR]\n       coqui report compare --with <crawl id> [--out DIR]\n       coqui reports\n       coqui export [--out DIR] [--family urls|issues|links|headers|images|a11y|structured|vitals|console|text|markdown|extractions|custom-js|anchors|social]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip] [--images]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N] [--webhook URL] [--delay-ms N] [--max-rps N] [--proxy URL] [--cookie STRING]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui prune [--out DIR] [--keep N]\n       coqui overview [--out DIR]\n       coqui serve [--out DIR] [--addr 127.0.0.1:8787] [--token TOKEN]
        coqui issue-settings <export|import|diff> [--out DIR] [--file PATH] [--with CRAWL]
        coqui bench [--urls N] [--chunk N] [--out DIR] [--json] [--force]
+       coqui browser <install|path> [--out DIR] [--sha256 HEX] [--dry-run]
        coqui doctor [--out DIR]
        coqui import sf --file <crawl.dbseospider> [--out DIR]
        coqui mcp [--out DIR]"
@@ -1037,6 +1040,248 @@ fn run_import(values: &[String]) -> Result<(), String> {
     println!(
         "imported {} urls and {} links into crawl {} (seed {})",
         stats.urls, stats.links, stats.crawl_id, stats.seed
+    );
+    Ok(())
+}
+
+fn browser_cache_dir() -> PathBuf {
+    #[cfg(target_os = "windows")]
+    if let Ok(local) = std::env::var("LOCALAPPDATA") {
+        return PathBuf::from(local).join("coqui").join("browser");
+    }
+    #[cfg(target_os = "macos")]
+    if let Ok(home) = std::env::var("HOME") {
+        return PathBuf::from(home)
+            .join("Library")
+            .join("Caches")
+            .join("coqui")
+            .join("browser");
+    }
+    if let Ok(cache) = std::env::var("XDG_CACHE_HOME") {
+        return PathBuf::from(cache).join("coqui").join("browser");
+    }
+    PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".into()))
+        .join(".cache")
+        .join("coqui")
+        .join("browser")
+}
+
+fn chrome_platform() -> Option<&'static str> {
+    match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("windows", "x86_64") => Some("win64"),
+        ("linux", "x86_64") => Some("linux64"),
+        ("macos", "aarch64") => Some("mac-arm64"),
+        ("macos", "x86_64") => Some("mac-x64"),
+        _ => None,
+    }
+}
+
+fn find_chrome(root: &Path) -> Option<PathBuf> {
+    if !root.exists() {
+        return None;
+    }
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let entries = std::fs::read_dir(&dir).ok()?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if matches!(
+                path.file_name().and_then(|name| name.to_str()),
+                Some("chrome") | Some("chrome.exe") | Some("Google Chrome for Testing")
+            ) {
+                return Some(path);
+            }
+        }
+    }
+    None
+}
+
+async fn run_browser(values: &[String]) -> Result<(), String> {
+    let command = values.first().map(String::as_str).unwrap_or("path");
+    if command == "path" {
+        match coqui_render::browser_executable(None) {
+            Some(path) => println!("{}", path.display()),
+            None => return Err("no Chrome/Edge binary found; set COQUI_BROWSER_PATH".into()),
+        }
+        return Ok(());
+    }
+    if command != "install" {
+        return Err(
+            "usage: coqui browser <install|path> [--out DIR] [--sha256 HEX] [--dry-run]".into(),
+        );
+    }
+    let mut out = browser_cache_dir();
+    let mut expected: Option<String> = None;
+    let mut dry = false;
+    let mut index = 1;
+    while index < values.len() {
+        match values[index].as_str() {
+            "--out" => {
+                index += 1;
+                out = PathBuf::from(values.get(index).ok_or("missing --out value")?);
+            }
+            "--sha256" => {
+                index += 1;
+                expected = Some(
+                    values
+                        .get(index)
+                        .ok_or("missing --sha256 value")?
+                        .trim()
+                        .to_ascii_lowercase(),
+                );
+            }
+            "--dry-run" => dry = true,
+            other => return Err(format!("unknown option '{other}'")),
+        }
+        index += 1;
+    }
+
+    let client = reqwest::Client::builder()
+        .user_agent("coqui-browser-install")
+        .build()
+        .map_err(|error| error.to_string())?;
+    let json: serde_json::Value = client
+        .get("https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json")
+        .send()
+        .await
+        .map_err(|error| format!("fetch Chrome for Testing index: {error}"))?
+        .json()
+        .await
+        .map_err(|error| format!("parse Chrome for Testing index: {error}"))?;
+    let stable = &json["channels"]["Stable"];
+    let version = stable["version"]
+        .as_str()
+        .ok_or("Chrome for Testing index has no Stable version")?;
+    let platform = chrome_platform().ok_or_else(|| {
+        format!(
+            "no Chrome for Testing download for {}/{}",
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        )
+    })?;
+    let download = stable["downloads"]["chrome"]
+        .as_array()
+        .ok_or("Chrome for Testing index has no chrome downloads")?
+        .iter()
+        .find(|entry| entry["platform"].as_str() == Some(platform))
+        .ok_or_else(|| format!("no Chrome download for platform {platform}"))?;
+    let url = download["url"]
+        .as_str()
+        .ok_or("download entry has no url")?;
+    if dry {
+        println!("chrome {version} ({platform}): {url}");
+        return Ok(());
+    }
+
+    let bytes = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|error| format!("download chrome: {error}"))?
+        .bytes()
+        .await
+        .map_err(|error| format!("read chrome download: {error}"))?;
+    let digest = {
+        use sha2::Digest;
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(&bytes);
+        hasher
+            .finalize()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    };
+    if let Some(expected) = expected.as_deref()
+        && expected != digest
+    {
+        return Err(format!(
+            "sha256 mismatch: expected {expected}, downloaded {digest}"
+        ));
+    }
+    let destination = out.join(format!("chrome-{version}-{platform}"));
+    std::fs::create_dir_all(&destination).map_err(|error| error.to_string())?;
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&bytes))
+        .map_err(|error| format!("open chrome zip: {error}"))?;
+    for index in 0..archive.len() {
+        let mut entry = archive
+            .by_index(index)
+            .map_err(|error| format!("read chrome zip entry: {error}"))?;
+        let Some(name) = entry.enclosed_name() else {
+            continue;
+        };
+        let target = destination.join(name);
+        #[cfg(unix)]
+        if entry
+            .unix_mode()
+            .map(|mode| mode & 0o170000 == 0o120000)
+            .unwrap_or(false)
+        {
+            let mut link_target = String::new();
+            entry
+                .read_to_string(&mut link_target)
+                .map_err(|error| format!("read chrome zip symlink: {error}"))?;
+            let link_path = Path::new(&link_target);
+            if link_path.is_absolute()
+                || link_path
+                    .components()
+                    .any(|component| matches!(component, std::path::Component::ParentDir))
+            {
+                return Err(format!(
+                    "unsafe symlink target in chrome zip: {link_target}"
+                ));
+            }
+            if let Some(parent) = target.parent() {
+                std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+            }
+            if std::fs::symlink_metadata(&target).is_ok() {
+                std::fs::remove_file(&target).map_err(|error| error.to_string())?;
+            }
+            std::os::unix::fs::symlink(&link_target, &target)
+                .map_err(|error| format!("create chrome zip symlink: {error}"))?;
+            continue;
+        }
+        if entry.is_dir() {
+            std::fs::create_dir_all(&target).map_err(|error| error.to_string())?;
+        } else {
+            if let Some(parent) = target.parent() {
+                std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+            }
+            #[cfg(unix)]
+            let mode = entry.unix_mode();
+            let mut file = std::fs::File::create(&target).map_err(|error| error.to_string())?;
+            std::io::copy(&mut entry, &mut file).map_err(|error| error.to_string())?;
+            #[cfg(unix)]
+            if let Some(mode) = mode {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(
+                    &target,
+                    std::fs::Permissions::from_mode(mode & 0o777),
+                );
+            }
+        }
+    }
+    let sums = out.join("SHA256SUMS.txt");
+    std::fs::write(
+        &sums,
+        format!("{digest}  chrome-{version}-{platform}.zip\n"),
+    )
+    .map_err(|error| error.to_string())?;
+    let chrome = find_chrome(&destination).ok_or("chrome binary not found after extraction")?;
+    std::fs::write(destination.join(".complete"), format!("{digest}\n"))
+        .map_err(|error| error.to_string())?;
+    println!(
+        "installed chrome {version} ({platform}) at {}",
+        chrome.display()
+    );
+    println!("sha256 {digest}");
+    #[cfg(windows)]
+    println!("set COQUI_BROWSER_PATH={}", chrome.display());
+    #[cfg(not(windows))]
+    println!(
+        "export COQUI_BROWSER_PATH='{}'",
+        chrome.display().to_string().replace('\'', "'\\''")
     );
     Ok(())
 }
@@ -2170,6 +2415,15 @@ async fn main() {
     }
     if values.get(1).map(String::as_str) == Some("issue-settings") {
         match run_issue_settings(&values[2..]) {
+            Ok(()) => return,
+            Err(message) => {
+                eprintln!("{message}");
+                std::process::exit(2);
+            }
+        }
+    }
+    if values.get(1).map(String::as_str) == Some("browser") {
+        match run_browser(&values[2..]).await {
             Ok(()) => return,
             Err(message) => {
                 eprintln!("{message}");

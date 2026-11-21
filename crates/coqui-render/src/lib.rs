@@ -8,7 +8,7 @@ use coqui_core::{AxeViolation, WebVitals};
 use futures::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
@@ -787,6 +787,64 @@ pub fn browser_executable(configured: Option<&str>) -> Option<PathBuf> {
     find_browser(configured)
 }
 
+fn cached_browser() -> Option<PathBuf> {
+    let root = if cfg!(windows) {
+        PathBuf::from(std::env::var_os("LOCALAPPDATA")?)
+            .join("coqui")
+            .join("browser")
+    } else if cfg!(target_os = "macos") {
+        PathBuf::from(std::env::var_os("HOME")?)
+            .join("Library")
+            .join("Caches")
+            .join("coqui")
+            .join("browser")
+    } else {
+        let base = std::env::var_os("XDG_CACHE_HOME")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))?;
+        base.join("coqui").join("browser")
+    };
+    if !root.exists() {
+        return None;
+    }
+    let mut installations: Vec<(std::time::SystemTime, PathBuf)> = Vec::new();
+    for entry in std::fs::read_dir(&root).ok()?.flatten() {
+        let path = entry.path();
+        let marker = path.join(".complete");
+        if path.is_dir() && marker.exists() {
+            let modified = std::fs::metadata(&marker)
+                .and_then(|meta| meta.modified())
+                .unwrap_or(std::time::UNIX_EPOCH);
+            installations.push((modified, path));
+        }
+    }
+    installations.sort_by(|a, b| b.0.cmp(&a.0));
+    installations
+        .into_iter()
+        .find_map(|(_, dir)| find_chrome_in(&dir))
+}
+
+fn find_chrome_in(root: &Path) -> Option<PathBuf> {
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if matches!(
+                path.file_name().and_then(|name| name.to_str()),
+                Some("chrome") | Some("chrome.exe") | Some("Google Chrome for Testing")
+            ) {
+                return Some(path);
+            }
+        }
+    }
+    None
+}
+
 fn find_browser(configured: Option<&str>) -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("COQUI_BROWSER_PATH") {
         let path = PathBuf::from(path);
@@ -797,6 +855,9 @@ fn find_browser(configured: Option<&str>) -> Option<PathBuf> {
     if let Some(path) = configured.map(PathBuf::from)
         && path.exists()
     {
+        return Some(path);
+    }
+    if let Some(path) = cached_browser() {
         return Some(path);
     }
     let candidates = if cfg!(windows) {
