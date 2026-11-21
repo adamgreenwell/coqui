@@ -249,6 +249,7 @@ pub struct UrlRecord {
     pub pagination_next: Option<String>,
     pub pagination_prev: Option<String>,
     pub structured_data: StructuredData,
+    pub social: Vec<SocialTag>,
     pub console_errors: Vec<String>,
     pub axe: Vec<AxeViolation>,
     pub vitals: Option<WebVitals>,
@@ -302,6 +303,7 @@ pub struct NewUrl {
     pub pagination_next: Option<String>,
     pub pagination_prev: Option<String>,
     pub structured_data: StructuredData,
+    pub social: Vec<SocialTag>,
     pub console_errors: Vec<String>,
     pub axe: Vec<AxeViolation>,
     pub vitals: Option<WebVitals>,
@@ -417,6 +419,12 @@ pub struct ImageRef {
     pub height: Option<u32>,
 }
 
+/// One Open Graph / Twitter card meta tag.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SocialTag {
+    pub property: String,
+    pub content: String,
+}
 /// An hreflang alternate declared by a page.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

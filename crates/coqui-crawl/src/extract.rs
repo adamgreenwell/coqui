@@ -3,7 +3,7 @@
 //! The full column registry (X-01) will replace this module with a field-oriented design; the
 //! shape here is intentionally simple: one page in, the values the UI and audit rules need.
 
-use coqui_core::{HreflangLink, ImageRef, StructuredData, resolve_url};
+use coqui_core::{HreflangLink, ImageRef, SocialTag, StructuredData, resolve_url};
 use scraper::{Html, Selector};
 use serde_json::Value;
 use std::collections::HashSet;
@@ -27,6 +27,7 @@ pub struct ExtractedPage {
     pub pagination_next: Option<String>,
     pub pagination_prev: Option<String>,
     pub structured_data: StructuredData,
+    pub social: Vec<SocialTag>,
     pub images: Vec<ImageRef>,
     pub word_count: u32,
     pub text: String,
@@ -82,6 +83,29 @@ fn is_replytocom(url: &str) -> bool {
                 .any(|pair| pair == "replytocom" || pair.starts_with("replytocom="))
         })
         .unwrap_or(false)
+}
+
+fn extract_social(document: &Html) -> Vec<SocialTag> {
+    let mut tags = Vec::new();
+    for meta in document.select(&selector("meta[property], meta[name]")) {
+        let Some(key) = meta
+            .value()
+            .attr("property")
+            .or_else(|| meta.value().attr("name"))
+        else {
+            continue;
+        };
+        let key = key.trim().to_ascii_lowercase();
+        if !(key.starts_with("og:") || key.starts_with("twitter:")) {
+            continue;
+        }
+        let content = meta.value().attr("content").unwrap_or("").trim();
+        tags.push(SocialTag {
+            property: key,
+            content: content.to_string(),
+        });
+    }
+    tags
 }
 
 #[cfg(test)]
@@ -399,6 +423,7 @@ pub fn extract_page(html: &str, base_url: &str) -> ExtractedPage {
         pagination_next,
         pagination_prev,
         structured_data,
+        social: extract_social(&document),
         images,
         word_count,
         text: body_text,
@@ -578,5 +603,17 @@ mod structured_data_tests {
         let page = extract_page(html, "https://example.com/");
         assert_eq!(page.links.len(), 1);
         assert_eq!(page.links[0].url, "https://example.com/post/");
+    }
+    #[test]
+    fn extracts_open_graph_and_twitter_tags() {
+        let html = r#"<html><head>
+            <meta property="og:title" content="OG title">
+            <meta name="twitter:card" content="summary_large_image">
+            <meta name="description" content="not social">
+        </head></html>"#;
+        let page = extract_page(html, "https://example.com/");
+        assert_eq!(page.social.len(), 2);
+        assert_eq!(page.social[0].property, "og:title");
+        assert_eq!(page.social[1].property, "twitter:card");
     }
 }
