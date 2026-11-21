@@ -8,7 +8,7 @@ Coqui ships as a native CLI binary, a desktop app, and a container image.
 docker compose up --build
 ```
 
-The API is then at <http://127.0.0.1:8787> and crawl data persists in the `coqui-data` volume mounted at `/data`.
+The API is then at <http://127.0.0.1:8787> and crawl data persists in the `coqui-data` volume mounted at `/data`. The port is bound to loopback by default; if you expose it externally, run the service with `--token`/`COQUI_API_TOKEN`.
 
 Render-based features (JavaScript rendering, axe, Lighthouse) need a Chromium/Chrome binary inside the container. The default image is CLI-only; mount or extend it with Chrome for those features.
 
@@ -37,8 +37,9 @@ Build with the Tauri toolchain:
 ```bash
 npm ci
 npm run build:web
-cargo tauri build
+npm run build
 ```
 
 The desktop build currently uses the system Chrome/Edge for rendering; set `COQUI_BROWSER_PATH` to override discovery.
+
 
