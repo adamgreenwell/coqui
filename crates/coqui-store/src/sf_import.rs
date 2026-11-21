@@ -193,7 +193,8 @@ impl Store {
                      from links l
                      join urls s on s.rowid = l.src_id
                      join urls d on d.rowid = l.dst_id
-                     where l.link_type = 1",
+                     where l.link_type = 1
+                        or (l.link_type = 13 and l.element_path like '%/a[%')",
                 )
                 .map_err(StoreError::Sqlite)?;
                 let mut rows = statement.query([]).map_err(StoreError::Sqlite)?;
@@ -282,7 +283,7 @@ mod tests {
                 );
                 create table links (
                     link_type integer, src_id integer, dst_id integer,
-                    link_text text, nofollow integer, scope integer
+                    link_text text, nofollow integer, scope integer, element_path text
                 );",
             )
             .unwrap();
@@ -301,8 +302,11 @@ mod tests {
                 [],
             )
             .unwrap();
-            conn.execute("insert into links values (1, 1, 2, 'About', 0, 1)", [])
-                .unwrap();
+            conn.execute(
+                "insert into links values (1, 1, 2, 'About', 0, 1, '//body/a')",
+                [],
+            )
+            .unwrap();
         }
         let archive_path = dir.join("crawl.dbseospider");
         {
