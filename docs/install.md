@@ -14,11 +14,12 @@ Render-based features (JavaScript rendering, axe, Lighthouse) need a Chromium/Ch
 
 ## Release binaries
 
-Download the asset for your platform from the GitHub releases page (`coqui` / `coqui.exe`) plus `SHA256SUMS.txt`, verify the checksum, then run:
+Download the asset for your platform from the GitHub releases page (for example `coqui-linux-x86_64`) plus `SHA256SUMS-<os>-<arch>.txt`, verify the checksum, then run:
 
 ```bash
-sha256sum -c SHA256SUMS.txt
-./coqui crawl url https://example.com --out crawl-out
+sha256sum -c SHA256SUMS-linux-x86_64.txt
+chmod +x coqui-linux-x86_64
+./coqui-linux-x86_64 crawl url https://example.com --out crawl-out
 ```
 
 The CLI is a self-contained Rust binary: no JVM or Node.js installation is required for crawling, auditing, reporting, exporting, or the API server.
@@ -64,3 +65,5 @@ coqui update --json    # current, latest, update_available, url
 ```
 
 The check queries the latest GitHub release and compares versions; it never installs anything. Desktop updates follow the same release assets.
+
+
