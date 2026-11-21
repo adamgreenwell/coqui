@@ -17,7 +17,7 @@ Named after the *coquí*, the tiny frog native to Puerto Rico whose call is ever
 - **Crawl:** URL/sitemap/list seeds, regex scope, auth/headers, robots.txt, redirect chains, pause/resume, checkpoints, crawl profiles, completion webhooks.
 - **Render:** headless Chromium over CDP, screenshots, console capture, axe accessibility, Web Vitals, custom JavaScript.
 - **Audit:** 49 rules across SEO/meta, status codes, redirects, canonical targets, hreflang/pagination, JSON-LD, accessibility, Web Vitals, security/robots, duplicates, misspellings, images and orphans, plus PSI-derived checks (DOM size, render-blocking, payload, image bytes) and one `axe_*` issue per accessibility violation; per-crawl suppression and severity overrides.
-- **Exports and reports:** CSV/XLSX for URLs/issues/links, headers, images, a11y, structured data, vitals, console, text/Markdown, custom extraction, custom JS, screenshots, sitemaps, HTML/PDF reports (overview, comparison, redirects, broken links).
+- **Exports and reports:** CSV/XLSX for URLs/issues/links, headers, images, a11y, structured data, vitals, console, text/Markdown, custom extraction, custom JS, screenshots, sitemaps, HTML/PDF reports (overview, comparison, redirects, broken links, accessibility, structured data, Web Vitals, duplicates).
 - **Workflow:** search/filters, saved views with sort/page state, result tabs, crawl history, URL inspector (links, images, screenshot, axe, headers, copy/deep-link/export), interval scheduler with run-due, CLI, stdio MCP server.
 - **Packaging:** Windows MSI 71.67 MiB / NSIS 40.95 MiB locally with bundled Node + Lighthouse sidecars; macOS/Linux release jobs; signing runbook ready.
 

@@ -20,7 +20,19 @@ Outputs land as `DIR/report-<kind>.html` (plus `.pdf` with `--pdf`).
 | `performance` | Performance | Slowest URLs, throughput and per-second timeline |
 | `redirects` | Redirects | 3xx responses with targets |
 | `broken-links` | Broken links | 4xx/5xx and failed responses |
-| `overview` | Crawl overview | Status, indexability, content, depth and issue totals |\n| `hreflang` | Hreflang | Hreflang link pairs per page (language and target) |\n| `canonical-chains` | Canonical chains | Canonical targets followed across the crawl, with loops |\n| `pagination` | Pagination | rel=next/prev targets, with both statuses |\n| `orphans` | Orphan pages | Indexable 200 pages with no internal inlinks (search URL excluded) |\n| `segments` | Segments overview | URL counts and share per configured segment |\n| `serp` | SERP summary | Title/meta/H1/word count with missing, long, duplicate and thin flags |\n| `canonicals` | Canonicals | Self/non-self/missing declarations with target status |\n| `hreflang-return` | Hreflang return links | Target status plus missing return-link flags |
+| `overview` | Crawl overview | Status, indexability, content, depth and issue totals |
+| `hreflang` | Hreflang | Hreflang link pairs per page (language and target) |
+| `canonical-chains` | Canonical chains | Canonical targets followed across the crawl, with loops |
+| `pagination` | Pagination | rel=next/prev targets, with both statuses |
+| `orphans` | Orphan pages | Indexable 200 pages with no internal inlinks (search URL excluded) |
+| `segments` | Segments overview | URL counts and share per configured segment |
+| `serp` | SERP summary | Title/meta/H1/word count with missing, long, duplicate and thin flags |
+| `canonicals` | Canonicals | Self/non-self/missing declarations with target status |
+| `hreflang-return` | Hreflang return links | Target status plus missing return-link flags |
+| `accessibility` | Accessibility | Axe violations grouped by rule, with pages and nodes |
+| `structured-data` | Structured data | JSON-LD types and validation errors |
+| `vitals` | Web Vitals | LCP, CLS, TBT, TTFB and FCP per page, with medians and poor counts |
+| `duplicates` | Duplicate content | Duplicate titles, meta descriptions and H1 groups |
 
 ## Options
 

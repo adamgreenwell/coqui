@@ -209,6 +209,26 @@ pub const REPORTS: &[(&str, &str, &str)] = &[
         "Hreflang return links",
         "Hreflang targets with status and return-link presence.",
     ),
+    (
+        "accessibility",
+        "Accessibility",
+        "Axe violations by rule and page.",
+    ),
+    (
+        "structured-data",
+        "Structured data",
+        "JSON-LD types and validation errors.",
+    ),
+    (
+        "vitals",
+        "Web Vitals",
+        "LCP, CLS, TBT, TTFB and FCP by page.",
+    ),
+    (
+        "duplicates",
+        "Duplicate content",
+        "Duplicate titles, meta descriptions and H1s.",
+    ),
 ];
 
 /// Render a named report.
@@ -238,6 +258,10 @@ pub fn render_report_with(
         "serp" => render_serp(store, crawl_id),
         "canonicals" => render_canonicals(store, crawl_id),
         "hreflang-return" => render_hreflang_return(store, crawl_id),
+        "accessibility" => render_accessibility(store, crawl_id),
+        "structured-data" => render_structured_data(store, crawl_id),
+        "vitals" => render_vitals(store, crawl_id, options.top),
+        "duplicates" => render_duplicates(store, crawl_id),
         _ => render_html(store, crawl_id),
     }
 }
@@ -1067,6 +1091,235 @@ fn render_performance(
     Ok(shell(&crawl.seed, "Performance", &body))
 }
 
+fn clip(value: &str, max: usize) -> String {
+    let mut chars = value.chars();
+    let clipped: String = chars.by_ref().take(max).collect();
+    if chars.next().is_some() {
+        format!("{clipped}…")
+    } else {
+        clipped
+    }
+}
+
+fn median(values: &mut [u64]) -> u64 {
+    values.sort_unstable();
+    if values.is_empty() {
+        return 0;
+    }
+    values[values.len() / 2]
+}
+
+fn render_accessibility(store: &Store, crawl_id: &str) -> Result<String, String> {
+    let crawl = store
+        .get_crawl(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let urls = store
+        .all_urls(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let mut rules: BTreeMap<String, (String, String, usize, u32)> = BTreeMap::new();
+    let mut pages = 0usize;
+    let mut nodes = 0u32;
+    for url in &urls {
+        if url.axe.is_empty() {
+            continue;
+        }
+        pages += 1;
+        for violation in &url.axe {
+            let entry = rules.entry(violation.id.clone()).or_insert_with(|| {
+                (
+                    violation.impact.clone().unwrap_or_else(|| "unknown".into()),
+                    violation.help.clone(),
+                    0,
+                    0,
+                )
+            });
+            entry.2 += 1;
+            entry.3 += violation.nodes;
+            nodes += violation.nodes;
+        }
+    }
+    let mut rows: Vec<_> = rules.into_iter().collect();
+    rows.sort_by_key(|(_, (_, _, _, rule_nodes))| std::cmp::Reverse(*rule_nodes));
+    let mut body = format!(
+        "<p class=\"muted\">{} pages with violations · {} rules · {} nodes</p>",
+        pages,
+        rows.len(),
+        nodes
+    );
+    if rows.is_empty() {
+        body.push_str("<p>No axe violations recorded for this crawl.</p>");
+    } else {
+        body.push_str(
+            "<table><tr><th>Rule</th><th>Impact</th><th>Pages</th><th>Nodes</th><th>Help</th></tr>",
+        );
+        for (rule, (impact, help, page_count, node_count)) in &rows {
+            body.push_str(&format!(
+                "<tr><td>{}</td><td>{}</td><td>{page_count}</td><td>{node_count}</td><td>{}</td></tr>",
+                escape(rule),
+                escape(impact),
+                escape(help)
+            ));
+        }
+        body.push_str("</table>");
+    }
+    Ok(shell(&crawl.seed, "Accessibility", &body))
+}
+
+fn render_structured_data(store: &Store, crawl_id: &str) -> Result<String, String> {
+    let crawl = store
+        .get_crawl(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let urls = store
+        .all_urls(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let mut types: BTreeMap<String, usize> = BTreeMap::new();
+    let mut errors: Vec<(String, Vec<String>)> = Vec::new();
+    let mut pages = 0usize;
+    for url in &urls {
+        if url.structured_data.types.is_empty() && url.structured_data.errors.is_empty() {
+            continue;
+        }
+        pages += 1;
+        for kind in &url.structured_data.types {
+            *types.entry(kind.clone()).or_default() += 1;
+        }
+        if !url.structured_data.errors.is_empty() {
+            errors.push((url.url.clone(), url.structured_data.errors.clone()));
+        }
+    }
+    let mut body = format!(
+        "<p class=\"muted\">{} pages with JSON-LD · {} types · {} pages with validation errors</p>",
+        pages,
+        types.len(),
+        errors.len()
+    );
+    body.push_str("<h2>Types</h2>");
+    if types.is_empty() {
+        body.push_str("<p>No structured data types found.</p>");
+    } else {
+        body.push_str("<table><tr><th>Type</th><th>Pages</th></tr>");
+        for (kind, count) in &types {
+            body.push_str(&format!(
+                "<tr><td>{}</td><td>{count}</td></tr>",
+                escape(kind)
+            ));
+        }
+        body.push_str("</table>");
+    }
+    body.push_str("<h2>Validation errors</h2>");
+    if errors.is_empty() {
+        body.push_str("<p>No JSON-LD validation errors.</p>");
+    } else {
+        body.push_str("<table><tr><th>URL</th><th>Errors</th></tr>");
+        for (url, problems) in &errors {
+            body.push_str(&format!(
+                "<tr><td>{}</td><td>{}</td></tr>",
+                escape(url),
+                escape(&problems.join("; "))
+            ));
+        }
+        body.push_str("</table>");
+    }
+    Ok(shell(&crawl.seed, "Structured data", &body))
+}
+
+fn render_vitals(store: &Store, crawl_id: &str, top: Option<usize>) -> Result<String, String> {
+    let crawl = store
+        .get_crawl(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let urls = store
+        .all_urls(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let mut rows: Vec<_> = urls.iter().filter(|url| url.vitals.is_some()).collect();
+    rows.sort_by_key(|url| std::cmp::Reverse(url.vitals.map(|v| v.lcp_ms).unwrap_or(0)));
+    let limit = top.unwrap_or(100).max(1);
+    rows.truncate(limit);
+    let measured: Vec<_> = urls.iter().filter_map(|url| url.vitals).collect();
+    if measured.is_empty() {
+        return Ok(shell(
+            &crawl.seed,
+            "Web Vitals",
+            "<p>No Web Vitals recorded. Render the crawl with <code>--vitals</code> to populate this report.</p>",
+        ));
+    }
+    let mut lcps: Vec<u64> = measured.iter().map(|v| v.lcp_ms).collect();
+    let mut ttfbs: Vec<u64> = measured.iter().map(|v| v.ttfb_ms).collect();
+    let poor_lcp = measured.iter().filter(|v| v.lcp_ms > 2500).count();
+    let shifted = measured.iter().filter(|v| v.cls > 0.1).count();
+    let slow_ttfb = measured.iter().filter(|v| v.ttfb_ms > 800).count();
+    let long_tbt = measured.iter().filter(|v| v.tbt_ms > 200).count();
+    let body = format!(
+        "<p class=\"muted\">{} pages measured · median LCP {} ms · median TTFB {} ms · {} poor LCP · {} layout shifts · {} slow TTFB · {} long TBT</p>\
+         <table><tr><th>URL</th><th>LCP ms</th><th>CLS</th><th>TBT ms</th><th>TTFB ms</th><th>FCP ms</th><th>DOM nodes</th><th>Blocking</th><th>Transfer bytes</th></tr>{}</table>",
+        measured.len(),
+        median(&mut lcps),
+        median(&mut ttfbs),
+        poor_lcp,
+        shifted,
+        slow_ttfb,
+        long_tbt,
+        rows.iter()
+            .map(|url| {
+                let v = url.vitals.unwrap_or_default();
+                format!(
+                    "<tr><td>{}</td><td>{}</td><td>{:.3}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+                    escape(&url.url),
+                    v.lcp_ms,
+                    v.cls,
+                    v.tbt_ms,
+                    v.ttfb_ms,
+                    v.fcp_ms,
+                    v.dom_nodes.map(|n| n.to_string()).unwrap_or_else(|| "—".into()),
+                    v.render_blocking.map(|n| n.to_string()).unwrap_or_else(|| "—".into()),
+                    v.transfer_bytes.map(|n| n.to_string()).unwrap_or_else(|| "—".into())
+                )
+            })
+            .collect::<String>()
+    );
+    Ok(shell(&crawl.seed, "Web Vitals", &body))
+}
+
+fn render_duplicates(store: &Store, crawl_id: &str) -> Result<String, String> {
+    let crawl = store
+        .get_crawl(crawl_id)
+        .map_err(|error| error.to_string())?;
+    let mut body = String::new();
+    for (field, label) in [
+        ("title", "Duplicate titles"),
+        ("meta_description", "Duplicate meta descriptions"),
+        ("h1", "Duplicate H1s"),
+    ] {
+        let groups = store
+            .duplicate_groups(crawl_id, field, 100)
+            .map_err(|error| error.to_string())?;
+        body.push_str(&format!("<h2>{label}</h2>"));
+        if groups.is_empty() {
+            body.push_str("<p>None.</p>");
+            continue;
+        }
+        body.push_str(&format!(
+            "<p class=\"muted\">{} duplicate groups</p>",
+            groups.len()
+        ));
+        body.push_str("<table><tr><th>Value</th><th>URLs</th><th>Examples</th></tr>");
+        for (value, count, examples) in &groups {
+            let urls = examples
+                .iter()
+                .take(3)
+                .map(|(_, url)| url.as_str())
+                .collect::<Vec<_>>()
+                .join(" ");
+            body.push_str(&format!(
+                "<tr><td>{}</td><td>{count}</td><td>{}</td></tr>",
+                escape(&clip(value, 120)),
+                escape(&urls)
+            ));
+        }
+        body.push_str("</table>");
+    }
+    Ok(shell(&crawl.seed, "Duplicate content", &body))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1173,6 +1426,53 @@ mod tests {
         assert!(canonicals.contains("non-self"));
         let pagination = render_pagination(&store, "c1").unwrap();
         assert!(pagination.contains("example.com/missing"));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn renders_accessibility_structured_vitals_and_duplicates() {
+        let dir = std::env::temp_dir().join(format!("coqui-report-rich-{}", std::process::id()));
+        let store = setup(&dir);
+        let mut page = new_url("https://example.com/axe");
+        page.axe = vec![coqui_core::AxeViolation {
+            id: "color-contrast".to_string(),
+            impact: Some("serious".to_string()),
+            help: "Elements must meet minimum contrast".to_string(),
+            help_url: "https://dequeuniversity.com/rules/axe/color-contrast".to_string(),
+            nodes: 3,
+        }];
+        page.structured_data.types = vec!["Article".to_string()];
+        page.structured_data.errors = vec!["missing author".to_string()];
+        page.vitals = Some(coqui_core::WebVitals {
+            lcp_ms: 3200,
+            cls: 0.21,
+            tbt_ms: 260,
+            ttfb_ms: 910,
+            fcp_ms: 1100,
+            dom_nodes: Some(1700),
+            render_blocking: Some(3),
+            transfer_bytes: Some(2_100_000),
+            resource_count: Some(30),
+            image_bytes: Some(1_100_000),
+            has_viewport: Some(true),
+        });
+        store.insert_url(&page).unwrap();
+        store
+            .insert_url(&new_url("https://example.com/duplicate"))
+            .unwrap();
+
+        let accessibility = render_accessibility(&store, "c1").unwrap();
+        assert!(accessibility.contains("color-contrast"));
+        assert!(accessibility.contains("serious"));
+        let structured = render_structured_data(&store, "c1").unwrap();
+        assert!(structured.contains("Article"));
+        assert!(structured.contains("missing author"));
+        let vitals = render_vitals(&store, "c1", None).unwrap();
+        assert!(vitals.contains("3200"));
+        assert!(vitals.contains("pages measured"));
+        let duplicates = render_duplicates(&store, "c1").unwrap();
+        assert!(duplicates.contains("Duplicate titles"));
+        assert!(duplicates.contains("Page title"));
         std::fs::remove_dir_all(dir).ok();
     }
 
