@@ -1016,6 +1016,7 @@ impl Store {
             "SELECT urls.url, COUNT(*) FROM images
              JOIN urls ON urls.id = images.url_id
              WHERE images.crawl_id = ?1
+               AND images.title_known = 1
                AND (images.title IS NULL OR trim(images.title) = '')
              GROUP BY urls.url",
         )?;
@@ -1522,8 +1523,8 @@ impl Store {
             params![crawl_id, url_id],
         )?;
         let mut stmt = conn.prepare(
-            "INSERT OR IGNORE INTO images (crawl_id, url_id, src, alt, title, width, height)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT OR IGNORE INTO images (crawl_id, url_id, src, alt, title, title_known, width, height)
+             VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, ?7)",
         )?;
         for image in images {
             stmt.execute(params![
@@ -2938,6 +2939,17 @@ fn migrate(conn: &Connection) -> Result<()> {
             .any(|name| name == "title");
         if !has_title {
             conn.execute_batch("ALTER TABLE images ADD COLUMN title TEXT;")?;
+        }
+        let has_known = conn
+            .prepare("PRAGMA table_info(images)")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<std::result::Result<Vec<_>, _>>()?
+            .iter()
+            .any(|name| name == "title_known");
+        if !has_known {
+            conn.execute_batch(
+                "ALTER TABLE images ADD COLUMN title_known INTEGER NOT NULL DEFAULT 0;",
+            )?;
         }
     }
     if version < 33 {
