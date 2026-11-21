@@ -47,7 +47,10 @@ jobs:
         if: always() && hashFiles('bench.json') != ''
         with:
           name: bench-result
-          path: bench.json
+          path: |
+            bench.json
+            bench-summary.md
+          if-no-files-found: warn
 
 
 
