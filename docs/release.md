@@ -28,5 +28,6 @@ curl -LO https://github.com/adamgreenwell/coqui/releases/latest/download/coqui-l
 curl -LO https://github.com/adamgreenwell/coqui/releases/latest/download/SHA256SUMS-linux-x86_64.txt
 sha256sum -c SHA256SUMS-linux-x86_64.txt
 ```
+## Versioning
 
-
+See `docs/versioning.md` for the SemVer policy, release checklist, update channels and compatibility guarantees. Release notes are tracked in `CHANGELOG.md`.
