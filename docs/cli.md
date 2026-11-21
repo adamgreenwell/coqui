@@ -176,7 +176,7 @@ Supports URL/sitemap/list seeds, crawl limits, user agent, custom headers, basic
 Screaming Frog's `.dbseospider` file is a ZIP whose `results_*/sql` member is a SQLite database. Coqui can ingest it directly:
 
 ```bash
-coqui import sf --file path/to/crawl.dbseospider --out DIR
+coqui import sf --file path/to/crawl.dbseospider --out DIR [--pages-only]
 ```
 
 It creates a new crawl (`sf-<timestamp>`) and imports internal URLs (title, meta description, H1, status, word count, depth, response time, size) plus hyperlink rows (anchor, nofollow, internal/external). Verified against a 267-URL reference crawl: **211 URLs and 3,826 links** imported, after which reports/exports work normally.
@@ -184,3 +184,4 @@ It creates a new crawl (`sf-<timestamp>`) and imports internal URLs (title, meta
 Notes:
 - Resource rows (CSS/JS/images) are imported when the reference includes them; filter by content type in the grid/reports.
 - Audit rules are not run automatically on import.
+

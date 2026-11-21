@@ -28,3 +28,15 @@ The report lists each reference CSV, its URL column, row counts, URL overlap wit
 ## Golden fixtures
 
 Copy a small reference export (e.g. 20–50 URLs) into `research/reference/` and keep it out of the installed app's licence state. These become read-only fixtures for future comparisons; the site must be publicly reachable to regenerate.
+## Comparing link sets
+
+Both the imported reference crawl and Coqui crawls use the same store schema, so links can be compared directly:
+
+```bash
+node tools/parity/compare-links.mjs \
+  --left research/import-test2/coqui.db \
+  --right research/parity/adam-coqui-v2/coqui.db \
+  --out research/parity/links-report.md
+```
+
+The report counts internal HTML-to-HTML links in both, links only on each side, and samples. Restrict both sides to a common crawl scope for meaningful numbers (the reference crawl is larger than a 100-URL sample).
