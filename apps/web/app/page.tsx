@@ -220,6 +220,7 @@ const ISSUE_LABELS: Record<string, string> = {
   render_blocking_requests: 'Render-blocking requests',
   avoid_enormous_network_payload: 'Enormous network payload',
   improve_image_delivery: 'Heavy image delivery',
+  viewport_not_set: 'Viewport not set',
 };
 
 const ISSUE_DESCRIPTIONS: Record<string, string> = {
@@ -271,6 +272,7 @@ const ISSUE_DESCRIPTIONS: Record<string, string> = {
   render_blocking_requests: 'More than two render-blocking resources were found.',
   avoid_enormous_network_payload: 'Total transfer size exceeds 2 MB.',
   improve_image_delivery: 'Image transfer size exceeds 1 MB.',
+  viewport_not_set: 'The page has no meta viewport tag.',
 };
 
 const issueLabel = (rule: string): string => {
@@ -3800,6 +3802,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 
