@@ -1548,24 +1548,26 @@ impl Store {
         }
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
-            "SELECT u.url, i.src, i.alt, i.width, i.height FROM images i
+            "SELECT u.url, i.src, i.alt, i.title, i.width, i.height FROM images i
              JOIN urls u ON u.id = i.url_id AND u.crawl_id = i.crawl_id
              WHERE i.crawl_id = ?1 ORDER BY u.url, i.src",
         )?;
         let mut writer = csv::Writer::from_path(path)?;
-        writer.write_record(["url", "src", "alt", "width", "height"])?;
+        writer.write_record(["url", "src", "alt", "title", "width", "height"])?;
         let mut rows = 0u64;
         let mut records = stmt.query(params![crawl_id])?;
         while let Some(row) = records.next()? {
             let url: String = row.get(0)?;
             let src: String = row.get(1)?;
             let alt: Option<String> = row.get(2)?;
-            let width: Option<i64> = row.get(3)?;
-            let height: Option<i64> = row.get(4)?;
+            let title: Option<String> = row.get(3)?;
+            let width: Option<i64> = row.get(4)?;
+            let height: Option<i64> = row.get(5)?;
             writer.write_record([
                 url,
                 src,
                 alt.unwrap_or_default(),
+                title.unwrap_or_default(),
                 width.map(|value| value.to_string()).unwrap_or_default(),
                 height.map(|value| value.to_string()).unwrap_or_default(),
             ])?;
@@ -3792,6 +3794,8 @@ mod tests {
         assert_eq!(store.export_headers_csv("c1", &headers).unwrap(), 1);
         let images = dir.join("images.csv");
         assert_eq!(store.export_images_csv("c1", &images).unwrap(), 1);
+        let images_text = std::fs::read_to_string(&images).unwrap();
+        assert!(images_text.contains("title"));
         let text = std::fs::read_to_string(&accessibility).unwrap();
         assert!(text.contains("image-alt"));
         std::fs::remove_dir_all(dir).ok();
