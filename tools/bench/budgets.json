@@ -1,0 +1,6 @@
+{
+  "urls": 100000,
+  "min_urls_per_second": 50000,
+  "max_query_ms": 1000,
+  "max_bytes_per_url": 1024
+}
