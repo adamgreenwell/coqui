@@ -16,6 +16,7 @@ function parseArgs(argv) {
     else if (key === '--max-mismatches') args.maxMismatches = Number(argv[++index]);
     else if (key === '--tolerance') args.tolerance = argv[++index];
     else if (key === '--compare-values-for') args.compareValuesFor = argv[++index];
+    else if (key === '--require-counterparts') args.requireCounterparts = true;
   }
   return args;
 }
@@ -159,12 +160,28 @@ let matchedFiles = 0;
 let totalRefUrls = 0;
 let totalOverlap = 0;
 let totalMismatches = 0;
+let missingCounterparts = 0;
 const coquiHeaderIndex = new Map(
   coquiUrls.headers.map((header, index) => [normalizeHeader(header), index]),
 );
 const coquiByUrl = new Map();
 if (coquiUrlIndex >= 0) {
   for (const row of coquiUrls.rows) coquiByUrl.set(row[coquiUrlIndex], row);
+}
+const coquiFiles = new Map();
+for (const file of walk(args.coqui)) {
+  const base = path.basename(file);
+  const { headers, rows } = readCsv(file);
+  const index = urlColumn(headers);
+  const byUrl = new Map();
+  if (index >= 0) for (const row of rows) byUrl.set(row[index], row);
+  coquiFiles.set(base, {
+    headers,
+    rows,
+    index,
+    byUrl,
+    headerIndex: new Map(headers.map((header, i) => [normalizeHeader(header), i])),
+  });
 }
 for (const file of referenceFiles) {
   const relative = path.relative(args.reference, file);
@@ -187,28 +204,60 @@ for (const file of referenceFiles) {
       matchedFiles += 1;
     }
   }
-  const shared = headers.filter((header) => coquiHeaders.has(normalizeHeader(header)));
+  const base = path.basename(relative);
+  const counterpart = coquiFiles.get(base) ?? null;
+  const shared = headers.filter((header) =>
+    counterpart
+      ? counterpart.headerIndex.has(normalizeHeader(header))
+      : coquiHeaders.has(normalizeHeader(header)),
+  );
   const valueFiles = args.compareValuesFor
     ? args.compareValuesFor
         .split(',')
         .map((name) => name.trim())
         .filter(Boolean)
     : null;
+  const refUrls = urlIndex >= 0 ? rows.map((row) => row[urlIndex]) : [];
+  const counterpartUrls =
+    counterpart && counterpart.index >= 0
+      ? counterpart.rows.map((row) => row[counterpart.index])
+      : [];
+  const repeatedUrls =
+    refUrls.length !== new Set(refUrls).size ||
+    counterpartUrls.length !== new Set(counterpartUrls).size;
   const compareValues =
+    !repeatedUrls &&
     urlIndex >= 0 &&
-    coquiUrlIndex >= 0 &&
+    (counterpart ? counterpart.index >= 0 : coquiUrlIndex >= 0) &&
     (valueFiles
-      ? valueFiles.includes(path.basename(relative))
-      : /urls\.csv$/i.test(path.basename(relative)));
+      ? valueFiles.includes(base)
+      : Boolean(counterpart) || /urls\.csv$/i.test(base));
+  if (counterpart && ((urlIndex < 0 && counterpart.index < 0) || repeatedUrls)) {
+    const key = (row) => row.join('\u0001');
+    const counts = new Map();
+    for (const row of rows) counts.set(key(row), (counts.get(key(row)) ?? 0) + 1);
+    let fileMismatches = 0;
+    for (const row of counterpart.rows) {
+      const rowKey = key(row);
+      const seen = counts.get(rowKey) ?? 0;
+      if (seen > 0) counts.set(rowKey, seen - 1);
+      else fileMismatches += 1;
+    }
+    for (const remaining of counts.values()) fileMismatches += remaining;
+    totalMismatches += fileMismatches;
+    lines.push(`- Row mismatches: ${fileMismatches}`);
+  }
   if (compareValues) {
+    const otherByUrl = counterpart ? counterpart.byUrl : coquiByUrl;
+    const otherHeaderIndex = counterpart ? counterpart.headerIndex : coquiHeaderIndex;
     let fileMismatches = 0;
     for (const row of rows) {
       const url = row[urlIndex];
-      const other = coquiByUrl.get(url);
+      const other = otherByUrl.get(url);
       if (!other) continue;
       for (const header of shared) {
         const a = row[headers.indexOf(header)] ?? '';
-        const b = other[coquiHeaderIndex.get(normalizeHeader(header))] ?? '';
+        const b = other[otherHeaderIndex.get(normalizeHeader(header))] ?? '';
         const rule = toleranceFor(header);
         if (rule?.type === 'ignore') continue;
         if (rule?.type === 'numeric') {
@@ -246,6 +295,10 @@ lines.push('');
 lines.push('Next: map each reference tab to a Coqui export family, then compare row-level values for the shared columns.');
 
 const report = lines.join('\n');
+if (args.requireCounterparts && missingCounterparts > 0) {
+  console.error(`${missingCounterparts} reference files have no Coqui counterpart`);
+  process.exit(3);
+}
 if (args.failUnder && totalRefUrls === 0) {
   console.error('no reference URLs with a detected URL column; cannot enforce overlap');
   process.exit(3);
