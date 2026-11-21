@@ -35,10 +35,10 @@ jobs:
         if: hashFiles('bench-prev.json') != ''
         run: node tools/bench/compare.mjs --previous bench-prev.json --current bench.json --max-regression 0.10 --out bench-summary.md
       - name: Prepare result for caching
-        if: hashFiles('bench.json') != ''
+        if: always() && hashFiles('bench.json') != ''
         run: cp bench.json bench-prev.json
       - name: Save result for next run
-        if: hashFiles('bench-prev.json') != ''
+        if: always() && hashFiles('bench-prev.json') != ''
         uses: actions/cache/save@v4
         with:
           path: bench-prev.json
@@ -51,6 +51,7 @@ jobs:
             bench.json
             bench-summary.md
           if-no-files-found: warn
+
 
 
 
