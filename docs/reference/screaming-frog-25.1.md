@@ -69,4 +69,19 @@ Coqui currently ships 7 crawl reports plus comparison; the reference has 35 entr
 2. Enumerate axe rules as individual Coqui rules from the stored axe payload.
 3. Add PSI-family rules where the data already exists (layout shift, LCP, render-blocking, DOM size) and standalone reports (hreflang, canonical chains, pagination, social, mobile, segments, SERP).
 4. Replace the guessed parity inventory with reference-derived issue/report inventories.
+## Link types in the crawl database
 
+Sampling the `links` table shows what each `link_type` stores:
+
+| Type | Meaning | Example element path |
+| --- | --- | --- |
+| 1 | Anchor links (`<a href>`) | `//body/.../a` |
+| 2 | Script `src` resources | `//head/script` |
+| 3 | Stylesheet/resource links | `//head/link` |
+| 4 | Image sources | `//body/.../img` |
+| 6 | Canonical link element | `//head/link[1]` |
+| 13 | External anchors/resources | `//head/link[9]` |
+| 15 | Analytics/beacon and scripted requests | (no element path) |
+| 29/30 | Meta-driven resource references | `//head/meta` |
+
+The importer currently ingests **type 1** (anchors) only, which is why link-set comparisons against a live crawl differ: the reference stores resource links separately, and its anchor rows include duplicate occurrences.
