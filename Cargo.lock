@@ -617,11 +617,14 @@ dependencies = [
  "coqui-render",
  "coqui-report",
  "coqui-store",
+ "reqwest",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tokio",
  "tokio-util",
  "toml 1.2.1+spec-1.1.0",
+ "zip",
 ]
 
 [[package]]

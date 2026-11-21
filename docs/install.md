@@ -41,5 +41,17 @@ npm run build
 ```
 
 The desktop build currently uses the system Chrome/Edge for rendering; set `COQUI_BROWSER_PATH` to override discovery.
+## Rendering browser
 
+JavaScript rendering, axe and Lighthouse need Chrome/Edge. Coqui discovers an installed browser automatically; otherwise install Chrome for Testing into the user cache:
 
+```bash
+coqui browser install
+# verify a hash you obtained from a trusted mirror
+coqui browser install --sha256 <64-hex-digest>
+coqui browser path
+```
+
+`coqui browser install` downloads the current stable Chrome for Testing for the platform, verifies the SHA-256 when `--sha256` is supplied, extracts it under the OS cache directory (`%LOCALAPPDATA%\coqui\browser`, `~/Library/Caches/coqui/browser` or `~/.cache/coqui/browser`), writes `SHA256SUMS.txt`, and prints the executable path. Set `COQUI_BROWSER_PATH` to that path (or run `coqui browser path` to see what would be used).
+
+The container image does not include a browser; extend the image or set `COQUI_BROWSER_PATH` to a mounted Chrome when you need rendering inside Docker.
