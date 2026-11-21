@@ -3,6 +3,8 @@
 use coqui_core::{CrawlConfig, CrawlProgress, CrawlStatus, NewUrl, now_ms};
 use coqui_store::Store;
 use serde::Deserialize;
+#[cfg(unix)]
+use std::io::Read;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -1210,6 +1212,33 @@ async fn run_browser(values: &[String]) -> Result<(), String> {
             continue;
         };
         let target = destination.join(name);
+        #[cfg(unix)]
+        if entry
+            .unix_mode()
+            .map(|mode| mode & 0o170000 == 0o120000)
+            .unwrap_or(false)
+        {
+            let mut link_target = String::new();
+            entry
+                .read_to_string(&mut link_target)
+                .map_err(|error| format!("read chrome zip symlink: {error}"))?;
+            let link_path = Path::new(&link_target);
+            if link_path.is_absolute()
+                || link_path
+                    .components()
+                    .any(|component| matches!(component, std::path::Component::ParentDir))
+            {
+                return Err(format!(
+                    "unsafe symlink target in chrome zip: {link_target}"
+                ));
+            }
+            if let Some(parent) = target.parent() {
+                std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+            }
+            std::os::unix::fs::symlink(&link_target, &target)
+                .map_err(|error| format!("create chrome zip symlink: {error}"))?;
+            continue;
+        }
         if entry.is_dir() {
             std::fs::create_dir_all(&target).map_err(|error| error.to_string())?;
         } else {
