@@ -89,9 +89,20 @@ impl Store {
             )
             .optional_seed()
             .unwrap_or_else(|| "https://imported.invalid/".to_string());
-        let crawl_id = format!("sf-{}", now_ms());
+        static IMPORT_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let crawl_id = format!(
+            "sf-{}-{}-{}",
+            now_ms(),
+            std::process::id(),
+            IMPORT_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        );
+        if let Err(error) =
+            self.create_crawl(&crawl_id, &seed, "url", &CrawlConfig::default(), now_ms())
+        {
+            std::fs::remove_file(&sqlite_path).ok();
+            return Err(error);
+        }
         let populated = (|| -> Result<(usize, usize)> {
-            self.create_crawl(&crawl_id, &seed, "url", &CrawlConfig::default(), now_ms())?;
             let mut ids: HashMap<String, i64> = HashMap::new();
             let mut urls = 0usize;
             {
