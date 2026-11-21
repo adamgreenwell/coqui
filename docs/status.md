@@ -44,3 +44,4 @@ Snapshot of the Coqui build for the milestone review.
 - Portable DB copy opened, overview/report/export all worked.
 - Real-site rendered crawl (adamgreenwell.com, 20 URLs): 20/20 vitals stored, 104 issues, 40.5 s; report in `docs/validation/2026-11-21-rendered-vitals.md`.
 
+

@@ -2,7 +2,7 @@
 
 Coqui evaluates every crawled URL and stores issues as `(rule, url, severity, detail)`. Rules are registered statically; adding one needs no migration. Suppression (rule or per-URL, reason required, optional expiry) and severity overrides apply at read/report time and are audited.
 
-## Static rules (49)
+## Static rules (50)
 
 | Rule | Label | Severity |
 | --- | --- | --- |
@@ -22,6 +22,7 @@ Coqui evaluates every crawled URL and stores issues as `(rule, url, severity, de
 | `hreflang_missing_return` | Hreflang missing return link | Warning |
 | `image_missing_alt` | Image missing alt text | Warning |
 | `image_missing_dimensions` | Image missing dimensions | Opportunity |
+| `image_missing_title` | Image missing title | Opportunity |
 | `improve_image_delivery` | Heavy image delivery | Warning |
 | `jsonld_malformed` | Malformed structured data | Warning |
 | `jsonld_missing` | No structured data | Opportunity |
@@ -86,7 +87,7 @@ The reference product exposes 95 `axe` issue types; because Coqui enumerates axe
 
 - LCP > 2500 ms, CLS > 0.1, TTFB > 800 ms, TBT > 200 ms.
 - DOM nodes > 1,500; render-blocking resources > 2; transfer > 2 MB; image bytes > 1 MB.
-- Title > 60 chars, meta description outside 70–155 chars, thin content < 200 words.
+- Title > 60 chars, meta description outside 70–160 chars, thin content < 200 words.
 
 Exact severities are in the table above and in `RULES` (`crates/coqui-audit/src/lib.rs`).
 

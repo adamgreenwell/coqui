@@ -16,7 +16,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const SCHEMA_VERSION: i32 = 33;
+pub const SCHEMA_VERSION: i32 = 34;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -1009,11 +1009,28 @@ impl Store {
         Ok(rows)
     }
 
+    /// Images missing an HTML title attribute, grouped by page.
+    pub fn images_missing_title(&self, crawl_id: &str) -> Result<Vec<(String, i64)>> {
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT urls.url, COUNT(*) FROM images
+             JOIN urls ON urls.id = images.url_id
+             WHERE images.crawl_id = ?1
+               AND images.title_known = 1
+               AND (images.title IS NULL OR trim(images.title) = '')
+             GROUP BY urls.url",
+        )?;
+        let rows = stmt
+            .query_map(params![crawl_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     /// Images referenced by one URL.
     pub fn images_for_url(&self, crawl_id: &str, url_id: i64) -> Result<Vec<coqui_core::ImageRef>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
-            "SELECT src, alt, width, height FROM images
+            "SELECT src, alt, title, width, height FROM images
              WHERE crawl_id = ?1 AND url_id = ?2 ORDER BY src",
         )?;
         let rows = stmt
@@ -1021,8 +1038,9 @@ impl Store {
                 Ok(coqui_core::ImageRef {
                     src: row.get(0)?,
                     alt: row.get(1)?,
-                    width: row.get::<_, Option<i64>>(2)?.map(|value| value as u32),
-                    height: row.get::<_, Option<i64>>(3)?.map(|value| value as u32),
+                    title: row.get(2)?,
+                    width: row.get::<_, Option<i64>>(3)?.map(|value| value as u32),
+                    height: row.get::<_, Option<i64>>(4)?.map(|value| value as u32),
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -1505,8 +1523,8 @@ impl Store {
             params![crawl_id, url_id],
         )?;
         let mut stmt = conn.prepare(
-            "INSERT OR IGNORE INTO images (crawl_id, url_id, src, alt, width, height)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT OR IGNORE INTO images (crawl_id, url_id, src, alt, title, title_known, width, height)
+             VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, ?7)",
         )?;
         for image in images {
             stmt.execute(params![
@@ -1514,6 +1532,7 @@ impl Store {
                 url_id,
                 image.src,
                 image.alt,
+                image.title,
                 image.width.map(i64::from),
                 image.height.map(i64::from)
             ])?;
@@ -2911,6 +2930,28 @@ fn migrate(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_links_crawl_from ON links (crawl_id, from_id);
          CREATE INDEX IF NOT EXISTS idx_links_crawl_to ON links (crawl_id, to_id);",
     )?;
+    if version < 34 {
+        let has_title = conn
+            .prepare("PRAGMA table_info(images)")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<std::result::Result<Vec<_>, _>>()?
+            .iter()
+            .any(|name| name == "title");
+        if !has_title {
+            conn.execute_batch("ALTER TABLE images ADD COLUMN title TEXT;")?;
+        }
+        let has_known = conn
+            .prepare("PRAGMA table_info(images)")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<std::result::Result<Vec<_>, _>>()?
+            .iter()
+            .any(|name| name == "title_known");
+        if !has_known {
+            conn.execute_batch(
+                "ALTER TABLE images ADD COLUMN title_known INTEGER NOT NULL DEFAULT 0;",
+            )?;
+        }
+    }
     if version < 33 {
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS render_errors (
@@ -3680,6 +3721,7 @@ mod tests {
                 &[ImageRef {
                     src: "https://example.com/a.png".into(),
                     alt: Some("A frog".into()),
+                    title: None,
                     width: Some(10),
                     height: Some(20),
                 }],
@@ -3741,6 +3783,7 @@ mod tests {
                 &[coqui_core::ImageRef {
                     src: "https://example.com/a.png?a=1&b=2".into(),
                     alt: None,
+                    title: None,
                     width: None,
                     height: None,
                 }],
@@ -4039,6 +4082,7 @@ mod tests {
                 &[coqui_core::ImageRef {
                     src: "https://example.com/a.png".into(),
                     alt: Some("A".into()),
+                    title: None,
                     width: Some(10),
                     height: Some(20),
                 }],
@@ -4658,7 +4702,7 @@ mod tests {
         let version: i32 = conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 33);
+        assert_eq!(version, 34);
         std::fs::remove_dir_all(dir).ok();
     }
 
