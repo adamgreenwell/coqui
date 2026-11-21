@@ -223,6 +223,8 @@ pub enum StoreError {
     Poisoned,
     #[error("crawl not found: {0}")]
     NotFound(String),
+    #[error("database schema v{found} is newer than supported v{supported}")]
+    SchemaTooNew { found: i32, supported: i32 },
 }
 
 pub type Result<T> = std::result::Result<T, StoreError>;
