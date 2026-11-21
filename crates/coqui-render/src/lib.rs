@@ -807,13 +807,25 @@ fn cached_browser() -> Option<PathBuf> {
     if !root.exists() {
         return None;
     }
-    let mut stack = Vec::new();
+    let mut installations: Vec<(std::time::SystemTime, PathBuf)> = Vec::new();
     for entry in std::fs::read_dir(&root).ok()?.flatten() {
         let path = entry.path();
-        if path.is_dir() && path.join(".complete").exists() {
-            stack.push(path);
+        let marker = path.join(".complete");
+        if path.is_dir() && marker.exists() {
+            let modified = std::fs::metadata(&marker)
+                .and_then(|meta| meta.modified())
+                .unwrap_or(std::time::UNIX_EPOCH);
+            installations.push((modified, path));
         }
     }
+    installations.sort_by(|a, b| b.0.cmp(&a.0));
+    installations
+        .into_iter()
+        .find_map(|(_, dir)| find_chrome_in(&dir))
+}
+
+fn find_chrome_in(root: &Path) -> Option<PathBuf> {
+    let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;
