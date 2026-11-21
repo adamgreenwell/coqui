@@ -1,0 +1,4 @@
+{
+  "response_time_ms": { "type": "numeric", "absolute": 100 },
+  "size_bytes": { "type": "ignore" }
+}

@@ -66,3 +66,4 @@ jobs:
           --coqui tools/parity/fixtures/coqui
           --fail-under-ratio 1
           --max-mismatches 0
+

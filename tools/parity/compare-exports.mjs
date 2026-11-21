@@ -14,6 +14,8 @@ function parseArgs(argv) {
     else if (key === '--out') args.out = argv[++index];
     else if (key === '--fail-under-ratio') args.failUnder = Number(argv[++index]);
     else if (key === '--max-mismatches') args.maxMismatches = Number(argv[++index]);
+    else if (key === '--tolerance') args.tolerance = argv[++index];
+    else if (key === '--compare-values-for') args.compareValuesFor = argv[++index];
   }
   return args;
 }
@@ -147,6 +149,12 @@ lines.push(`- Coqui: \`${args.coqui}\` (${coquiUrls.rows.length} URLs, ${coquiUr
 lines.push(`- Reference: \`${args.reference}\` (${referenceFiles.length} CSV files)`);
 lines.push('');
 
+const tolerance = args.tolerance
+  ? JSON.parse(fs.readFileSync(args.tolerance, 'utf8'))
+  : {};
+const toleranceFor = (header) =>
+  tolerance[header] ?? tolerance[normalizeHeader(header)] ?? null;
+
 let matchedFiles = 0;
 let totalRefUrls = 0;
 let totalOverlap = 0;
@@ -180,7 +188,13 @@ for (const file of referenceFiles) {
     }
   }
   const shared = headers.filter((header) => coquiHeaders.has(normalizeHeader(header)));
-  if (urlIndex >= 0 && coquiUrlIndex >= 0) {
+  const valueFiles = (args.compareValuesFor ?? 'urls.csv')
+    .split(',')
+    .map((name) => name.trim())
+    .filter(Boolean);
+  const compareValues =
+    urlIndex >= 0 && coquiUrlIndex >= 0 && valueFiles.includes(path.basename(relative));
+  if (compareValues) {
     let fileMismatches = 0;
     for (const row of rows) {
       const url = row[urlIndex];
@@ -189,6 +203,15 @@ for (const file of referenceFiles) {
       for (const header of shared) {
         const a = row[headers.indexOf(header)] ?? '';
         const b = other[coquiHeaderIndex.get(normalizeHeader(header))] ?? '';
+        const rule = toleranceFor(header);
+        if (rule?.type === 'ignore') continue;
+        if (rule?.type === 'numeric') {
+          const x = Number(a);
+          const y = Number(b);
+          if (Number.isFinite(x) && Number.isFinite(y) && Math.abs(x - y) <= (rule.absolute ?? 0)) {
+            continue;
+          }
+        }
         if (a !== b) fileMismatches += 1;
       }
     }
