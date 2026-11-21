@@ -1,0 +1,31 @@
+name: Benchmarks
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    name: Storage benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build CLI
+        run: cargo build -p coqui-cli
+      - name: Run benchmark
+        run: ./target/debug/coqui bench --urls 100000 --out bench-out --json > bench.json
+      - name: Check budgets
+        run: node tools/bench/check.mjs --input bench.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-result
+          path: bench.json
