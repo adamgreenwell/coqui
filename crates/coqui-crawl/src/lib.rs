@@ -877,7 +877,7 @@ async fn fetch(
             .headers()
             .get(CONTENT_TYPE)
             .and_then(|value| value.to_str().ok())
-            .map(|value| value.to_string());
+            .map(|value| value.to_ascii_lowercase());
         let len = response.content_length().unwrap_or(0);
         let html = is_html(content_type.as_deref());
         let mut body = None;

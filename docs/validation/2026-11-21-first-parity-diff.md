@@ -23,7 +23,7 @@ node tools/parity/compare-exports.mjs --coqui research/parity/adam-coqui --refer
 | Status | 100/100 | exact |
 | Title | 100/100 | exact |
 | Depth | 100/100 | exact |
-| Content type | 3/100 | only casing: `charset=UTF-8` vs `charset=utf-8` |
+| Content type | now exact | Coqui now stores lowercased content types (`charset=utf-8`) |
 | Word count | 0/100 | Coqui systematically higher |
 
 ## Word count fix
@@ -31,6 +31,14 @@ node tools/parity/compare-exports.mjs --coqui research/parity/adam-coqui --refer
 Coqui counted `<script>`/`<style>`/`<noscript>` text because it used the DOM `text()` of `<body>`. Extraction now walks text nodes and skips those elements, and counts only visible words.
 
 Homepage: **409 → 257** words (reference **222**). Across 8 pages the ratio moved from ~1.8× to **1.09–1.27×** (one code-sample page 2.6×). Residual gap is likely boilerplate/hidden text handling; the script inflation is gone.
+
+## Link counts
+
+Comparing Coqui's unique internal outlinks against `urls.num_unique_internal_outlinks`:
+
+- 85 pages compared, **22 exact**, most mismatches within ±1–4 links.
+- Outliers both ways (e.g. accessibility-statement +11, page/3 -4).
+- The reference `links` table stores resource links (CSS/JS) with separate `link_type`/`scope` values, so the next pass must filter to hyperlink types before judging gaps.
 
 ## Follow-ups
 
