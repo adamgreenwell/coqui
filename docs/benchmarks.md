@@ -31,3 +31,12 @@ Batch writes go through `Store::insert_urls_batch`, which wraps one SQLite trans
 2. runs `coqui bench --urls 100000 --json`;
 3. validates the result with `tools/bench/check.mjs` against `tools/bench/budgets.json` (fails the job on a breach);
 4. uploads `bench.json` as an artifact for trend tracking.
+## Run-over-run regression
+
+The nightly job restores the previous `bench.json` from the Actions cache and runs `tools/bench/compare.mjs` with `--max-regression 0.10`:
+
+- throughput drop > 10% fails;
+- query latency or bytes/URL increase > 10% fails;
+- first run or mismatched URL counts skip the comparison.
+
+The current result is saved back to the cache for the next run.
