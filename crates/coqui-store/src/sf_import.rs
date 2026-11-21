@@ -8,7 +8,6 @@ use crate::{Result, Store, StoreError};
 use coqui_core::{CrawlConfig, CrawlStatus, NewUrl, now_ms};
 use rusqlite::{Connection, OpenFlags, Row};
 use std::collections::HashMap;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
 /// Summary of an imported Screaming Frog crawl.
@@ -50,9 +49,7 @@ fn extract_sql_member(archive_path: &Path) -> Result<PathBuf> {
         .map_err(|error| StoreError::Io(std::io::Error::other(error.to_string())))?;
     let destination = std::env::temp_dir().join(format!("coqui-sf-{}.db", now_ms()));
     let mut output = std::fs::File::create(&destination)?;
-    let mut buffer = Vec::with_capacity(entry.size() as usize);
-    entry.read_to_end(&mut buffer)?;
-    std::io::Write::write_all(&mut output, &buffer)?;
+    std::io::copy(&mut entry, &mut output)?;
     Ok(destination)
 }
 
@@ -112,11 +109,7 @@ impl Store {
                     h1: text(row, "h1_1"),
                     h1_count: number(row, "num_h1").unwrap_or(0) as u32,
                     canonical: None,
-                    meta_robots: if number(row, "is_canonicalised").unwrap_or(0) == 1 {
-                        None
-                    } else {
-                        None
-                    },
+                    meta_robots: None,
                     hreflang: Vec::new(),
                     pagination_next: None,
                     pagination_prev: None,
@@ -131,7 +124,9 @@ impl Store {
                     depth: number(row, "crawl_depth").unwrap_or(0) as u32,
                     response_time_ms: number(row, "response_time_ms").map(|value| value as u64),
                     size_bytes: number(row, "page_size").map(|value| value as u64),
-                    error: text(row, "response_msg"),
+                    error: number(row, "response_code")
+                        .filter(|code| *code >= 400)
+                        .and_then(|_| text(row, "response_msg")),
                     discovered_at: now_ms(),
                 };
                 self.insert_url(&record)?;
@@ -157,8 +152,13 @@ impl Store {
                 let (Some(from), Some(to)) = (text(row, "src"), text(row, "dst")) else {
                     continue;
                 };
-                let (Some(from_id), Some(to_id)) = (ids.get(&from), ids.get(&to)) else {
-                    continue;
+                let from_id = match ids.get(&from) {
+                    Some(id) => *id,
+                    None => self.ensure_url_id(&crawl_id, &from)?,
+                };
+                let to_id = match ids.get(&to) {
+                    Some(id) => *id,
+                    None => self.ensure_url_id(&crawl_id, &to)?,
                 };
                 let internal = number(row, "scope").unwrap_or(0) == 1;
                 let rel = if number(row, "nofollow").unwrap_or(0) != 0 {
@@ -168,8 +168,8 @@ impl Store {
                 };
                 self.insert_link(
                     &crawl_id,
-                    *from_id,
-                    *to_id,
+                    from_id,
+                    to_id,
                     text(row, "link_text").as_deref(),
                     rel,
                     internal,
