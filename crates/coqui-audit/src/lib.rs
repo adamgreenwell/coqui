@@ -1090,7 +1090,7 @@ fn issue_with_severity(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use coqui_core::{CrawlConfig, NewUrl, now_ms};
+    use coqui_core::{CrawlConfig, NewUrl, WebVitals, now_ms};
 
     fn add_url(
         store: &Store,
@@ -1787,7 +1787,7 @@ mod tests {
 #[cfg(test)]
 mod wordpress_rules {
     use super::*;
-    use coqui_core::{CrawlConfig, NewUrl, now_ms};
+    use coqui_core::{CrawlConfig, NewUrl, WebVitals, now_ms};
 
     fn add(
         store: &Store,
@@ -2053,5 +2053,77 @@ mod wordpress_rules {
         assert_eq!(by_rule.get("duplicate_title"), Some(&2));
         assert_eq!(by_rule.get("duplicate_meta_description"), Some(&2));
         assert!(!by_rule.contains_key("missing_canonical"));
+    }
+    #[test]
+    fn flags_psi_and_viewport_issues() {
+        let dir = std::env::temp_dir().join(format!("coqui-audit-psi-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        store
+            .create_crawl(
+                "c1",
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        store
+            .insert_url(&NewUrl {
+                crawl_id: "c1".to_string(),
+                url: "https://example.com/heavy".to_string(),
+                status: Some(200),
+                blocked: false,
+                content_type: Some("text/html".into()),
+                title: Some("Heavy".into()),
+                meta_description: Some("Meta".into()),
+                h1: Some("H1".into()),
+                h1_count: 1,
+                canonical: None,
+                meta_robots: None,
+                hreflang: Vec::new(),
+                pagination_next: None,
+                pagination_prev: None,
+                structured_data: Default::default(),
+                console_errors: Vec::new(),
+                axe: Vec::new(),
+                vitals: Some(WebVitals {
+                    lcp_ms: 1000,
+                    cls: 0.0,
+                    tbt_ms: 0,
+                    ttfb_ms: 100,
+                    fcp_ms: 500,
+                    dom_nodes: Some(2000),
+                    render_blocking: Some(5),
+                    transfer_bytes: Some(3_000_000),
+                    resource_count: Some(10),
+                    image_bytes: Some(2_000_000),
+                    has_viewport: Some(false),
+                }),
+                headers: Vec::new(),
+                redirect_target: None,
+                redirect_chain: Vec::new(),
+                word_count: Some(300),
+                depth: 0,
+                response_time_ms: Some(100),
+                size_bytes: Some(1000),
+                error: None,
+                discovered_at: now_ms(),
+            })
+            .unwrap();
+        analyze_crawl(&store, "c1").unwrap();
+        let counts = store.issue_counts("c1").unwrap();
+        let count = |rule: &str| {
+            counts
+                .iter()
+                .find(|count| count.rule == rule)
+                .map(|count| count.count)
+        };
+        assert_eq!(count("dom_size_large"), Some(1));
+        assert_eq!(count("render_blocking_requests"), Some(1));
+        assert_eq!(count("avoid_enormous_network_payload"), Some(1));
+        assert_eq!(count("improve_image_delivery"), Some(1));
+        assert_eq!(count("viewport_not_set"), Some(1));
+        std::fs::remove_dir_all(dir).ok();
     }
 }
