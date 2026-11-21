@@ -211,6 +211,10 @@ lines.push('');
 lines.push('Next: map each reference tab to a Coqui export family, then compare row-level values for the shared columns.');
 
 const report = lines.join('\n');
+if (args.failUnder && totalRefUrls === 0) {
+  console.error('no reference URLs with a detected URL column; cannot enforce overlap');
+  process.exit(3);
+}
 if (args.failUnder && totalRefUrls > 0 && totalOverlap / totalRefUrls < args.failUnder) {
   console.error(`URL overlap ${totalOverlap}/${totalRefUrls} is below ${args.failUnder}`);
   process.exit(3);
