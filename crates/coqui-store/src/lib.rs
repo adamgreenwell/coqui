@@ -223,6 +223,8 @@ pub enum StoreError {
     Poisoned,
     #[error("crawl not found: {0}")]
     NotFound(String),
+    #[error("database schema v{found} is newer than supported v{supported}")]
+    SchemaTooNew { found: i32, supported: i32 },
 }
 
 pub type Result<T> = std::result::Result<T, StoreError>;
@@ -325,6 +327,15 @@ impl Store {
     }
 
     fn from_connection(conn: Connection, root: std::path::PathBuf) -> Result<Self> {
+        // Never let an older binary migrate (and silently downgrade) a database
+        // written by a newer schema; refuse before touching the file.
+        let version: i32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        if version > SCHEMA_VERSION {
+            return Err(StoreError::SchemaTooNew {
+                found: version,
+                supported: SCHEMA_VERSION,
+            });
+        }
         conn.execute_batch(SCHEMA)?;
         migrate(&conn)?;
         Ok(Self {
@@ -4869,6 +4880,24 @@ mod tests {
         ];
         assert_eq!(store.insert_urls_batch(&records).unwrap(), 2);
         assert_eq!(store.all_urls("batch").unwrap().len(), 2);
+    }
+
+    #[test]
+    fn refuses_newer_database_schema() {
+        let dir = std::env::temp_dir().join(format!("coqui-newer-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("newer.db");
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.pragma_update(None, "user_version", SCHEMA_VERSION + 1)
+                .unwrap();
+        }
+        let error = match Store::open(&path) {
+            Ok(_) => panic!("expected newer-schema refusal"),
+            Err(error) => error.to_string(),
+        };
+        assert!(error.contains("newer than supported"), "{error}");
+        std::fs::remove_dir_all(dir).ok();
     }
 }
 
