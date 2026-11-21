@@ -316,7 +316,30 @@ pub fn extract_page(html: &str, base_url: &str) -> ExtractedPage {
     let body_text = document
         .select(&selector("body"))
         .next()
-        .map(|body| body.text().collect::<String>())
+        .map(|body| {
+            let mut text = String::new();
+            for node in body.descendants() {
+                if let Some(value) = node.value().as_text() {
+                    let blocked = node.ancestors().any(|ancestor| {
+                        ancestor
+                            .value()
+                            .as_element()
+                            .map(|element| {
+                                matches!(
+                                    element.name(),
+                                    "script" | "style" | "noscript" | "template"
+                                )
+                            })
+                            .unwrap_or(false)
+                    });
+                    if !blocked {
+                        text.push_str(value);
+                        text.push(' ');
+                    }
+                }
+            }
+            text
+        })
         .unwrap_or_default();
     let word_count = body_text.split_whitespace().count() as u32;
     let markdown = if body_text.trim().is_empty() {
@@ -428,6 +451,16 @@ mod tests {
         );
         assert_eq!(page.canonical.as_deref(), Some("https://example.com/frogs"));
         assert!(page.word_count >= 6);
+    }
+
+    #[test]
+    fn ignores_script_and_style_text_in_word_count() {
+        let html = r#"<html><body><p>Hello world</p>
+            <script>alpha beta gamma</script>
+            <style>.hidden { color: red }</style>
+            <noscript>delta</noscript></body></html>"#;
+        let page = extract_page(html, "https://example.com/");
+        assert_eq!(page.word_count, 2);
     }
 
     #[test]

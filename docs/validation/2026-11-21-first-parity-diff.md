@@ -1,0 +1,40 @@
+# 2026-11-21 — first real parity diff (Screaming Frog 25.1 vs Coqui)
+
+The Screaming Frog CLI/UI export produced a proprietary `.dbseospider`; it is a ZIP whose `results_*/sql` member is a **SQLite database**. That unlocked the first real comparison without CSV export.
+
+## Reference data
+
+- File: `research/reference/crawl-adam-25.1/https-adamgreenwell-com-.dbseospider`
+- Extracted DB: `research/reference/crawl-adam-25.1/sf-crawl.db` (3.4 MB, 73 tables)
+- `urls` table: 209 columns, 267 rows (211 internal URLs)
+- Also available: `links`, `inlink_counts`, `axe_core_results`, `page_speed_api`, `social_meta_tags`, hreflang/pagination multimaps, duplicates tables, etc.
+
+Convert it to a comparable CSV with:
+
+```bash
+node tools/parity/sf-crawl-db.mjs research/reference/crawl-adam-25.1/sf-crawl.db research/reference/crawl-adam-25.1/reference-urls.csv
+node tools/parity/compare-exports.mjs --coqui research/parity/adam-coqui --reference research/reference/crawl-adam-25.1 --out research/parity/report.md
+```
+
+## Results (100 overlapping URLs)
+
+| Field | Match | Notes |
+| --- | --- | --- |
+| Status | 100/100 | exact |
+| Title | 100/100 | exact |
+| Depth | 100/100 | exact |
+| Content type | 3/100 | only casing: `charset=UTF-8` vs `charset=utf-8` |
+| Word count | 0/100 | Coqui systematically higher |
+
+## Word count fix
+
+Coqui counted `<script>`/`<style>`/`<noscript>` text because it used the DOM `text()` of `<body>`. Extraction now walks text nodes and skips those elements, and counts only visible words.
+
+Homepage: **409 → 257** words (reference **222**). Across 8 pages the ratio moved from ~1.8× to **1.09–1.27×** (one code-sample page 2.6×). Residual gap is likely boilerplate/hidden text handling; the script inflation is gone.
+
+## Follow-ups
+
+1. Normalise `content_type` casing in comparisons (and in stored values if desired).
+2. Investigate the residual 10–25% word-count gap (candidate: footer/nav or hidden elements; Screaming Frog's own definition).
+3. Mine the reference DB tables directly for issue parity (`axe_core_results`, `page_speed_api`, hreflang/pagination multimaps, duplicates).
+4. Re-crawl at ≥ reference scope (267 URLs) for full overlap.
