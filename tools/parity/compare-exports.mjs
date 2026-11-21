@@ -206,9 +206,15 @@ for (const file of referenceFiles) {
         const rule = toleranceFor(header);
         if (rule?.type === 'ignore') continue;
         if (rule?.type === 'numeric') {
+          const hasBoth = a.trim() !== '' && b.trim() !== '';
           const x = Number(a);
           const y = Number(b);
-          if (Number.isFinite(x) && Number.isFinite(y) && Math.abs(x - y) <= (rule.absolute ?? 0)) {
+          if (
+            hasBoth &&
+            Number.isFinite(x) &&
+            Number.isFinite(y) &&
+            Math.abs(x - y) <= (rule.absolute ?? 0)
+          ) {
             continue;
           }
         }
