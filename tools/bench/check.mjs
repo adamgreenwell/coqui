@@ -23,6 +23,13 @@ const perUrl = result.db_bytes / Math.max(result.urls, 1);
 
 const checks = [
   {
+    name: 'urls',
+    actual: result.urls,
+    limit: budgets.urls,
+    ok: result.urls === budgets.urls,
+    unit: '',
+  },
+  {
     name: 'urls_per_second',
     actual: result.urls_per_second,
     limit: budgets.min_urls_per_second,
