@@ -56,4 +56,11 @@ coqui browser path
 `coqui browser install` downloads the current stable Chrome for Testing for the platform, verifies the SHA-256 when `--sha256` is supplied, extracts it under the OS cache directory (`%LOCALAPPDATA%\coqui\browser`, `~/Library/Caches/coqui/browser` or `~/.cache/coqui/browser`), writes `SHA256SUMS.txt`, and prints the executable path. Set `COQUI_BROWSER_PATH` to that path (or run `coqui browser path` to see what would be used).
 
 The container image does not include a browser; extend the image or set `COQUI_BROWSER_PATH` to a mounted Chrome when you need rendering inside Docker.
+## Checking for updates
 
+```bash
+coqui update           # human-readable
+coqui update --json    # current, latest, update_available, url
+```
+
+The check queries the latest GitHub release and compares versions; it never installs anything. Desktop updates follow the same release assets.

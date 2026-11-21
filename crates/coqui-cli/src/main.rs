@@ -131,6 +131,7 @@ fn usage() -> &'static str {
        coqui issue-settings <export|import|diff> [--out DIR] [--file PATH] [--with CRAWL]
        coqui bench [--urls N] [--chunk N] [--out DIR] [--json] [--force]
        coqui browser <install|path> [--out DIR] [--sha256 HEX] [--dry-run]
+       coqui update [--json]
        coqui doctor [--out DIR]
        coqui import sf --file <crawl.dbseospider> [--out DIR]
        coqui mcp [--out DIR]"
@@ -1286,6 +1287,72 @@ async fn run_browser(values: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn version_parts(value: &str) -> Vec<u64> {
+    value
+        .trim_start_matches('v')
+        .split('.')
+        .map(|part| {
+            part.chars()
+                .take_while(|character| character.is_ascii_digit())
+                .collect::<String>()
+                .parse()
+                .unwrap_or(0)
+        })
+        .collect()
+}
+
+async fn run_update(values: &[String]) -> Result<(), String> {
+    let mut json = false;
+    for value in values {
+        match value.as_str() {
+            "--json" => json = true,
+            other => return Err(format!("unknown option '{other}'")),
+        }
+    }
+    let client = reqwest::Client::builder()
+        .user_agent("coqui-update-check")
+        .build()
+        .map_err(|error| error.to_string())?;
+    let current = env!("CARGO_PKG_VERSION");
+    let response = client
+        .get("https://api.github.com/repos/adamgreenwell/coqui/releases/latest")
+        .send()
+        .await
+        .map_err(|error| format!("fetch latest release: {error}"))?;
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        if json {
+            println!("{{\"current\":\"{current}\",\"latest\":null,\"update_available\":false}}");
+        } else {
+            println!("coqui {current}: no releases published yet");
+        }
+        return Ok(());
+    }
+    let release: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|error| format!("parse latest release: {error}"))?;
+    let tag = release["tag_name"]
+        .as_str()
+        .ok_or("latest release has no tag_name")?;
+    let url = release["html_url"].as_str().unwrap_or("");
+    let available = version_parts(tag) > version_parts(current);
+    if json {
+        println!(
+            "{{\"current\":\"{current}\",\"latest\":\"{}\",\"update_available\":{available},\"url\":\"{}\"}}",
+            tag.trim_start_matches('v'),
+            url
+        );
+    } else if available {
+        println!(
+            "update available: {current} -> {} ({url})",
+            tag.trim_start_matches('v')
+        );
+    } else {
+        println!("coqui {current} is up to date (latest {tag})");
+    }
+    Ok(())
+}
+
 fn run_bench(values: &[String]) -> Result<(), String> {
     let mut urls = 100_000usize;
     let mut out = PathBuf::from("coqui-bench");
@@ -2415,6 +2482,15 @@ async fn main() {
     }
     if values.get(1).map(String::as_str) == Some("issue-settings") {
         match run_issue_settings(&values[2..]) {
+            Ok(()) => return,
+            Err(message) => {
+                eprintln!("{message}");
+                std::process::exit(2);
+            }
+        }
+    }
+    if values.get(1).map(String::as_str) == Some("update") {
+        match run_update(&values[2..]).await {
             Ok(()) => return,
             Err(message) => {
                 eprintln!("{message}");
