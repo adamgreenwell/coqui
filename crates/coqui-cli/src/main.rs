@@ -1064,13 +1064,13 @@ fn browser_cache_dir() -> PathBuf {
         .join("browser")
 }
 
-fn chrome_platform() -> &'static str {
+fn chrome_platform() -> Option<&'static str> {
     match (std::env::consts::OS, std::env::consts::ARCH) {
-        ("windows", _) => "win64",
-        ("linux", _) => "linux64",
-        ("macos", "aarch64") => "mac-arm64",
-        ("macos", _) => "mac-x64",
-        _ => "linux64",
+        ("windows", "x86_64") => Some("win64"),
+        ("linux", "x86_64") => Some("linux64"),
+        ("macos", "aarch64") => Some("mac-arm64"),
+        ("macos", "x86_64") => Some("mac-x64"),
+        _ => None,
     }
 }
 
@@ -1152,7 +1152,13 @@ async fn run_browser(values: &[String]) -> Result<(), String> {
     let version = stable["version"]
         .as_str()
         .ok_or("Chrome for Testing index has no Stable version")?;
-    let platform = chrome_platform();
+    let platform = chrome_platform().ok_or_else(|| {
+        format!(
+            "no Chrome for Testing download for {}/{}",
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        )
+    })?;
     let download = stable["downloads"]["chrome"]
         .as_array()
         .ok_or("Chrome for Testing index has no chrome downloads")?
@@ -1210,17 +1216,17 @@ async fn run_browser(values: &[String]) -> Result<(), String> {
             if let Some(parent) = target.parent() {
                 std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
             }
+            #[cfg(unix)]
+            let mode = entry.unix_mode();
             let mut file = std::fs::File::create(&target).map_err(|error| error.to_string())?;
             std::io::copy(&mut entry, &mut file).map_err(|error| error.to_string())?;
             #[cfg(unix)]
-            if target
-                .file_name()
-                .and_then(|name| name.to_str())
-                .map(|name| name.starts_with("chrome"))
-                .unwrap_or(false)
-            {
+            if let Some(mode) = mode {
                 use std::os::unix::fs::PermissionsExt;
-                let _ = std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755));
+                let _ = std::fs::set_permissions(
+                    &target,
+                    std::fs::Permissions::from_mode(mode & 0o777),
+                );
             }
         }
     }
