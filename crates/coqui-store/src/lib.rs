@@ -4870,6 +4870,24 @@ mod tests {
         assert_eq!(store.insert_urls_batch(&records).unwrap(), 2);
         assert_eq!(store.all_urls("batch").unwrap().len(), 2);
     }
+
+    #[test]
+    fn refuses_newer_database_schema() {
+        let dir = std::env::temp_dir().join(format!("coqui-newer-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("newer.db");
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.pragma_update(None, "user_version", SCHEMA_VERSION + 1)
+                .unwrap();
+        }
+        let error = match Store::open(&path) {
+            Ok(_) => panic!("expected newer-schema refusal"),
+            Err(error) => error.to_string(),
+        };
+        assert!(error.contains("newer than supported"), "{error}");
+        std::fs::remove_dir_all(dir).ok();
+    }
 }
 
 #[cfg(test)]
