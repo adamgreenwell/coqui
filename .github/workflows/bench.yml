@@ -28,6 +28,7 @@ jobs:
       - name: Build CLI
         run: cargo build -p coqui-cli
       - name: Run benchmark
+        id: bench
         run: ./target/debug/coqui bench --urls 100000 --out bench-out --json > bench.json
       - name: Check budgets
         run: node tools/bench/check.mjs --input bench.json
@@ -35,10 +36,10 @@ jobs:
         if: hashFiles('bench-prev.json') != ''
         run: node tools/bench/compare.mjs --previous bench-prev.json --current bench.json --max-regression 0.10 --out bench-summary.md
       - name: Prepare result for caching
-        if: always() && hashFiles('bench.json') != ''
+        if: always() && steps.bench.outcome == 'success'
         run: cp bench.json bench-prev.json
       - name: Save result for next run
-        if: always() && hashFiles('bench-prev.json') != ''
+        if: always() && steps.bench.outcome == 'success'
         uses: actions/cache/save@v4
         with:
           path: bench-prev.json
