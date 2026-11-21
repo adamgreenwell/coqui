@@ -33,7 +33,7 @@ jobs:
         run: node tools/bench/check.mjs --input bench.json
       - name: Check regression
         if: hashFiles('bench-prev.json') != ''
-        run: node tools/bench/compare.mjs --previous bench-prev.json --current bench.json --max-regression 0.10
+        run: node tools/bench/compare.mjs --previous bench-prev.json --current bench.json --max-regression 0.10 --out bench-summary.md
       - name: Prepare result for caching
         if: hashFiles('bench.json') != ''
         run: cp bench.json bench-prev.json
@@ -48,5 +48,6 @@ jobs:
         with:
           name: bench-result
           path: bench.json
+
 
 
