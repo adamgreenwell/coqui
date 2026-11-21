@@ -1309,7 +1309,13 @@ async fn install_release(
     let assets = release["assets"]
         .as_array()
         .ok_or("latest release has no assets")?;
-    let binary_name = if cfg!(windows) { "coqui.exe" } else { "coqui" };
+    let os = std::env::consts::OS;
+    let arch = std::env::consts::ARCH;
+    let binary_name = format!(
+        "coqui-{os}-{arch}{}",
+        if cfg!(windows) { ".exe" } else { "" }
+    );
+    let sums_name = format!("SHA256SUMS-{os}-{arch}.txt");
     let find = |name: &str| {
         assets
             .iter()
@@ -1317,9 +1323,9 @@ async fn install_release(
             .and_then(|asset| asset["browser_download_url"].as_str())
             .map(str::to_string)
     };
-    let binary_url =
-        find(binary_name).ok_or_else(|| format!("release {version} has no {binary_name} asset"))?;
-    let sums_url = find("SHA256SUMS.txt").ok_or("release has no SHA256SUMS.txt")?;
+    let binary_url = find(&binary_name)
+        .ok_or_else(|| format!("release {version} has no {binary_name} asset"))?;
+    let sums_url = find(&sums_name).ok_or_else(|| format!("release has no {sums_name}"))?;
     let sums = client
         .get(sums_url)
         .send()
@@ -1334,10 +1340,10 @@ async fn install_release(
             let mut parts = line.split_whitespace();
             let digest = parts.next()?;
             let name = parts.next()?.trim_start_matches('*');
-            (name == binary_name).then(|| digest.to_ascii_lowercase())
+            (name == binary_name.as_str()).then(|| digest.to_ascii_lowercase())
         })
         .next()
-        .ok_or_else(|| format!("SHA256SUMS.txt has no entry for {binary_name}"))?;
+        .ok_or_else(|| format!("{sums_name} has no entry for {binary_name}"))?;
     let bytes = client
         .get(binary_url)
         .send()

@@ -2,7 +2,7 @@
 
 Tagging `v*` triggers `.github/workflows/release.yml`, which publishes:
 
-- CLI binaries for Windows, macOS and Linux (`coqui` / `coqui.exe`) with `SHA256SUMS.txt`;
+- OS/arch-qualified CLI binaries (`coqui-linux-x86_64`, `coqui-macos-aarch64`, `coqui-windows-x86_64.exe`, ...) with matching `SHA256SUMS-<os>-<arch>.txt`;
 - desktop installers for Windows (NSIS/MSI), macOS (DMG) and Linux (AppImage/DEB) with per-platform `SHA256SUMS-windows.txt`, `SHA256SUMS-macos.txt` and `SHA256SUMS-linux.txt`.
 
 ## Reproducible builds
@@ -28,4 +28,5 @@ curl -LO https://github.com/adamgreenwell/coqui/releases/latest/download/coqui
 curl -LO https://github.com/adamgreenwell/coqui/releases/latest/download/SHA256SUMS.txt
 sha256sum -c SHA256SUMS.txt
 ```
+
 

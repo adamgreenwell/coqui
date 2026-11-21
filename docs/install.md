@@ -14,10 +14,10 @@ Render-based features (JavaScript rendering, axe, Lighthouse) need a Chromium/Ch
 
 ## Release binaries
 
-Download the asset for your platform from the GitHub releases page (`coqui` / `coqui.exe`) plus `SHA256SUMS.txt`, verify the checksum, then run:
+Download the asset for your platform from the GitHub releases page (for example `coqui-linux-x86_64`) plus `SHA256SUMS-<os>-<arch>.txt`, verify the checksum, then run:
 
 ```bash
-sha256sum -c SHA256SUMS.txt
+sha256sum -c SHA256SUMS-linux-x86_64.txt
 ./coqui crawl url https://example.com --out crawl-out
 ```
 
@@ -64,4 +64,5 @@ coqui update --json    # current, latest, update_available, url
 ```
 
 The check queries the latest GitHub release and compares versions; it never installs anything. Desktop updates follow the same release assets.
+
 
