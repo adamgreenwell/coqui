@@ -1269,6 +1269,8 @@ async fn run_browser(values: &[String]) -> Result<(), String> {
     )
     .map_err(|error| error.to_string())?;
     let chrome = find_chrome(&destination).ok_or("chrome binary not found after extraction")?;
+    std::fs::write(destination.join(".complete"), format!("{digest}\n"))
+        .map_err(|error| error.to_string())?;
     println!(
         "installed chrome {version} ({platform}) at {}",
         chrome.display()
