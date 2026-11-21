@@ -127,7 +127,7 @@ fn load_config(path: &Path, required: bool) -> Result<FileConfig, String> {
 fn usage() -> &'static str {
     "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots] [--store-html] [--json] [--ndjson] [--fail-on-issues N] [--render-wait-selector CSS] [--webhook URL] [--delay-ms N] [--max-rps N] [--proxy URL] [--cookie STRING]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR]\n       coqui report compare --with <crawl id> [--out DIR]\n       coqui reports\n       coqui export [--out DIR] [--family urls|issues|links|headers|images|a11y|structured|vitals|console|text|markdown|extractions|custom-js|anchors|social]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip] [--images]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N] [--webhook URL] [--delay-ms N] [--max-rps N] [--proxy URL] [--cookie STRING]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui prune [--out DIR] [--keep N]\n       coqui overview [--out DIR]\n       coqui serve [--out DIR] [--addr 127.0.0.1:8787] [--token TOKEN]
        coqui issue-settings <export|import|diff> [--out DIR] [--file PATH] [--with CRAWL]
-       coqui bench [--urls N] [--out DIR] [--json] [--force]
+       coqui bench [--urls N] [--chunk N] [--out DIR] [--json] [--force]
        coqui doctor [--out DIR]
        coqui import sf --file <crawl.dbseospider> [--out DIR]
        coqui mcp [--out DIR]"
@@ -1045,6 +1045,7 @@ fn run_bench(values: &[String]) -> Result<(), String> {
     let mut urls = 100_000usize;
     let mut out = PathBuf::from("coqui-bench");
     let mut json = false;
+    let mut chunk = 10_000usize;
     let mut force = false;
     let mut index = 0;
     while index < values.len() {
@@ -1063,9 +1064,20 @@ fn run_bench(values: &[String]) -> Result<(), String> {
             }
             "--json" => json = true,
             "--force" => force = true,
+            "--chunk" => {
+                index += 1;
+                chunk = values
+                    .get(index)
+                    .ok_or("missing --chunk value")?
+                    .parse()
+                    .map_err(|error| format!("invalid --chunk: {error}"))?;
+            }
             other => return Err(format!("unknown option '{other}'")),
         }
         index += 1;
+    }
+    if chunk == 0 {
+        return Err("--chunk must be greater than zero".into());
     }
     std::fs::create_dir_all(&out).map_err(|error| error.to_string())?;
     let db_path = out.join("coqui.db");
@@ -1089,7 +1101,8 @@ fn run_bench(values: &[String]) -> Result<(), String> {
         .map_err(|error| error.to_string())?;
 
     let insert_started = Instant::now();
-    let mut records = Vec::with_capacity(urls);
+    let mut inserted = 0usize;
+    let mut records = Vec::with_capacity(chunk.min(urls));
     for position in 0..urls {
         let record = NewUrl {
             crawl_id: crawl_id.to_string(),
@@ -1122,10 +1135,13 @@ fn run_bench(values: &[String]) -> Result<(), String> {
             discovered_at: now_ms(),
         };
         records.push(record);
+        if records.len() >= chunk || position + 1 == urls {
+            inserted += store
+                .insert_urls_batch(&records)
+                .map_err(|error| error.to_string())?;
+            records.clear();
+        }
     }
-    let inserted = store
-        .insert_urls_batch(&records)
-        .map_err(|error| error.to_string())?;
     let insert_elapsed = insert_started.elapsed();
 
     let query_started = Instant::now();
