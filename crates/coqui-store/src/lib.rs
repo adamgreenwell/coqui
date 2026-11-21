@@ -3653,6 +3653,7 @@ mod tests {
                     transfer_bytes: None,
                     resource_count: None,
                     image_bytes: None,
+                    has_viewport: None,
                 }),
                 headers: vec![("content-type".into(), "text/html".into())],
                 redirect_target: None,

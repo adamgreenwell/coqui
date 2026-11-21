@@ -390,6 +390,8 @@ pub struct WebVitals {
     pub resource_count: Option<u32>,
     #[serde(default)]
     pub image_bytes: Option<u64>,
+    #[serde(default)]
+    pub has_viewport: Option<bool>,
 }
 
 /// One axe-core accessibility violation.

@@ -295,6 +295,11 @@ pub const RULES: &[RuleDef] = &[
         label: "Heavy image delivery",
         severity: IssueSeverity::Warning,
     },
+    RuleDef {
+        id: "viewport_not_set",
+        label: "Viewport not set",
+        severity: IssueSeverity::Warning,
+    },
 ];
 
 pub fn rule_label(rule: &str) -> &str {
@@ -903,6 +908,9 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
                     "improve_image_delivery",
                     Some(format!("{:.1} MB of images", bytes as f64 / 1_048_576.0)),
                 )?;
+            }
+            if vitals.has_viewport == Some(false) {
+                issue(store, crawl_id, &url.url, "viewport_not_set", None)?;
             }
         }
 
