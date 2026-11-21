@@ -21,7 +21,7 @@ sha256sum -c SHA256SUMS.txt
 ./coqui crawl url https://example.com --out crawl-out
 ```
 
-The CLI is a static Rust binary: no JVM or Node.js installation is required for crawling, auditing, reporting, exporting, or the API server.
+The CLI is a self-contained Rust binary: no JVM or Node.js installation is required for crawling, auditing, reporting, exporting, or the API server.
 
 ## Build from source
 
@@ -41,3 +41,4 @@ cargo tauri build
 ```
 
 The desktop build currently uses the system Chrome/Edge for rendering; set `COQUI_BROWSER_PATH` to override discovery.
+
