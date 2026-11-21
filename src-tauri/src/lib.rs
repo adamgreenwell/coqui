@@ -7,11 +7,14 @@ use coqui_core::{
     CrawlConfig, CrawlProgress, CrawlStatus, CrawlSummary, IssueCount, UrlPage, normalize_url,
     now_ms,
 };
-use coqui_store::Store;
+use coqui_store::{SfImportOptions, Store};
+use coqui_sync::{CloudProject, SyncOptions, SyncReport};
 use std::collections::HashMap;
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use tauri::menu::{Menu, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio_util::sync::CancellationToken;
 
@@ -791,6 +794,74 @@ fn delete_crawl(state: State<'_, AppState>, crawl_id: String) -> Result<(), Stri
 }
 
 #[tauri::command]
+fn import_screaming_frog(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<coqui_store::SfImportStats, String> {
+    let store = state.store.clone();
+    let progress_app = app.clone();
+    store
+        .import_seospider_with_progress(
+            Path::new(&path),
+            SfImportOptions::default(),
+            move |progress| {
+                let stage = match progress.stage {
+                    coqui_store::SfImportStage::Reading => "reading",
+                    coqui_store::SfImportStage::Urls => "urls",
+                    coqui_store::SfImportStage::Links => "links",
+                    coqui_store::SfImportStage::Finished => "finished",
+                };
+                let _ = progress_app.emit(
+                    "sf-import-progress",
+                    serde_json::json!({
+                        "stage": stage,
+                        "done": progress.done,
+                        "total": progress.total,
+                    }),
+                );
+            },
+        )
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn list_cloud_projects(api_url: String, token: String) -> Result<Vec<CloudProject>, String> {
+    coqui_sync::list_projects(&api_url, &token)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn cloud_sync_crawl(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    crawl_id: String,
+    api_url: String,
+    token: String,
+    project: String,
+    dry_run: bool,
+) -> Result<SyncReport, String> {
+    let store = state.store.clone();
+    let progress_app = app.clone();
+    coqui_sync::sync_crawl(
+        store.as_ref(),
+        &crawl_id,
+        &SyncOptions {
+            api_url,
+            token,
+            project,
+            dry_run,
+        },
+        move |progress| {
+            let _ = progress_app.emit("sync-progress", progress);
+        },
+    )
+    .await
+    .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn list_crawls(state: State<'_, AppState>) -> Result<Vec<serde_json::Value>, String> {
     let crawls = state
         .store
@@ -801,6 +872,7 @@ fn list_crawls(state: State<'_, AppState>) -> Result<Vec<serde_json::Value>, Str
         .map(|crawl| {
             serde_json::json!({
                 "id": crawl.id,
+                "source": crawl.source,
                 "seed": crawl.seed,
                 "seedKind": crawl.seed_kind,
                 "status": crawl.status,
@@ -1466,6 +1538,34 @@ fn seed_domain(seed: &str) -> String {
         .to_string()
 }
 
+fn install_menu(app: &tauri::App) -> tauri::Result<()> {
+    let menu = Menu::default(app.handle())?;
+    let import = MenuItem::with_id(
+        app,
+        "import-sf",
+        "Screaming Frog database…",
+        true,
+        None::<&str>,
+    )?;
+    let mut attached = false;
+    for item in menu.items()? {
+        if let MenuItemKind::Submenu(submenu) = item
+            && submenu.text().ok().as_deref() == Some("File")
+        {
+            submenu.prepend(&PredefinedMenuItem::separator(app)?)?;
+            submenu.prepend(&import)?;
+            attached = true;
+            break;
+        }
+    }
+    if !attached {
+        let file = Submenu::with_items(app, "File", true, &[&import])?;
+        menu.prepend(&file)?;
+    }
+    app.set_menu(menu)?;
+    Ok(())
+}
+
 pub fn run() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
@@ -1475,7 +1575,14 @@ pub fn run() {
         .try_init();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .on_menu_event(|app, event| {
+            if event.id().as_ref() == "import-sf" {
+                let _ = app.emit("open-sf-import", ());
+            }
+        })
         .setup(|app| {
+            install_menu(app)?;
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
             let store = Store::open(data_dir.join("coqui.db"))?;
@@ -1495,6 +1602,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             create_crawl,
+            import_screaming_frog,
+            list_cloud_projects,
+            cloud_sync_crawl,
             get_crawl,
             list_urls,
             get_issue_counts,

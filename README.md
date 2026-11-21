@@ -27,7 +27,8 @@ Named after the *coquí*, the tiny frog native to Puerto Rico whose call is ever
 - [WordPress validation](docs/validation/2026-11-18-wordpress.md) — first real-site crawl results and the Cloudflare finding
 - [Dev setup](docs/dev-setup.md) — run the desktop shell, tests and builds
 - [Reports](docs/reports.md) — report catalogue, PDF, batch and comparison outputs\n- [Exports reference](docs/exports.md) — export families, filename tokens, skip-empty
-- [CLI reference](docs/cli.md) — crawl, reports, exports, sitemaps, schedules, MCP
+- [CLI reference](docs/cli.md) — crawl, reports, exports, sitemaps, schedules, sync, MCP
+- [Screaming Frog migration](docs/migration.md) — import local files and send them to a project
 - [HTTP API](docs/api.md) — server mode, auth, exports/reports, starting crawls
 - [CI operation](docs/ci.md) — workflows, artifacts, API smoke tests
 - [Packaging](docs/packaging.md) — installers, sidecars, release jobs

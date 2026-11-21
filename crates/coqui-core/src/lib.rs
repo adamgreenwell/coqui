@@ -215,6 +215,9 @@ impl CrawlStatus {
 #[serde(rename_all = "camelCase")]
 pub struct CrawlSummary {
     pub id: CrawlId,
+    /// Where the crawl came from: `desktop` for native crawls, `import` for
+    /// Screaming Frog imports. The cloud sync contract uses the same values.
+    pub source: String,
     pub seed: String,
     /// How the seed was supplied: `url`, `sitemap` or `list`.
     pub seed_kind: String,

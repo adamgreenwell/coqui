@@ -19,6 +19,7 @@ tokio-util.workspace = true
 toml = "1.2.1"
 serde = { workspace = true, features = ["derive"] }
 coqui-report = { version = "0.1.0", path = "../coqui-report" }
+coqui-sync.workspace = true
 coqui-api.workspace = true
 coqui-render.workspace = true
 reqwest.workspace = true

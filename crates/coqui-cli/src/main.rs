@@ -133,7 +133,8 @@ fn usage() -> &'static str {
        coqui browser <install|path> [--out DIR] [--sha256 HEX] [--dry-run]
        coqui update [--json] [--install]
        coqui doctor [--out DIR]
-       coqui import sf --file <crawl.dbseospider> [--out DIR]
+       coqui import sf --file <crawl.dbseospider> [--out DIR] [--pages-only] [--json]
+       coqui sync <crawlId> --project <uuid> --token <token> [--api-url URL] [--out DIR] [--dry-run] [--json]
        coqui mcp [--out DIR]"
 }
 
@@ -1014,6 +1015,7 @@ fn run_import(values: &[String]) -> Result<(), String> {
     }
     let mut file = None;
     let mut pages_only = false;
+    let mut json = false;
     let mut out = PathBuf::from("coqui-out");
     let mut index = 1;
     while index < values.len() {
@@ -1029,6 +1031,7 @@ fn run_import(values: &[String]) -> Result<(), String> {
                 out = PathBuf::from(values.get(index).ok_or("missing --out value")?);
             }
             "--pages-only" => pages_only = true,
+            "--json" => json = true,
             other => return Err(format!("unknown option '{other}'")),
         }
         index += 1;
@@ -1038,9 +1041,133 @@ fn run_import(values: &[String]) -> Result<(), String> {
     let stats = store
         .import_seospider_with(&file, coqui_store::SfImportOptions { pages_only })
         .map_err(|error| error.to_string())?;
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string(&stats).map_err(|error| error.to_string())?
+        );
+    } else if stats.reused {
+        println!(
+            "already imported: crawl {} (source {}) has {} urls and {} links",
+            stats.crawl_id, stats.seed, stats.urls, stats.links
+        );
+    } else {
+        println!(
+            "imported {} urls and {} links into crawl {} (seed {})",
+            stats.urls, stats.links, stats.crawl_id, stats.seed
+        );
+    }
+    Ok(())
+}
+
+async fn run_sync(values: &[String]) -> Result<(), String> {
+    let mut out = PathBuf::from("coqui-out");
+    let mut project = None;
+    let mut token = std::env::var("COQUI_SYNC_TOKEN")
+        .or_else(|_| std::env::var("COQUI_API_TOKEN"))
+        .ok();
+    let mut api_url =
+        std::env::var("COQUI_API_URL").unwrap_or_else(|_| coqui_sync::DEFAULT_API_URL.to_string());
+    let mut dry_run = false;
+    let mut json = false;
+    let mut crawl_id = None;
+    let mut index = 0;
+    while index < values.len() {
+        match values[index].as_str() {
+            "--out" => {
+                index += 1;
+                out = PathBuf::from(values.get(index).ok_or("missing --out value")?);
+            }
+            "--project" => {
+                index += 1;
+                project = Some(values.get(index).ok_or("missing --project value")?.clone());
+            }
+            "--token" => {
+                index += 1;
+                token = Some(values.get(index).ok_or("missing --token value")?.clone());
+            }
+            "--api-url" => {
+                index += 1;
+                api_url = values.get(index).ok_or("missing --api-url value")?.clone();
+            }
+            "--dry-run" => dry_run = true,
+            "--json" => json = true,
+            other if other.starts_with("--") => {
+                return Err(format!("unknown option '{other}'\n{}", usage()));
+            }
+            other => {
+                if crawl_id.is_some() {
+                    return Err(format!("unexpected argument '{other}'"));
+                }
+                crawl_id = Some(other.to_string());
+            }
+        }
+        index += 1;
+    }
+    let crawl_id = crawl_id.ok_or(
+        "usage: coqui sync <crawlId> --project <uuid> --token <token> [--api-url URL] [--dry-run]",
+    )?;
+    let project = project.ok_or("--project <uuid> is required")?;
+    let token = token.ok_or("--token <token> (or COQUI_SYNC_TOKEN) is required")?;
+    let store = Store::open(out.join("coqui.db")).map_err(|error| error.to_string())?;
+    let options = coqui_sync::SyncOptions {
+        api_url,
+        token,
+        project,
+        dry_run,
+    };
+    let mut last_phase = None;
+    let report = coqui_sync::sync_crawl(&store, &crawl_id, &options, |progress| {
+        if json {
+            return;
+        }
+        if last_phase != Some(progress.phase) {
+            eprintln!("{:?}: {}/{}", progress.phase, progress.done, progress.total);
+            last_phase = Some(progress.phase);
+        }
+    })
+    .await
+    .map_err(|error| error.to_string())?;
+
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string(&report).map_err(|error| error.to_string())?
+        );
+        return Ok(());
+    }
+    if report.dry_run {
+        let url_chunks = report.urls.div_ceil(coqui_sync::URL_CHUNK as u64);
+        let link_chunks = report.links.div_ceil(coqui_sync::LINK_CHUNK as u64);
+        let issue_chunks = report.issues.div_ceil(coqui_sync::ISSUE_CHUNK as u64);
+        println!(
+            "dry run: {} -> project {} (source {}, {} urls, {} links, {} issues)",
+            report.external_crawl_id,
+            report.project,
+            report.source,
+            report.urls,
+            report.links,
+            report.issues
+        );
+        println!(
+            "would POST {}/api/v1/projects/{}/crawls/sync, {} url chunk(s), {} link chunk(s), {} issue chunk(s), then finalize",
+            options.api_url.trim_end_matches('/'),
+            report.project,
+            url_chunks,
+            link_chunks,
+            issue_chunks
+        );
+        return Ok(());
+    }
     println!(
-        "imported {} urls and {} links into crawl {} (seed {})",
-        stats.urls, stats.links, stats.crawl_id, stats.seed
+        "synced {} -> project {} (source {}, {} urls, {} links, {} issues, {} chunks)",
+        report.external_crawl_id,
+        report.project,
+        report.source,
+        report.urls,
+        report.links,
+        report.issues,
+        report.chunks
     );
     Ok(())
 }
@@ -2629,6 +2756,15 @@ async fn main() {
     }
     if values.get(1).map(String::as_str) == Some("import") {
         match run_import(&values[2..]) {
+            Ok(()) => return,
+            Err(message) => {
+                eprintln!("{message}");
+                std::process::exit(2);
+            }
+        }
+    }
+    if values.get(1).map(String::as_str) == Some("sync") {
+        match run_sync(&values[2..]).await {
             Ok(()) => return,
             Err(message) => {
                 eprintln!("{message}");

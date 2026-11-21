@@ -1139,3 +1139,164 @@ tbody tr:hover {
   word-break: break-word;
   margin-top: 8px;
 }
+
+/* ── Screaming Frog import & cloud sync ───────────────────────────── */
+
+.import-trigger {
+  padding: 6px 12px;
+  font-size: 12.5px;
+}
+
+.import-modal,
+.sync-modal {
+  width: min(600px, 92vw);
+  background: var(--panel);
+  border-color: var(--border-strong);
+}
+
+.import-modal h3,
+.sync-modal h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 620;
+}
+
+.import-modal .hint,
+.sync-modal .hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.import-modal code,
+.sync-modal code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  word-break: break-all;
+}
+
+.path-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.path-row input,
+.path-row select {
+  flex: 1;
+  min-width: 0;
+}
+
+.path-row .secondary {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.import-progress,
+.sync-progress {
+  display: grid;
+  gap: 6px;
+}
+
+.progress-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.progress-line strong {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.report-card {
+  border: 1px solid var(--border-strong);
+  background: var(--panel-2);
+  border-radius: 10px;
+  padding: 11px 13px;
+  display: grid;
+  gap: 8px;
+}
+
+.report-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.report-head strong {
+  font-size: 13px;
+}
+
+.imported-badge {
+  border-color: rgba(126, 231, 135, 0.5);
+  color: var(--accent);
+  background: rgba(52, 211, 153, 0.1);
+}
+
+.modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.modal-actions .primary {
+  width: auto;
+  padding: 8px 18px;
+}
+
+.field-hint {
+  margin: 0;
+  color: var(--faint);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.history-seed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.history-seed-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-item span.imported-badge {
+  flex: 0 0 auto;
+  font-size: 10px;
+  padding: 1px 7px;
+}
+
+.history-sync {
+  align-self: flex-start;
+  margin: 0 9px 5px;
+  padding: 2px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.history-sync:hover {
+  border-color: var(--accent-strong);
+  background: rgba(52, 211, 153, 0.08);
+}

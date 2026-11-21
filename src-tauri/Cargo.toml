@@ -14,12 +14,14 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
 coqui-core.workspace = true
 coqui-store.workspace = true
 coqui-crawl.workspace = true
 coqui-audit.workspace = true
 coqui-lighthouse.workspace = true
 coqui-report.workspace = true
+coqui-sync.workspace = true
 base64.workspace = true
 serde.workspace = true
 serde_json.workspace = true
