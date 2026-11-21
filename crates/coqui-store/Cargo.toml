@@ -14,7 +14,9 @@ thiserror.workspace = true
 csv.workspace = true
 rust_xlsxwriter = "0.103.0"
 flate2.workspace = true
+zip = "9.7.1"
 time = { version = "0.3.55", features = ["parsing", "formatting"] }
 
 [dev-dependencies]
 uuid.workspace = true
+
