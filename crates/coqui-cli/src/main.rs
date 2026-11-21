@@ -504,6 +504,8 @@ const EXPORT_FAMILIES: &[&str] = &[
     "markdown",
     "extractions",
     "custom-js",
+    "anchors",
+    "social",
 ];
 
 fn export_one(
