@@ -2508,6 +2508,32 @@ impl Store {
         Ok(rows)
     }
 
+    pub fn export_social_csv(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let conn = self.lock()?;
+        let mut stmt = conn.prepare(
+            "SELECT url, social_json FROM urls
+             WHERE crawl_id = ?1 AND social_json IS NOT NULL
+             ORDER BY url",
+        )?;
+        let mut writer = csv::Writer::from_path(path)?;
+        writer.write_record(["url", "property", "content"])?;
+        let mut rows = 0u64;
+        let mut records = stmt.query(params![crawl_id])?;
+        while let Some(row) = records.next()? {
+            let url: String = row.get(0)?;
+            let json: String = row.get(1)?;
+            let tags: Vec<coqui_core::SocialTag> = serde_json::from_str(&json).unwrap_or_default();
+            for tag in tags {
+                writer.write_record([url.as_str(), &tag.property, &tag.content])?;
+                rows += 1;
+            }
+        }
+        writer.flush()?;
+        Ok(rows)
+    }
     pub fn export_csv(&self, crawl_id: &str, path: impl AsRef<Path>) -> Result<u64> {
         if let Some(parent) = path.as_ref().parent() {
             std::fs::create_dir_all(parent)?;
