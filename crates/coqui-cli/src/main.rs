@@ -1150,6 +1150,19 @@ fn run_bench(values: &[String]) -> Result<(), String> {
         .map_err(|error| error.to_string())?
         .len();
     let query_elapsed = query_started.elapsed();
+    let deep_page = (urls / 200).max(1) as u32;
+    let mut page_samples = Vec::new();
+    for _ in 0..10 {
+        let page_started = Instant::now();
+        let _ = store
+            .list_urls_filtered(
+                crawl_id, deep_page, 100, None, None, None, None, None, None, None, None, false,
+            )
+            .map_err(|error| error.to_string())?;
+        page_samples.push(page_started.elapsed().as_millis() as u64);
+    }
+    page_samples.sort_unstable();
+    let page_p95 = page_samples[(page_samples.len() * 95 / 100).min(page_samples.len() - 1)];
     let db_bytes: u64 = ["", "-wal", "-shm"]
         .iter()
         .filter_map(|suffix| {
@@ -1162,13 +1175,13 @@ fn run_bench(values: &[String]) -> Result<(), String> {
     let per_second = inserted as f64 / insert_elapsed.as_secs_f64().max(0.001);
     if json {
         println!(
-            "{{\"urls\":{inserted},\"insert_ms\":{},\"urls_per_second\":{per_second:.0},\"query_ms\":{},\"db_bytes\":{db_bytes}}}",
+            "{{\"urls\":{inserted},\"insert_ms\":{},\"urls_per_second\":{per_second:.0},\"query_ms\":{},\"page_query_p95_ms\":{page_p95},\"db_bytes\":{db_bytes}}}",
             insert_elapsed.as_millis(),
             query_elapsed.as_millis()
         );
     } else {
         println!(
-            "inserted {inserted} urls in {:.2}s ({per_second:.0}/s); all_urls({loaded}) in {:.0}ms; db {} KiB",
+            "inserted {inserted} urls in {:.2}s ({per_second:.0}/s); all_urls({loaded}) in {:.0}ms; page p95 {page_p95}ms; db {} KiB",
             insert_elapsed.as_secs_f64(),
             query_elapsed.as_millis(),
             db_bytes / 1024

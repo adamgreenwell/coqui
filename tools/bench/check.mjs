@@ -44,6 +44,15 @@ const checks = [
     unit: 'ms',
   },
   {
+    name: 'page_query_p95_ms',
+    actual: result.page_query_p95_ms,
+    limit: budgets.max_page_p95_ms,
+    ok:
+      result.page_query_p95_ms === undefined ||
+      result.page_query_p95_ms <= budgets.max_page_p95_ms,
+    unit: 'ms',
+  },
+  {
     name: 'bytes_per_url',
     actual: Math.round(perUrl),
     limit: budgets.max_bytes_per_url,
@@ -64,3 +73,4 @@ if (failed) {
   console.error('benchmark exceeded budget');
   process.exit(3);
 }
+
