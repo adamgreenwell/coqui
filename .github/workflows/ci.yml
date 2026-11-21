@@ -51,3 +51,18 @@ jobs:
       - run: cargo check -p coqui-app
 
 
+  parity:
+    name: Parity fixtures gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Compare committed fixtures
+        run: >-
+          node tools/parity/compare-exports.mjs
+          --reference tools/parity/fixtures/reference
+          --coqui tools/parity/fixtures/coqui
+          --fail-under-ratio 1
+          --max-mismatches 0
