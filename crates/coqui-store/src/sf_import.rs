@@ -161,6 +161,7 @@ impl Store {
                         pagination_next: None,
                         pagination_prev: None,
                         structured_data: Default::default(),
+                        social: Vec::new(),
                         console_errors: Vec::new(),
                         axe: Vec::new(),
                         vitals: None,

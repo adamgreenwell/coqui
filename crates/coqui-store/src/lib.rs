@@ -16,7 +16,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-pub const SCHEMA_VERSION: i32 = 34;
+pub const SCHEMA_VERSION: i32 = 35;
 
 const SCHEMA: &str = r#"
 PRAGMA journal_mode = WAL;
@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS urls (
     console_json      TEXT,
     axe_json          TEXT,
     vitals_json       TEXT,
+    social_json       TEXT,
     discovered_at     INTEGER NOT NULL,
     UNIQUE (crawl_id, url)
 );
@@ -456,9 +457,9 @@ impl Store {
                  canonical, meta_robots, redirect_target, redirect_chain, word_count, depth,
                  response_time_ms, size_bytes, error, blocked, hreflang_json, pagination_next,
                  pagination_prev, structured_data_json, console_json, axe_json, vitals_json,
-                 headers_json, discovered_at, segment)
+                 headers_json, discovered_at, segment, social_json)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
-                     ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28)",
+                     ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29)",
             params![
                 record.crawl_id,
                 record.url,
@@ -489,6 +490,7 @@ impl Store {
                 serde_json::to_string(&record.headers).unwrap_or_else(|_| "[]".into()),
                 record.discovered_at,
                 segment,
+                serde_json::to_string(&record.social).unwrap_or_else(|_| "[]".into()),
             ],
         )?;
         Ok(changed > 0)
@@ -1322,7 +1324,7 @@ impl Store {
                     canonical, meta_robots, redirect_target, redirect_chain, word_count, depth,
                     response_time_ms, size_bytes, error, discovered_at, blocked, hreflang_json,
                     pagination_next, pagination_prev, structured_data_json, console_json,
-                    axe_json, vitals_json, headers_json
+                    axe_json, vitals_json, headers_json, social_json
              FROM urls WHERE crawl_id = ?1
                AND (?3 IS NULL OR EXISTS (
                     SELECT 1 FROM issues
@@ -1393,7 +1395,7 @@ impl Store {
                     canonical, meta_robots, redirect_target, redirect_chain, word_count, depth,
                     response_time_ms, size_bytes, error, discovered_at, blocked, hreflang_json,
                     pagination_next, pagination_prev, structured_data_json, console_json,
-                    axe_json, vitals_json, headers_json
+                    axe_json, vitals_json, headers_json, social_json
              FROM urls WHERE crawl_id = ?1 ORDER BY id",
         )?;
         let rows = stmt
@@ -2884,6 +2886,10 @@ fn map_url_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<UrlRecord> {
             .get::<_, Option<String>>(27)?
             .and_then(|value| serde_json::from_str(&value).ok())
             .unwrap_or_default(),
+        social: row
+            .get::<_, Option<String>>("social_json")?
+            .and_then(|value| serde_json::from_str(&value).ok())
+            .unwrap_or_default(),
         discovered_at: row.get(18)?,
     })
 }
@@ -2930,6 +2936,17 @@ fn migrate(conn: &Connection) -> Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_links_crawl_from ON links (crawl_id, from_id);
          CREATE INDEX IF NOT EXISTS idx_links_crawl_to ON links (crawl_id, to_id);",
     )?;
+    if version < 35 {
+        let has_social = conn
+            .prepare("PRAGMA table_info(urls)")?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<std::result::Result<Vec<_>, _>>()?
+            .iter()
+            .any(|name| name == "social_json");
+        if !has_social {
+            conn.execute_batch("ALTER TABLE urls ADD COLUMN social_json TEXT;")?;
+        }
+    }
     if version < 34 {
         let has_title = conn
             .prepare("PRAGMA table_info(images)")?
@@ -3421,6 +3438,7 @@ mod tests {
             pagination_prev: None,
 
             structured_data: Default::default(),
+            social: Vec::new(),
             console_errors: Vec::new(),
             axe: Vec::new(),
             vitals: None,
@@ -3680,6 +3698,7 @@ mod tests {
                     types: vec!["Article".into()],
                     errors: vec!["missing headline for Article".into()],
                 },
+                social: Vec::new(),
                 console_errors: vec!["js: boom".into(), "network: 404".into()],
                 axe: vec![AxeViolation {
                     id: "image-alt".into(),
@@ -4702,7 +4721,7 @@ mod tests {
         let version: i32 = conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(version, 34);
+        assert_eq!(version, 35);
         std::fs::remove_dir_all(dir).ok();
     }
 
