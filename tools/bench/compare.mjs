@@ -10,6 +10,7 @@ for (let index = 2; index < process.argv.length; index += 2) {
   if (key === '--previous') args.previous = process.argv[index + 1];
   else if (key === '--current') args.current = process.argv[index + 1];
   else if (key === '--max-regression') args.maxRegression = Number(process.argv[index + 1]);
+  else if (key === '--out') args.out = process.argv[index + 1];
 }
 if (!args.current) {
   console.error('usage: node tools/bench/compare.mjs --previous prev.json --current cur.json');
@@ -36,6 +37,14 @@ const metrics = [
 ];
 
 let failed = false;
+const lines = [
+  '# Benchmark trend',
+  '',
+  `- URLs: ${current.urls}`,
+  '',
+  '| Metric | Previous | Current | Change | Status |',
+  '| --- | --- | --- | --- | --- |',
+];
 for (const metric of metrics) {
   if (metric.before <= 0) continue;
   const change = (metric.after - metric.before) / metric.before;
@@ -44,8 +53,12 @@ for (const metric of metrics) {
   console.log(
     `${status} ${metric.name}: ${metric.before.toFixed(0)} -> ${metric.after.toFixed(0)} (${(change * 100).toFixed(1)}%)`,
   );
+  lines.push(
+    `| ${metric.name} | ${metric.before.toFixed(0)} | ${metric.after.toFixed(0)} | ${(change * 100).toFixed(1)}% | ${status} |`,
+  );
   if (regression > maxRegression) failed = true;
 }
+if (args.out) fs.writeFileSync(args.out, `${lines.join('\n')}\n`);
 if (failed) {
   console.error(`regression exceeds ${(maxRegression * 100).toFixed(0)}%`);
   process.exit(3);
