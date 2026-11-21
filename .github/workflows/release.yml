@@ -196,7 +196,7 @@ jobs:
       - name: Write checksums
         shell: bash
         run: |
-          find src-tauri/target/release/bundle -type f \( -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' \) -exec shasum -a 256 {} + | awk '{ n=split($2, parts, "/"); print $1 "  " parts[n] }' > SHA256SUMS.txt
+          find src-tauri/target/release/bundle -type f \( -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' \) -exec sha256sum {} + | awk '{ n=split($2, parts, "/"); print $1 "  " parts[n] }' > SHA256SUMS.txt
       - name: Upload installers
         uses: softprops/action-gh-release@v2
         with:
