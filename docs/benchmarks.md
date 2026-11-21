@@ -20,9 +20,10 @@ Output fields: `urls`, `insert_ms`, `urls_per_second`, `query_ms` (`all_urls`), 
 ## Current measurements (Windows, debug build)
 
 - 10,000 URLs: ~0.10s insert (~100k/s), 39ms query, 3.2 MB DB.
-- 100,000 URLs: ~1.08s insert (~92k/s), 400ms query, ~64 MB DB (~660 bytes/URL).
+- 100,000 URLs (chunked, 10k per transaction): ~1.03s insert (~97k/s), 400ms query, ~39 MB DB (~400 bytes/URL).
+- 1,000,000 URLs (chunked, 10k per transaction): **12.75s insert (~78k/s)**, 5.75s full `all_urls` load, **337 MB DB (~338 bytes/URL)**.
 
-Batch writes go through `Store::insert_urls_batch`, which wraps one SQLite transaction. Row-by-row `insert_url` remains for crawler paths and measures ~1.4k/s.
+Batch writes go through `Store::insert_urls_batch`; `coqui bench` commits in chunks (`--chunk`, default 10,000) so memory stays bounded. Row-by-row `insert_url` remains for crawler paths and measures ~1.4k/s.
 ## Nightly CI benchmark
 
 `.github/workflows/bench.yml` runs daily at 03:00 UTC (and on demand):
@@ -40,3 +41,4 @@ The nightly job restores the previous `bench.json` from the Actions cache and ru
 - first run or mismatched URL counts skip the comparison.
 
 The current result is saved back to the cache for the next run.
+
