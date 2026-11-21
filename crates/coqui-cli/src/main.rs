@@ -1235,6 +1235,9 @@ async fn run_browser(values: &[String]) -> Result<(), String> {
             if let Some(parent) = target.parent() {
                 std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
             }
+            if std::fs::symlink_metadata(&target).is_ok() {
+                std::fs::remove_file(&target).map_err(|error| error.to_string())?;
+            }
             std::os::unix::fs::symlink(&link_target, &target)
                 .map_err(|error| format!("create chrome zip symlink: {error}"))?;
             continue;
