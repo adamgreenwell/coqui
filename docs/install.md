@@ -1,8 +1,8 @@
 # Installing Coqui
 
-Coqui ships as a native CLI binary, a desktop app, and a container image.
+Coqui ships as a native CLI binary, a desktop app and a container image. **No tagged release has been published yet**, so today the practical options are Docker Compose or building from source; the release binaries below describe the intended flow for the first tag.
 
-## Docker Compose (one command)
+## Docker Compose (works today)
 
 ```bash
 docker compose up --build
@@ -12,9 +12,9 @@ The API is then at <http://127.0.0.1:8787> and crawl data persists in the `coqui
 
 Render-based features (JavaScript rendering, axe, Lighthouse) need a Chromium/Chrome binary inside the container. The default image is CLI-only; mount or extend it with Chrome for those features.
 
-## Release binaries
+## Release binaries (after the first tag)
 
-Download the asset for your platform from the GitHub releases page (for example `coqui-linux-x86_64`) plus `SHA256SUMS-<os>-<arch>.txt`, verify the checksum, then run:
+Download the asset for your platform (for example `coqui-linux-x86_64`) plus `SHA256SUMS-<os>-<arch>.txt`, verify the checksum, then run:
 
 ```bash
 sha256sum -c SHA256SUMS-linux-x86_64.txt
@@ -22,7 +22,7 @@ chmod +x coqui-linux-x86_64
 ./coqui-linux-x86_64 crawl url https://example.com --out crawl-out
 ```
 
-The CLI is a self-contained Rust binary: no JVM or Node.js installation is required for crawling, auditing, reporting, exporting, or the API server.
+The CLI is a self-contained Rust binary: no JVM or Node.js installation is required for crawling, auditing, reporting, exporting or the API server. Node is only needed for Lighthouse if the sidecar is absent, and a browser is only needed for rendering.
 
 ## Build from source
 
@@ -41,7 +41,8 @@ npm run build:web
 npm run build
 ```
 
-The desktop build currently uses the system Chrome/Edge for rendering; set `COQUI_BROWSER_PATH` to override discovery.
+The desktop build uses the system Chrome/Edge for rendering; set `COQUI_BROWSER_PATH` to override discovery. Release desktop builds bundle Node + Lighthouse sidecars fetched by `npm run sidecars`.
+
 ## Rendering browser
 
 JavaScript rendering, axe and Lighthouse need Chrome/Edge. Coqui discovers an installed browser automatically; otherwise install Chrome for Testing into the user cache:
@@ -54,16 +55,25 @@ coqui browser install --sha256 <64-hex-digest>
 coqui browser path
 ```
 
-`coqui browser install` downloads the current stable Chrome for Testing for the platform, verifies the SHA-256 when `--sha256` is supplied, extracts it under the OS cache directory (`%LOCALAPPDATA%\coqui\browser`, `~/Library/Caches/coqui/browser` or `~/.cache/coqui/browser`), writes `SHA256SUMS.txt`, and prints the executable path. Set `COQUI_BROWSER_PATH` to that path (or run `coqui browser path` to see what would be used).
+`coqui browser install` downloads the current stable Chrome for Testing for the platform, verifies the SHA-256 when `--sha256` is supplied, extracts it under the OS cache directory (`%LOCALAPPDATA%\coqui\browser`, `~/Library/Caches/coqui/browser` or `~/.cache/coqui/browser`), writes `SHA256SUMS.txt` and prints the executable path. Set `COQUI_BROWSER_PATH` to that path, or run `coqui browser path` to see what would be used.
 
 The container image does not include a browser; extend the image or set `COQUI_BROWSER_PATH` to a mounted Chrome when you need rendering inside Docker.
+
+## Checking the install
+
+```bash
+coqui --version
+coqui doctor --out DIR
+```
+
+`doctor` checks database writability, Node, the Lighthouse CLI and a detected browser.
+
 ## Checking for updates
 
 ```bash
 coqui update           # human-readable
 coqui update --json    # current, latest, update_available, url
+coqui update --install # download, verify and replace this binary
 ```
 
-The check queries the latest GitHub release and compares versions; it never installs anything. Desktop updates follow the same release assets.
-
-
+The check queries the latest GitHub release and compares versions. `--install` downloads the OS/arch binary, verifies its SHA-256 against the matching `SHA256SUMS-<os>-<arch>.txt` and replaces the executable; it cannot be combined with `--json`. With no release published, `coqui update` prints `no releases published yet`.

@@ -16,13 +16,10 @@
     "bench": "node tools/bench/run.mjs",
     "sidecars": "node tools/sidecar/fetch.mjs",
     "check": "cargo check --workspace",
-    "test": "cargo test --workspace"
+    "test": "cargo test --workspace",
+    "docs:check": "node tools/docs/check.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.12.5"
   }
 }
-
-
-
-

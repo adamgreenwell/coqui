@@ -2,7 +2,9 @@
 
 Coqui is a modern, open-source reimplementation of Screaming Frog SEO Spider: a Rust crawl and analysis engine running inside a Tauri 2 desktop shell, with a Next.js workspace rendered in the system WebView. This plan turns the [feature inventory](feature-inventory.md) into an executable roadmap.
 
-- **Backlog:** 12 epics and 73 feature issues, tracked on the [Coqui project board](https://github.com/users/adamgreenwell/projects/16/views/1?layout_template=board).
+> **Implementation note (2026-11-21).** This plan was written on 2026-11-18 against the measured reference product. The build then moved faster than the phase estimate and the crate layout diverged: `coqui-parse` became extraction inside `coqui-crawl`; `coqui-export` became `coqui-report`; `coqui-jobs` became scheduler code in `coqui-store`/`coqui-cli`; `coqui-ai` is not built. `coqui-render`, `coqui-lighthouse`, `coqui-api` and `coqui-cli` exist. The frontend libraries in §3 (TanStack, Radix, Tailwind, d3, Monaco) were not adopted; the workspace is React 19 + Next 16 with hand-written CSS. Treat this document as the original plan; [README](../README.md) and [status](status.md) describe what shipped.
+
+- **Backlog:** 12 epics and 74 feature issues (the 73 planned here plus R-08, added during implementation), tracked on the [Coqui project board](https://github.com/users/adamgreenwell/projects/16/views/1?layout_template=board).
 - **Target:** behavioural and data parity with Screaming Frog SEO Spider 25.1.
 - **Stack:** Tauri 2 shell, Rust (edition 2024) engine, Next.js 16 / React 19 static-export frontend, SQLite (Postgres for server mode), Chromium + Node sidecars for rendering and Lighthouse.
 

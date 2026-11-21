@@ -261,11 +261,11 @@ These are inferred from product behaviour and must be treated as requirements, n
 | E11 Configuration & settings experience | 4 | 1 |
 | E12 Parity verification & release engineering | 4 | 4 |
 
-The full matrix, with size, priority and dependencies, is in [parity-matrix.csv](reference/parity-matrix.csv).
+The full matrix, with size, priority and dependencies, is in [parity-matrix.csv](reference/parity-matrix.csv). The live GitHub board is canonical and may contain issues added after this plan (for example R-08).
 
 ## 16. Known gaps and open questions
 
-- The CLI refuses to crawl without a licence file, so no end-to-end reference crawl output could be captured on this machine. Crawl-data comparisons must be recorded on a licensed install before parity testing begins.
+- The reference CLI refuses to crawl without a licence file. A licensed 25.1 export was later captured and unzipped for the first parity diff (see [validation/2026-11-21-first-parity-diff.md](validation/2026-11-21-first-parity-diff.md)); this inventory itself predates that export.
 - Java identifiers in most packages are obfuscated (`id...`). Structure comes from package names, preserved semantic classes, resource bundles and runtime state, not from decompiled logic. Exact algorithms (e.g. readability formula constants, normalisation edge cases) remain to be characterised behaviourally.
 - The exact MCP tool catalogue is only visible at runtime in the app; it must be enumerated on a licensed install.
 - Internal database schema (crawl file format) could not be inspected without producing a crawl; this is the first task of the parity harness.
