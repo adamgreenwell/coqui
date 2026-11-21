@@ -2754,6 +2754,20 @@ export default function Home() {
                     </ul>
                   </>
                 )}
+                {Array.isArray(detail.url.social) && detail.url.social.length > 0 && (
+                  <>
+                    <h4>Social</h4>
+                    <ul className="settings-reference">
+                      {(detail.url.social as { property: string; content: string }[]).map(
+                        (tag) => (
+                          <li key={`${tag.property}-${tag.content}`}>
+                            {tag.property}: {tag.content}
+                          </li>
+                        ),
+                      )}
+                    </ul>
+                  </>
+                )}
                 <h4>Source</h4>
                 <button
                   type="button"

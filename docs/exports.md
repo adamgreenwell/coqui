@@ -77,9 +77,10 @@ URL CSV exports stream row-by-row from SQLite, so they do not hold the crawl in 
 
 ## CLI
 
-`coqui export --out DIR --family <name>` writes the latest crawl to `DIR/<family>-<timestamp>.csv`. Families: urls, issues, links, headers, images, a11y, structured, vitals, console, text, markdown, extractions, custom-js, or all.
+`coqui export --out DIR --family <name>` writes the latest crawl to `DIR/<family>-<timestamp>.csv`. Families: urls, issues, links, headers, images, a11y, structured, vitals, console, text, markdown, extractions, custom-js, anchors, social, or all.
 
 
 
 - nchors.csv — internal anchor texts grouped per target URL with counts.
+
 
