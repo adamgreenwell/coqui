@@ -58,7 +58,11 @@ fn extract_sql_member(archive_path: &Path) -> Result<PathBuf> {
         .write(true)
         .create_new(true)
         .open(&destination)?;
-    std::io::copy(&mut entry, &mut output)?;
+    if let Err(error) = std::io::copy(&mut entry, &mut output) {
+        drop(output);
+        std::fs::remove_file(&destination).ok();
+        return Err(StoreError::Io(error));
+    }
     Ok(destination)
 }
 
