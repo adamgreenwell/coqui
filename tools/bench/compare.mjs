@@ -1,76 +1,52 @@
-// Two-crawl comparison benchmark against the local bulk fixture.
-// node tools/bench/compare.mjs --urls 10000 --port 4195
-import { spawn, spawnSync } from 'node:child_process';
-import { DatabaseSync } from 'node:sqlite';
+#!/usr/bin/env node
+// Compare two `coqui bench --json` results and fail on >10% regression.
+// Usage: node tools/bench/compare.mjs --previous prev.json --current cur.json [--max-regression 0.10]
+
 import fs from 'node:fs';
-import path from 'node:path';
 
-const args = process.argv.slice(2);
-const option = (name, fallback) => {
-  const index = args.indexOf(`--${name}`);
-  return index >= 0 && args[index + 1] ? args[index + 1] : fallback;
-};
+const args = {};
+for (let index = 2; index < process.argv.length; index += 2) {
+  const key = process.argv[index];
+  if (key === '--previous') args.previous = process.argv[index + 1];
+  else if (key === '--current') args.current = process.argv[index + 1];
+  else if (key === '--max-regression') args.maxRegression = Number(process.argv[index + 1]);
+}
+if (!args.current) {
+  console.error('usage: node tools/bench/compare.mjs --previous prev.json --current cur.json');
+  process.exit(2);
+}
+const maxRegression = Number.isFinite(args.maxRegression) ? args.maxRegression : 0.1;
+const current = JSON.parse(fs.readFileSync(args.current, 'utf8'));
+if (!args.previous || !fs.existsSync(args.previous)) {
+  console.log('no previous benchmark result; skipping regression check');
+  process.exit(0);
+}
+const previous = JSON.parse(fs.readFileSync(args.previous, 'utf8'));
+if (current.urls !== previous.urls) {
+  console.log(`URL counts differ (${previous.urls} -> ${current.urls}); skipping regression check`);
+  process.exit(0);
+}
 
-const urls = Number(option('urls', '10000'));
-const port = Number(option('port', '4195'));
-const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-const out = path.join('bench', `compare-${stamp}`);
-fs.mkdirSync(out, { recursive: true });
+const currentPerUrl = current.db_bytes / Math.max(current.urls, 1);
+const previousPerUrl = previous.db_bytes / Math.max(previous.urls, 1);
+const metrics = [
+  { name: 'urls_per_second', before: previous.urls_per_second, after: current.urls_per_second, direction: 'higher' },
+  { name: 'query_ms', before: previous.query_ms, after: current.query_ms, direction: 'lower' },
+  { name: 'bytes_per_url', before: previousPerUrl, after: currentPerUrl, direction: 'lower' },
+];
 
-console.log('building CLI…');
-const build = spawnSync('cargo', ['build', '-q', '-p', 'coqui-cli'], {
-  stdio: 'inherit',
-  shell: process.platform === 'win32',
-});
-if (build.status !== 0) process.exit(build.status ?? 1);
-
-console.log(`starting bulk fixture: ${urls} URLs on :${port}`);
-const fixture = spawn(process.execPath, ['tools/fixture/bulk.mjs', String(urls), String(port)], {
-  stdio: 'ignore',
-});
-const origin = `http://127.0.0.1:${port}`;
-const waitForFixture = async () => {
-  for (let attempt = 0; attempt < 200; attempt += 1) {
-    try {
-      const response = await fetch(`${origin}/sitemap.xml`);
-      if (response.ok) return;
-    } catch {
-      // retry
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error('fixture did not start');
-};
-
-const binary = path.join('target', 'debug', process.platform === 'win32' ? 'coqui.exe' : 'coqui');
-const crawl = () =>
-  spawnSync(
-    binary,
-    ['crawl', 'sitemap', `${origin}/sitemap.xml`, '--max-urls', String(urls), '--out', out],
-    { stdio: 'inherit' },
+let failed = false;
+for (const metric of metrics) {
+  if (metric.before <= 0) continue;
+  const change = (metric.after - metric.before) / metric.before;
+  const regression = metric.direction === 'higher' ? -change : change;
+  const status = regression > maxRegression ? 'FAIL' : 'ok';
+  console.log(
+    `${status} ${metric.name}: ${metric.before.toFixed(0)} -> ${metric.after.toFixed(0)} (${(change * 100).toFixed(1)}%)`,
   );
-
-try {
-  await waitForFixture();
-  const first = crawl();
-  if (first.status !== 0) process.exit(first.status ?? 1);
-  const second = crawl();
-  if (second.status !== 0) process.exit(second.status ?? 1);
-
-  const db = new DatabaseSync(path.join(out, 'coqui.db'));
-  const ids = db
-    .prepare('select id from crawls order by created_at asc')
-    .all()
-    .map((row) => row.id);
-  console.log(`crawls: ${ids.join(', ')}`);
-
-  const started = process.hrtime.bigint();
-  const compare = spawnSync(binary, ['report', 'compare', '--with', ids[0], '--out', out], {
-    stdio: 'inherit',
-  });
-  const elapsed = Number(process.hrtime.bigint() - started) / 1e6;
-  if (compare.status !== 0) process.exit(compare.status ?? 1);
-  console.log(`comparison of ${urls} URLs took ${elapsed.toFixed(0)} ms`);
-} finally {
-  fixture.kill();
+  if (regression > maxRegression) failed = true;
+}
+if (failed) {
+  console.error(`regression exceeds ${(maxRegression * 100).toFixed(0)}%`);
+  process.exit(3);
 }
