@@ -1,0 +1,2 @@
+url,rule,impact,help,help_url,nodes
+https://example.com/,image-alt,critical,Images must have alternate text,https://example.com/rule,2

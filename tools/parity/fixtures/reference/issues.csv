@@ -1,0 +1,2 @@
+url,rule,severity,detail
+https://example.com/,missing_meta_description,warning,
