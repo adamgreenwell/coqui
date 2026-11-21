@@ -83,62 +83,63 @@ impl Store {
         let crawl_id = format!("sf-{}", now_ms());
         self.create_crawl(&crawl_id, &seed, "url", &CrawlConfig::default(), now_ms())?;
 
-        let mut ids: HashMap<String, i64> = HashMap::new();
-        let mut urls = 0usize;
-        {
-            let mut statement = source
-                .prepare(
-                    "select * from urls
+        let populated = (|| -> Result<(usize, usize)> {
+            let mut ids: HashMap<String, i64> = HashMap::new();
+            let mut urls = 0usize;
+            {
+                let mut statement = source
+                    .prepare(
+                        "select * from urls
                      where is_internal = 1 and ifnull(loaded_as_a_resource, 0) = 0
                      order by crawl_depth, rowid",
-                )
-                .map_err(StoreError::Sqlite)?;
-            let mut rows = statement.query([]).map_err(StoreError::Sqlite)?;
-            while let Some(row) = rows.next().map_err(StoreError::Sqlite)? {
-                let Some(url) = text(row, "encoded_url") else {
-                    continue;
-                };
-                let record = NewUrl {
-                    crawl_id: crawl_id.clone(),
-                    url: url.clone(),
-                    status: number(row, "response_code").map(|value| value as u16),
-                    blocked: number(row, "blocked_by_robots_txt").unwrap_or(0) != 0,
-                    content_type: text(row, "content_type"),
-                    title: text(row, "title_1"),
-                    meta_description: meta_description(row),
-                    h1: text(row, "h1_1"),
-                    h1_count: number(row, "num_h1").unwrap_or(0) as u32,
-                    canonical: None,
-                    meta_robots: None,
-                    hreflang: Vec::new(),
-                    pagination_next: None,
-                    pagination_prev: None,
-                    structured_data: Default::default(),
-                    console_errors: Vec::new(),
-                    axe: Vec::new(),
-                    vitals: None,
-                    headers: Vec::new(),
-                    redirect_target: None,
-                    redirect_chain: Vec::new(),
-                    word_count: number(row, "word_count").map(|value| value as u32),
-                    depth: number(row, "crawl_depth").unwrap_or(0) as u32,
-                    response_time_ms: number(row, "response_time_ms").map(|value| value as u64),
-                    size_bytes: number(row, "page_size").map(|value| value as u64),
-                    error: number(row, "response_code")
-                        .filter(|code| *code >= 400)
-                        .and_then(|_| text(row, "response_msg")),
-                    discovered_at: now_ms(),
-                };
-                self.insert_url(&record)?;
-                let id = self.ensure_url_id(&crawl_id, &url)?;
-                ids.insert(url, id);
-                urls += 1;
+                    )
+                    .map_err(StoreError::Sqlite)?;
+                let mut rows = statement.query([]).map_err(StoreError::Sqlite)?;
+                while let Some(row) = rows.next().map_err(StoreError::Sqlite)? {
+                    let Some(url) = text(row, "encoded_url") else {
+                        continue;
+                    };
+                    let record = NewUrl {
+                        crawl_id: crawl_id.clone(),
+                        url: url.clone(),
+                        status: number(row, "response_code").map(|value| value as u16),
+                        blocked: number(row, "blocked_by_robots_txt").unwrap_or(0) != 0,
+                        content_type: text(row, "content_type"),
+                        title: text(row, "title_1"),
+                        meta_description: meta_description(row),
+                        h1: text(row, "h1_1"),
+                        h1_count: number(row, "num_h1").unwrap_or(0) as u32,
+                        canonical: None,
+                        meta_robots: None,
+                        hreflang: Vec::new(),
+                        pagination_next: None,
+                        pagination_prev: None,
+                        structured_data: Default::default(),
+                        console_errors: Vec::new(),
+                        axe: Vec::new(),
+                        vitals: None,
+                        headers: Vec::new(),
+                        redirect_target: None,
+                        redirect_chain: Vec::new(),
+                        word_count: number(row, "word_count").map(|value| value as u32),
+                        depth: number(row, "crawl_depth").unwrap_or(0) as u32,
+                        response_time_ms: number(row, "response_time_ms").map(|value| value as u64),
+                        size_bytes: number(row, "page_size").map(|value| value as u64),
+                        error: number(row, "response_code")
+                            .filter(|code| *code >= 400)
+                            .and_then(|_| text(row, "response_msg")),
+                        discovered_at: now_ms(),
+                    };
+                    self.insert_url(&record)?;
+                    let id = self.ensure_url_id(&crawl_id, &url)?;
+                    ids.insert(url, id);
+                    urls += 1;
+                }
             }
-        }
 
-        let mut links = 0usize;
-        {
-            let mut statement = source
+            let mut links = 0usize;
+            {
+                let mut statement = source
                 .prepare(
                     "select s.encoded_url src, d.encoded_url dst, l.link_text, l.nofollow, l.scope
                      from links l
@@ -147,37 +148,47 @@ impl Store {
                      where l.link_type = 1",
                 )
                 .map_err(StoreError::Sqlite)?;
-            let mut rows = statement.query([]).map_err(StoreError::Sqlite)?;
-            while let Some(row) = rows.next().map_err(StoreError::Sqlite)? {
-                let (Some(from), Some(to)) = (text(row, "src"), text(row, "dst")) else {
-                    continue;
-                };
-                let from_id = match ids.get(&from) {
-                    Some(id) => *id,
-                    None => self.ensure_url_id(&crawl_id, &from)?,
-                };
-                let to_id = match ids.get(&to) {
-                    Some(id) => *id,
-                    None => self.ensure_url_id(&crawl_id, &to)?,
-                };
-                let internal = number(row, "scope").unwrap_or(0) == 1;
-                let rel = if number(row, "nofollow").unwrap_or(0) != 0 {
-                    Some("nofollow")
-                } else {
-                    None
-                };
-                self.insert_link(
-                    &crawl_id,
-                    from_id,
-                    to_id,
-                    text(row, "link_text").as_deref(),
-                    rel,
-                    internal,
-                )?;
-                links += 1;
+                let mut rows = statement.query([]).map_err(StoreError::Sqlite)?;
+                while let Some(row) = rows.next().map_err(StoreError::Sqlite)? {
+                    let (Some(from), Some(to)) = (text(row, "src"), text(row, "dst")) else {
+                        continue;
+                    };
+                    let from_id = match ids.get(&from) {
+                        Some(id) => *id,
+                        None => self.ensure_url_id(&crawl_id, &from)?,
+                    };
+                    let to_id = match ids.get(&to) {
+                        Some(id) => *id,
+                        None => self.ensure_url_id(&crawl_id, &to)?,
+                    };
+                    let internal = number(row, "scope").unwrap_or(0) == 1;
+                    let rel = if number(row, "nofollow").unwrap_or(0) != 0 {
+                        Some("nofollow")
+                    } else {
+                        None
+                    };
+                    self.insert_link(
+                        &crawl_id,
+                        from_id,
+                        to_id,
+                        text(row, "link_text").as_deref(),
+                        rel,
+                        internal,
+                    )?;
+                    links += 1;
+                }
             }
-        }
 
+            Ok((urls, links))
+        })();
+        let (urls, links) = match populated {
+            Ok(pair) => pair,
+            Err(error) => {
+                let _ = self.delete_crawl(&crawl_id);
+                std::fs::remove_file(&sqlite_path).ok();
+                return Err(error);
+            }
+        };
         self.mark_finished(&crawl_id, CrawlStatus::Completed, now_ms())?;
         std::fs::remove_file(&sqlite_path).ok();
         Ok(SfImportStats {
