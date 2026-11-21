@@ -1098,4 +1098,101 @@ mod tests {
         );
         std::fs::remove_dir_all(dir).ok();
     }
+
+    fn new_url(url: &str) -> coqui_core::NewUrl {
+        coqui_core::NewUrl {
+            crawl_id: "c1".to_string(),
+            url: url.to_string(),
+            status: Some(200),
+            blocked: false,
+            content_type: Some("text/html".to_string()),
+            title: Some("Page title".to_string()),
+            meta_description: Some("Meta description".to_string()),
+            h1: Some("Heading".to_string()),
+            h1_count: 1,
+            canonical: None,
+            meta_robots: None,
+            hreflang: Vec::new(),
+            pagination_next: None,
+            pagination_prev: None,
+            structured_data: Default::default(),
+            console_errors: Vec::new(),
+            axe: Vec::new(),
+            vitals: None,
+            headers: Vec::new(),
+            redirect_target: None,
+            redirect_chain: Vec::new(),
+            word_count: Some(300),
+            depth: 1,
+            response_time_ms: Some(120),
+            size_bytes: Some(2048),
+            error: None,
+            discovered_at: coqui_core::now_ms(),
+        }
+    }
+
+    fn setup(dir: &std::path::Path) -> Store {
+        std::fs::create_dir_all(dir).unwrap();
+        let store = Store::open(dir.join("coqui.db")).unwrap();
+        store
+            .create_crawl(
+                "c1",
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                coqui_core::now_ms(),
+            )
+            .unwrap();
+        store
+    }
+
+    #[test]
+    fn renders_hreflang_canonical_and_pagination_reports() {
+        let dir = std::env::temp_dir().join(format!("coqui-report-links-{}", std::process::id()));
+        let store = setup(&dir);
+        let mut page = new_url("https://example.com/page");
+        page.canonical = Some("https://example.com/target".to_string());
+        page.hreflang = vec![coqui_core::HreflangLink {
+            lang: "de".to_string(),
+            url: "https://example.com/de".to_string(),
+        }];
+        page.pagination_next = Some("https://example.com/missing".to_string());
+        store.insert_url(&page).unwrap();
+        let mut target = new_url("https://example.com/target");
+        target.canonical = Some("https://example.com/target".to_string());
+        store.insert_url(&target).unwrap();
+
+        let hreflang = render_hreflang(&store, "c1").unwrap();
+        assert!(hreflang.contains("example.com/de"));
+        let returns = render_hreflang_return(&store, "c1").unwrap();
+        assert!(returns.contains("missing return link"));
+        let chains = render_canonical_chains(&store, "c1").unwrap();
+        assert!(chains.contains("example.com/target"));
+        let canonicals = render_canonicals(&store, "c1").unwrap();
+        assert!(canonicals.contains("non-self"));
+        let pagination = render_pagination(&store, "c1").unwrap();
+        assert!(pagination.contains("example.com/missing"));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn renders_orphans_segments_and_serp_reports() {
+        let dir = std::env::temp_dir().join(format!("coqui-report-grid-{}", std::process::id()));
+        let store = setup(&dir);
+        store
+            .insert_url(&new_url("https://example.com/tools/widget"))
+            .unwrap();
+        let mut orphan = new_url("https://example.com/orphan");
+        orphan.depth = 2;
+        store.insert_url(&orphan).unwrap();
+
+        let orphans = render_orphans(&store, "c1").unwrap();
+        assert!(orphans.contains("example.com/orphan"));
+        let segments = render_segments(&store, "c1").unwrap();
+        assert!(segments.contains("tools"));
+        let serp = render_serp(&store, "c1").unwrap();
+        assert!(serp.contains("eligible HTML pages"));
+        assert!(serp.contains("Page title"));
+        std::fs::remove_dir_all(dir).ok();
+    }
 }
