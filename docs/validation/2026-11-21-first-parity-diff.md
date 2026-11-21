@@ -57,3 +57,10 @@ Comparing Coqui's unique internal outlinks against `urls.num_unique_internal_out
 | Word count (aggregate) | ratio **1.004** (mine 24,9xx vs reference 24,8xx); 3 exact per page |
 
 Word counts now aggregate within 0.4% of the reference; per-page differences remain (rounding, boilerplate, code samples) but the script/style inflation is gone.
+## Full-scope crawl (154 pages vs 156 reference HTML pages)
+
+- **151 pages compared**: status **151/151**, title **151/151**, depth **151/151**.
+- Word count aggregate ratio **1.003**; 3 exact per page.
+- 3 Coqui-only URLs are `?replytocom=` comment-reply links the reference does not crawl.
+- 5 reference-only URLs are depth-4 `lumenare-search/documentation/*` pages beyond our crawl depth.
+- Link-set comparison still shows a gap (1,011 reference-only, 2,165 Coqui-only among 151 shared pages), consistent with different anchor de-duplication/classification in the reference’s `links` table rather than missing pages.
