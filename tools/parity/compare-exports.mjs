@@ -238,11 +238,18 @@ for (const file of referenceFiles) {
       : Boolean(counterpart) || /urls\.csv$/i.test(base));
   if (counterpart && ((urlIndex < 0 && counterpart.index < 0) || repeatedUrls)) {
     const key = (row) => row.join('\u0001');
+    const counterpartKey = (row) =>
+      headers
+        .map((header) => {
+          const index = counterpart.headerIndex.get(normalizeHeader(header));
+          return index === undefined ? '' : (row[index] ?? '');
+        })
+        .join('\u0001');
     const counts = new Map();
     for (const row of rows) counts.set(key(row), (counts.get(key(row)) ?? 0) + 1);
     let fileMismatches = 0;
     for (const row of counterpart.rows) {
-      const rowKey = key(row);
+      const rowKey = counterpartKey(row);
       const seen = counts.get(rowKey) ?? 0;
       if (seen > 0) counts.set(rowKey, seen - 1);
       else fileMismatches += 1;
@@ -280,6 +287,13 @@ for (const file of referenceFiles) {
         if (a !== b) fileMismatches += 1;
       }
     }
+    const refUrlSet = new Set(rows.map((row) => row[urlIndex]));
+    const otherUrlIndex = counterpart ? counterpart.index : coquiUrlIndex;
+    const otherUrlSet = new Set(
+      (counterpart ? counterpart.rows : coquiUrls.rows).map((row) => row[otherUrlIndex]),
+    );
+    fileMismatches += [...refUrlSet].filter((url) => !otherUrlSet.has(url)).length;
+    fileMismatches += [...otherUrlSet].filter((url) => !refUrlSet.has(url)).length;
     totalMismatches += fileMismatches;
     lines.push(`- Shared-column value mismatches: ${fileMismatches}`);
   }
