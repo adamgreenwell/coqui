@@ -30,8 +30,8 @@ function load(dbPath) {
        join urls src on src.url = f.url and src.crawl_id = l.crawl_id
        join urls dst on dst.url = t.url and dst.crawl_id = l.crawl_id
        where l.internal = 1
-         and src.content_type like 'text/html%'
-         and dst.content_type like 'text/html%'`,
+         and (src.content_type like 'text/html%' or src.content_type like 'application/xhtml%')
+         and (dst.content_type like 'text/html%' or dst.content_type like 'application/xhtml%')`,
     )
     .all();
   for (const row of rows) {
@@ -39,7 +39,7 @@ function load(dbPath) {
     pages.add(row.from_url);
   }
   const urls = new Set(
-    db.prepare("select url from urls where content_type like 'text/html%'").all().map((row) => row.url),
+    db.prepare("select url from urls where content_type like 'text/html%' or content_type like 'application/xhtml%'").all().map((row) => row.url),
   );
   return { links, pages, urls, path: dbPath };
 }
