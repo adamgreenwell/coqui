@@ -64,3 +64,9 @@ Word counts now aggregate within 0.4% of the reference; per-page differences rem
 - 3 Coqui-only URLs are `?replytocom=` comment-reply links the reference does not crawl.
 - 5 reference-only URLs are depth-4 `lumenare-search/documentation/*` pages beyond our crawl depth.
 - Link-set comparison still shows a gap (1,011 reference-only, 2,165 Coqui-only among 151 shared pages), consistent with different anchor de-duplication/classification in the reference’s `links` table rather than missing pages.
+## Link import correction
+
+`links.src_id`/`dst_id` reference `unique_urls.id`, not `urls.rowid`. The importer was joining the wrong table, so imported link destinations were wrong. After fixing the join and importing type 1 anchors:
+
+- Reference import: 156 pages, **4,691 links** (3,392 internal).
+- Link-set comparison vs the full Coqui crawl: **2,280 links in both** (was 415), 992 reference-only, 461 Coqui-only among 151 shared pages.

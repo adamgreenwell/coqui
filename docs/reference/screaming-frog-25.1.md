@@ -71,6 +71,8 @@ Coqui currently ships 7 crawl reports plus comparison; the reference has 35 entr
 4. Replace the guessed parity inventory with reference-derived issue/report inventories.
 ## Link types in the crawl database
 
+The `links` table stores `src_id`/`dst_id` against **`unique_urls.id`** (not `urls.rowid`); always join through `unique_urls` to resolve endpoints.
+
 Sampling the `links` table shows what each `link_type` stores:
 
 | Type | Meaning | Example element path |
@@ -85,5 +87,6 @@ Sampling the `links` table shows what each `link_type` stores:
 | 29/30 | Meta-driven resource references | `//head/meta` |
 
 The importer ingests **type 1** and **type 13 rows whose element path is an anchor** (`//…/a[...]`); type-13 resource references and types 2/3/4/6/29/30 stay out of the link graph, matching Coqui crawls. The reference type-1 rows can still include duplicate occurrences.
+
 
 
