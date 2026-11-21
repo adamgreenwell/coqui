@@ -33,7 +33,7 @@ Named after the *coquí*, the tiny frog native to Puerto Rico whose call is ever
 - [Packaging](docs/packaging.md) — installers, sidecars, release jobs
 - [Code signing runbook](docs/signing.md) — Windows/macOS signing steps (pending certificates)
 - [Benchmarks](docs/benchmarks.md) — 10k/50k/1M measurements
-- [Handover](docs/handover.md) — current state, parity workflow and next steps\n- [Status](docs/status.md) — current milestone snapshot and next candidates
+- [Audit rules](docs/audit-rules.md) — every rule, severity and threshold\n- [Handover](docs/handover.md) — current state, parity workflow and next steps\n- [Status](docs/status.md) — current milestone snapshot and next candidates
 - [Changelog](CHANGELOG.md) — release notes
 - [Regression validation](docs/validation/2026-11-20-regression.md) — post-change real-site crawl
 - [Wiki](https://github.com/adamgreenwell/coqui/wiki) — architecture and feature notes
@@ -107,6 +107,7 @@ The backlog is the roadmap. Pick an issue from the board, comment to claim it, a
 ## License
 
 To be decided by the project owner before the first code release (MIT or Apache-2.0 are the candidates). Until then, no license is granted for reuse.
+
 
 
 
