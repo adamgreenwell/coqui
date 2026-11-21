@@ -2397,4 +2397,26 @@ mod tests {
         assert_eq!(parsed.out, PathBuf::from("crawls/example"));
         assert_eq!(parsed.max_urls, 25);
     }
+    #[test]
+    fn parses_automation_output_flags() {
+        let parsed = parse_args(
+            &args(&[
+                "crawl",
+                "url",
+                "https://example.com",
+                "--json",
+                "--ndjson",
+                "--fail-on-issues",
+                "7",
+                "--render-wait-selector",
+                "#app",
+            ]),
+            &FileConfig::default(),
+        )
+        .unwrap();
+        assert!(parsed.json);
+        assert!(parsed.ndjson);
+        assert_eq!(parsed.fail_on_issues, Some(7));
+        assert_eq!(parsed.wait_selector.as_deref(), Some("#app"));
+    }
 }
