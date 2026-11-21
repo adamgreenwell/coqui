@@ -156,6 +156,31 @@ const tolerance = args.tolerance
 const toleranceFor = (header) =>
   tolerance[header] ?? tolerance[normalizeHeader(header)] ?? null;
 
+function rowsMatch(a, b, headers) {
+  for (let index = 0; index < headers.length; index += 1) {
+    const header = headers[index];
+    const left = a[index] ?? '';
+    const right = b[index] ?? '';
+    const rule = toleranceFor(header);
+    if (rule?.type === 'ignore') continue;
+    if (rule?.type === 'numeric') {
+      const hasBoth = left.trim() !== '' && right.trim() !== '';
+      const x = Number(left);
+      const y = Number(right);
+      if (
+        hasBoth &&
+        Number.isFinite(x) &&
+        Number.isFinite(y) &&
+        Math.abs(x - y) <= (rule.absolute ?? 0)
+      ) {
+        continue;
+      }
+    }
+    if (left !== right) return false;
+  }
+  return true;
+}
+
 let matchedFiles = 0;
 let totalRefUrls = 0;
 let totalOverlap = 0;
@@ -236,25 +261,27 @@ for (const file of referenceFiles) {
     (valueFiles
       ? valueFiles.includes(base)
       : Boolean(counterpart) || /urls\.csv$/i.test(base));
-  if (counterpart && ((urlIndex < 0 && counterpart.index < 0) || repeatedUrls)) {
-    const key = (row) => row.join('\u0001');
-    const counterpartKey = (row) =>
-      headers
-        .map((header) => {
-          const index = counterpart.headerIndex.get(normalizeHeader(header));
-          return index === undefined ? '' : (row[index] ?? '');
-        })
-        .join('\u0001');
-    const counts = new Map();
-    for (const row of rows) counts.set(key(row), (counts.get(key(row)) ?? 0) + 1);
+  if (counterpart && (urlIndex < 0 || counterpart.index < 0 || repeatedUrls)) {
+    const refIndex = new Map(
+      headers.map((header, index) => [normalizeHeader(header), index]),
+    );
+    const project = (row, headerIndex) =>
+      headers.map((header) => {
+        const index = headerIndex.get(normalizeHeader(header));
+        return index === undefined ? '' : (row[index] ?? '');
+      });
+    const others = counterpart.rows.map((row) => project(row, counterpart.headerIndex));
+    const used = new Set();
     let fileMismatches = 0;
-    for (const row of counterpart.rows) {
-      const rowKey = counterpartKey(row);
-      const seen = counts.get(rowKey) ?? 0;
-      if (seen > 0) counts.set(rowKey, seen - 1);
+    for (const row of rows) {
+      const left = project(row, refIndex);
+      const match = others.findIndex(
+        (right, index) => !used.has(index) && rowsMatch(left, right, headers),
+      );
+      if (match >= 0) used.add(match);
       else fileMismatches += 1;
     }
-    for (const remaining of counts.values()) fileMismatches += remaining;
+    fileMismatches += others.length - used.size;
     totalMismatches += fileMismatches;
     lines.push(`- Row mismatches: ${fileMismatches}`);
   }
