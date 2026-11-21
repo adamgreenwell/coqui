@@ -64,3 +64,4 @@ coqui update --json    # current, latest, update_available, url
 ```
 
 The check queries the latest GitHub release and compares versions; it never installs anything. Desktop updates follow the same release assets.
+

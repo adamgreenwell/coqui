@@ -131,7 +131,7 @@ fn usage() -> &'static str {
        coqui issue-settings <export|import|diff> [--out DIR] [--file PATH] [--with CRAWL]
        coqui bench [--urls N] [--chunk N] [--out DIR] [--json] [--force]
        coqui browser <install|path> [--out DIR] [--sha256 HEX] [--dry-run]
-       coqui update [--json]
+       coqui update [--json] [--install]
        coqui doctor [--out DIR]
        coqui import sf --file <crawl.dbseospider> [--out DIR]
        coqui mcp [--out DIR]"
@@ -1301,11 +1301,100 @@ fn version_parts(value: &str) -> Vec<u64> {
         .collect()
 }
 
+async fn install_release(
+    client: &reqwest::Client,
+    release: &serde_json::Value,
+    version: &str,
+) -> Result<(), String> {
+    let assets = release["assets"]
+        .as_array()
+        .ok_or("latest release has no assets")?;
+    let binary_name = if cfg!(windows) { "coqui.exe" } else { "coqui" };
+    let find = |name: &str| {
+        assets
+            .iter()
+            .find(|asset| asset["name"].as_str() == Some(name))
+            .and_then(|asset| asset["browser_download_url"].as_str())
+            .map(str::to_string)
+    };
+    let binary_url =
+        find(binary_name).ok_or_else(|| format!("release {version} has no {binary_name} asset"))?;
+    let sums_url = find("SHA256SUMS.txt").ok_or("release has no SHA256SUMS.txt")?;
+    let sums = client
+        .get(sums_url)
+        .send()
+        .await
+        .map_err(|error| format!("download checksums: {error}"))?
+        .text()
+        .await
+        .map_err(|error| format!("read checksums: {error}"))?;
+    let expected = sums
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.split_whitespace();
+            let digest = parts.next()?;
+            let name = parts.next()?.trim_start_matches('*');
+            (name == binary_name).then(|| digest.to_ascii_lowercase())
+        })
+        .next()
+        .ok_or_else(|| format!("SHA256SUMS.txt has no entry for {binary_name}"))?;
+    let bytes = client
+        .get(binary_url)
+        .send()
+        .await
+        .map_err(|error| format!("download {binary_name}: {error}"))?
+        .bytes()
+        .await
+        .map_err(|error| format!("read {binary_name}: {error}"))?;
+    let digest = {
+        use sha2::Digest;
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(&bytes);
+        hasher
+            .finalize()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    };
+    if digest != expected {
+        return Err(format!(
+            "checksum mismatch for {binary_name}: expected {expected}, got {digest}"
+        ));
+    }
+    let executable = std::env::current_exe().map_err(|error| error.to_string())?;
+    let temporary = executable.with_extension("new");
+    std::fs::write(&temporary, &bytes).map_err(|error| error.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&temporary, std::fs::Permissions::from_mode(0o755))
+            .map_err(|error| error.to_string())?;
+    }
+    #[cfg(windows)]
+    {
+        let backup = executable.with_extension("old");
+        let _ = std::fs::remove_file(&backup);
+        std::fs::rename(&executable, &backup).map_err(|error| error.to_string())?;
+        if let Err(error) = std::fs::rename(&temporary, &executable) {
+            let _ = std::fs::rename(&backup, &executable);
+            return Err(error.to_string());
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        std::fs::rename(&temporary, &executable).map_err(|error| error.to_string())?;
+    }
+    println!("installed coqui {version}; restart to use the new version");
+    Ok(())
+}
+
 async fn run_update(values: &[String]) -> Result<(), String> {
     let mut json = false;
+    let mut install = false;
     for value in values {
         match value.as_str() {
             "--json" => json = true,
+            "--install" => install = true,
             other => return Err(format!("unknown option '{other}'")),
         }
     }
@@ -1336,6 +1425,13 @@ async fn run_update(values: &[String]) -> Result<(), String> {
         .ok_or("latest release has no tag_name")?;
     let url = release["html_url"].as_str().unwrap_or("");
     let available = version_parts(tag) > version_parts(current);
+    if available && install {
+        if json {
+            return Err("--install cannot be combined with --json".into());
+        }
+        install_release(&client, &release, tag.trim_start_matches('v')).await?;
+        return Ok(());
+    }
     if json {
         println!(
             "{{\"current\":\"{current}\",\"latest\":\"{}\",\"update_available\":{available},\"url\":\"{}\"}}",
