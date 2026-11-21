@@ -561,20 +561,24 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
             continue;
         }
         if !is_ok_html {
-            // The reference reports empty title/meta/H1 on error pages too.
-            if url.title.as_deref().unwrap_or("").trim().is_empty() {
+            // The reference reports empty title/meta/H1 on error pages too,
+            // but redirect records inherit the destination content type while
+            // their metadata is intentionally not extracted.
+            let is_error = url.status.map(|status| status >= 400).unwrap_or(true);
+            if is_error && url.title.as_deref().unwrap_or("").trim().is_empty() {
                 issue(store, crawl_id, &url.url, "missing_title", None)?;
             }
-            if url
-                .meta_description
-                .as_deref()
-                .unwrap_or("")
-                .trim()
-                .is_empty()
+            if is_error
+                && url
+                    .meta_description
+                    .as_deref()
+                    .unwrap_or("")
+                    .trim()
+                    .is_empty()
             {
                 issue(store, crawl_id, &url.url, "missing_meta_description", None)?;
             }
-            if url.h1.as_deref().unwrap_or("").trim().is_empty() {
+            if is_error && url.h1.as_deref().unwrap_or("").trim().is_empty() {
                 issue(store, crawl_id, &url.url, "missing_h1", None)?;
             }
             continue;
