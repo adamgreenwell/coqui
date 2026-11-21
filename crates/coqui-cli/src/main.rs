@@ -1076,6 +1076,9 @@ fn run_bench(values: &[String]) -> Result<(), String> {
         }
         index += 1;
     }
+    if chunk == 0 {
+        return Err("--chunk must be greater than zero".into());
+    }
     std::fs::create_dir_all(&out).map_err(|error| error.to_string())?;
     let db_path = out.join("coqui.db");
     if db_path.exists() && !force {
