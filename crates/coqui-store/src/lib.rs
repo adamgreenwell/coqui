@@ -443,6 +443,25 @@ impl Store {
 
     /// Insert a URL. Returns `true` when a new row was created.
     pub fn insert_url(&self, record: &NewUrl) -> Result<bool> {
+        let conn = self.lock()?;
+        Self::insert_url_into(&conn, record)
+    }
+
+    /// Insert many URLs in one transaction.
+    pub fn insert_urls_batch(&self, records: &[NewUrl]) -> Result<usize> {
+        let mut conn = self.lock()?;
+        let tx = conn.transaction()?;
+        let mut inserted = 0usize;
+        for record in records {
+            if Self::insert_url_into(&tx, record)? {
+                inserted += 1;
+            }
+        }
+        tx.commit()?;
+        Ok(inserted)
+    }
+
+    fn insert_url_into(conn: &Connection, record: &NewUrl) -> Result<bool> {
         let segment = segment_of(&record.url);
         let response_time_ms = record.response_time_ms.map(|value| value as i64);
         let size_bytes = record.size_bytes.map(|value| value as i64);
@@ -451,7 +470,7 @@ impl Store {
         } else {
             Some(serde_json::to_string(&record.redirect_chain)?)
         };
-        let changed = self.lock()?.execute(
+        let changed = conn.execute(
             "INSERT OR IGNORE INTO urls
                 (crawl_id, url, status, content_type, title, meta_description, h1, h1_count,
                  canonical, meta_robots, redirect_target, redirect_chain, word_count, depth,
@@ -4829,6 +4848,27 @@ mod tests {
         let row = &store.list_urls("v1", 1, 10, None).unwrap().rows[0];
         assert_eq!(row.h1_count, 1);
         std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn batch_insert_is_transactional_and_reports_new_rows() {
+        let store = Store::open_in_memory().unwrap();
+        store
+            .create_crawl(
+                "batch",
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        let records = vec![
+            sample_record("batch", "https://example.com/a"),
+            sample_record("batch", "https://example.com/b"),
+            sample_record("batch", "https://example.com/a"),
+        ];
+        assert_eq!(store.insert_urls_batch(&records).unwrap(), 2);
+        assert_eq!(store.all_urls("batch").unwrap().len(), 2);
     }
 }
 
