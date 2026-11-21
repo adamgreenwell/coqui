@@ -1,12 +1,13 @@
 //! Headless Coqui CLI. First cut: `coqui crawl`.
 
-use coqui_core::{CrawlConfig, CrawlProgress, CrawlStatus, now_ms};
+use coqui_core::{CrawlConfig, CrawlProgress, CrawlStatus, NewUrl, now_ms};
 use coqui_store::Store;
 use serde::Deserialize;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Default, Deserialize)]
@@ -126,6 +127,7 @@ fn load_config(path: &Path, required: bool) -> Result<FileConfig, String> {
 fn usage() -> &'static str {
     "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots] [--store-html] [--json] [--ndjson] [--fail-on-issues N] [--render-wait-selector CSS] [--webhook URL] [--delay-ms N] [--max-rps N] [--proxy URL] [--cookie STRING]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR]\n       coqui report compare --with <crawl id> [--out DIR]\n       coqui reports\n       coqui export [--out DIR] [--family urls|issues|links|headers|images|a11y|structured|vitals|console|text|markdown|extractions|custom-js|anchors|social]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip] [--images]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N] [--webhook URL] [--delay-ms N] [--max-rps N] [--proxy URL] [--cookie STRING]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui prune [--out DIR] [--keep N]\n       coqui overview [--out DIR]\n       coqui serve [--out DIR] [--addr 127.0.0.1:8787] [--token TOKEN]
        coqui issue-settings <export|import|diff> [--out DIR] [--file PATH] [--with CRAWL]
+       coqui bench [--urls N] [--out DIR] [--json]
        coqui doctor [--out DIR]
        coqui import sf --file <crawl.dbseospider> [--out DIR]
        coqui mcp [--out DIR]"
@@ -1039,6 +1041,117 @@ fn run_import(values: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn run_bench(values: &[String]) -> Result<(), String> {
+    let mut urls = 100_000usize;
+    let mut out = PathBuf::from("coqui-bench");
+    let mut json = false;
+    let mut index = 0;
+    while index < values.len() {
+        match values[index].as_str() {
+            "--urls" => {
+                index += 1;
+                urls = values
+                    .get(index)
+                    .ok_or("missing --urls value")?
+                    .parse()
+                    .map_err(|error| format!("invalid --urls: {error}"))?;
+            }
+            "--out" => {
+                index += 1;
+                out = PathBuf::from(values.get(index).ok_or("missing --out value")?);
+            }
+            "--json" => json = true,
+            other => return Err(format!("unknown option '{other}'")),
+        }
+        index += 1;
+    }
+    std::fs::create_dir_all(&out).map_err(|error| error.to_string())?;
+    let db_path = out.join("coqui.db");
+    let _ = std::fs::remove_file(&db_path);
+    let store = Store::open(&db_path).map_err(|error| error.to_string())?;
+    let crawl_id = "bench";
+    store
+        .create_crawl(
+            crawl_id,
+            "https://bench.example/",
+            "url",
+            &CrawlConfig::default(),
+            now_ms(),
+        )
+        .map_err(|error| error.to_string())?;
+
+    let insert_started = Instant::now();
+    let mut records = Vec::with_capacity(urls);
+    for position in 0..urls {
+        let record = NewUrl {
+            crawl_id: crawl_id.to_string(),
+            url: format!("https://bench.example/page/{position}"),
+            status: Some(200),
+            blocked: false,
+            content_type: Some("text/html; charset=utf-8".into()),
+            title: Some(format!("Bench page {position}")),
+            meta_description: Some("Synthetic benchmark page".into()),
+            h1: Some(format!("Heading {position}")),
+            h1_count: 1,
+            canonical: None,
+            meta_robots: None,
+            hreflang: Vec::new(),
+            pagination_next: None,
+            pagination_prev: None,
+            structured_data: Default::default(),
+            social: Vec::new(),
+            console_errors: Vec::new(),
+            axe: Vec::new(),
+            vitals: None,
+            headers: Vec::new(),
+            redirect_target: None,
+            redirect_chain: Vec::new(),
+            word_count: Some(300),
+            depth: (position % 5) as u32,
+            response_time_ms: Some(40),
+            size_bytes: Some(20_000),
+            error: None,
+            discovered_at: now_ms(),
+        };
+        records.push(record);
+    }
+    let inserted = store
+        .insert_urls_batch(&records)
+        .map_err(|error| error.to_string())?;
+    let insert_elapsed = insert_started.elapsed();
+
+    let query_started = Instant::now();
+    let loaded = store
+        .all_urls(crawl_id)
+        .map_err(|error| error.to_string())?
+        .len();
+    let query_elapsed = query_started.elapsed();
+    let db_bytes: u64 = ["", "-wal", "-shm"]
+        .iter()
+        .filter_map(|suffix| {
+            std::fs::metadata(format!("{}{suffix}", db_path.display()))
+                .ok()
+                .map(|metadata| metadata.len())
+        })
+        .sum();
+
+    let per_second = inserted as f64 / insert_elapsed.as_secs_f64().max(0.001);
+    if json {
+        println!(
+            "{{\"urls\":{inserted},\"insert_ms\":{},\"urls_per_second\":{per_second:.0},\"query_ms\":{},\"db_bytes\":{db_bytes}}}",
+            insert_elapsed.as_millis(),
+            query_elapsed.as_millis()
+        );
+    } else {
+        println!(
+            "inserted {inserted} urls in {:.2}s ({per_second:.0}/s); all_urls({loaded}) in {:.0}ms; db {} KiB",
+            insert_elapsed.as_secs_f64(),
+            query_elapsed.as_millis(),
+            db_bytes / 1024
+        );
+    }
+    Ok(())
+}
 fn run_doctor(values: &[String]) -> Result<(), String> {
     let mut out = PathBuf::from("coqui-out");
     let mut index = 0;
@@ -2020,6 +2133,15 @@ async fn main() {
     }
     if values.get(1).map(String::as_str) == Some("issue-settings") {
         match run_issue_settings(&values[2..]) {
+            Ok(()) => return,
+            Err(message) => {
+                eprintln!("{message}");
+                std::process::exit(2);
+            }
+        }
+    }
+    if values.get(1).map(String::as_str) == Some("bench") {
+        match run_bench(&values[2..]) {
             Ok(()) => return,
             Err(message) => {
                 eprintln!("{message}");
