@@ -46,3 +46,14 @@ Comparing Coqui's unique internal outlinks against `urls.num_unique_internal_out
 2. Investigate the residual 10–25% word-count gap (candidate: footer/nav or hidden elements; Screaming Frog's own definition).
 3. Mine the reference DB tables directly for issue parity (`axe_core_results`, `page_speed_api`, hreflang/pagination multimaps, duplicates).
 4. Re-crawl at ≥ reference scope (267 URLs) for full overlap.
+## Re-run after the fixes (100 URLs)
+
+| Field | Match |
+| --- | --- |
+| Status | 100/100 |
+| Title | 100/100 |
+| Depth | 100/100 |
+| Content type (case-insensitive) | 100/100 (3 reference rows use uppercase `UTF-8`) |
+| Word count (aggregate) | ratio **1.004** (mine 24,9xx vs reference 24,8xx); 3 exact per page |
+
+Word counts now aggregate within 0.4% of the reference; per-page differences remain (rounding, boilerplate, code samples) but the script/style inflation is gone.
