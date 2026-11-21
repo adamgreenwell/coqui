@@ -1,48 +1,59 @@
-# Project status — 2026-11-20
+# Project status — 2026-11-21
 
-Snapshot of the Coqui build for the milestone review.
+Snapshot of the Coqui build after the parity and release-engineering slices.
+
+## Milestone
+
+**M6 — parity breadth and release engineering.** The original plan defined M0 (walking skeleton) through M5 (1.0). Work has since added M6 to cover parity measurement, import compatibility, benchmarks and packaging before 1.0; no tagged release exists yet.
 
 ## Repository
 
 | Metric | Value |
 | --- | --- |
-| Open issues | 75 |
-| Closed issues | 11 (including A-02, P-05, U-04, C-08) |
-| Commits since 2026-11-18 | 525 |
-| Main CI | green (PR #326 run) |
+| Issues | 86 (12 epics + 74 features) |
+| Open / closed | 74 / 12 |
+| Commits since 2026-11-18 | 686 |
+| Main CI | green (`0f13cf9`, run 44914271620) |
+| Released versions | none (no tags) |
+| Schema version | 35 |
+| Rust tests | 112 pass, 5 browser-dependent render tests ignored |
 
 ## Shipped
 
-- **Crawl:** URL/sitemap/list seeds, regex scope with testers, robots.txt, redirects, auth headers, **cookies**, **custom User-Agent/Accept-Language**, **HTTP/SOCKS proxy**, checkpoints, profiles, completion webhooks, per-host delay and max-RPS, 429 retries.
-- **Render:** Chromium/CDP, screenshots, console, axe, Web Vitals, custom JS, resource blocking, selector-based wait strategy.
-- **Exports/reports:** 14 CSV families (incl. anchors), XLSX, sitemaps (split/gzip/image), HTML and PDF reports (summary, issues, status, performance, redirects, broken-links, overview, hreflang, hreflang-return, canonical-chains, canonicals, pagination, orphans, segments, SERP) with print styles and batch generation, filename tokens.
-- **Audit:** 48 static rules (incl. DOM size, render-blocking, payload and images) plus enumerated `axe_*` rules per violation; suppression (rule + per-URL, reason required, optional expiry, actor); severity overrides; audit log; settings export/import/diff.
-- **Results UI:** filters, tabs, saved views, history, overview cards (status, severity, response stats, throughput, indexability, depth, content, segments, duplicates), issue drill-down, inspector (links/images/axe/headers/screenshot/**raw HTML source viewer**).
-- **Automation:** CLI (`crawl`, `resume`, `report`, `export`, `issue-settings`, `sitemap`, `schedule`, `serve`, `overview`, `prune`, `doctor`, `mcp`), MCP server, scheduler, HTTP API (bearer auth, health states, exports/reports, start crawl), Dockerfile, GitHub/GitLab CI recipes, **JSON/NDJSON crawl output with crawlId correlation**, `--fail-on-issues` exit code, comparison CSVs with per-URL issue deltas, PDF and batch reports.
-- **Packaging:** Windows MSI 71.67 MiB / NSIS 40.95 MiB locally with Node + Lighthouse sidecars; macOS/Linux release jobs; **gated signing steps** (Windows signtool, macOS codesign/notarization) that activate when secrets exist.
+- **Crawl:** URL/sitemap/list seeds, regex scope with testers, robots.txt, redirect chains, basic auth, headers, cookies, custom User-Agent and headers (including Accept-Language), HTTP/SOCKS proxy, checkpoints, profiles, completion webhooks, per-host delay and max-RPS, 429 retries.
+- **Render:** Chromium/CDP, screenshots, console/network capture, axe, Web Vitals, custom JS, authenticated rendering, resource blocking and selector-based waits.
+- **Audit:** 50 static rules plus one `axe_*` rule per violation; suppression (rule + per-URL, reason required, optional expiry, actor), severity overrides, audit log, settings export/import/diff.
+- **Workspace:** grid filters/tabs/sort/page size, saved views, crawl history, profiles, schedules, comparison, overview cards (statuses, severity totals, average/p95, throughput, indexability, depth, content types, segments, duplicates), issue drill-down, inspector (links, images, axe, headers, screenshot, raw/rendered source), Lighthouse per URL and sampled.
+- **Exports/reports:** 15 export families plus `all`, 16-entry app export catalogue, XLSX, sitemaps (single/split gzip/image), 15 HTML/PDF report kinds plus batch and comparison CSVs.
+- **Automation:** CLI (`crawl`, `resume`, `report`, `reports`, `export`, `extractions`, `sitemap`, `schedule`, `serve`, `overview`, `prune`, `doctor`, `bench`, `browser`, `update`, `import sf`, `issue-settings`, `mcp`), stdio MCP server, interval scheduler, HTTP API (bearer token, health states, exports/reports, start crawl), JSON/NDJSON output, `--fail-on-issues`.
+- **Parity/release:** `.dbseospider` import, golden fixtures and CI gate, benchmark budgets and nightly regression, OS/arch-qualified release assets with checksums, reproducible-build environment, Node/Lighthouse sidecars, Chrome for Testing installer, update check and self-update, Docker Compose.
+- **Validation:** exact-scope parity on adamgreenwell.com (156/156 URLs; status, title, depth exact; word-count ratio 1.000), social meta 1,152/1,152 values, rendered crawl with 20/20 vitals.
 
-## Decisions settled
+## Not yet built
 
-1. Scheduler: **interval + external trigger** (no cron parser); documented CI/cron usage.
-2. Raw HTML: **opt-in** `store_html` (schema v31) with an inspector source viewer.
-3. Signing: **CI placeholders wired**; certificates to be supplied later.
+- Third-party integrations: Search Console, GA4, PageSpeed Insights, Ahrefs, Majestic, Moz.
+- AI providers, prompts, embeddings and clustering.
+- Reference breadth: 34-tab workspace, 97-report catalogue, 344 issue rules, 7 locales.
+- Projects/workspace lifecycle, Postgres/server mode, multi-user operation.
+- SERP mode, scripted login/CSRF flows, CSV/list import with line reporting.
+- Bundled Chromium, code-signed installers (certificates pending), a tagged release.
+
+## Known gaps and risks
+
+1. **Newer-schema refusal is not implemented.** A database written by a newer binary can currently be opened by an older one; the draft on `feature/versioning-policy` (PR #365) is red because the guard was never committed with its test. Documented as a policy gap in [versioning.md](versioning.md).
+2. **UI breadth.** The desktop workspace is one 3,878-line `page.tsx` with a single grid; it does not yet approach the reference's tab/column model, and it has no virtualisation for very large result sets.
+3. **Documentation drift** is now checked by `tools/docs/check.mjs`, but generated reference data (`docs/reference/*.csv`) is a planning snapshot and its statuses are not live; the plan data lists 73 features while the board has 74 (R-08 was added later).
+4. **No licence.** The repository has no `LICENSE` file; the README records the decision as pending.
+5. **Local-only evidence.** `research/` artifacts referenced by validation notes and the parity workflow are gitignored, so parity reruns need the local reference crawl.
 
 ## Next candidates
 
-- U-03: full source virtualisation and rendered-DOM diff polish.
-- X-04: asset discovery (scripts/styles/fonts, media metadata, file sizes).
-- X-03/X-02: link-graph queries/anchors; near-duplicate and readability analysis.
-- T-04: multi-arch image with Chromium/Node and structured stderr logs.
-- G-04: storage settings and active-crawl blocking.
-- B-01: full reference report catalogue.
+From [handover.md](handover.md):
 
-## Recent verification (2026-11-21)
-
-- `cargo test --workspace` green; Next.js static export compiles.
-- `coqui doctor`: database, node, lighthouse and browser all ok; schema user_version 33.
-- Old-schema migration test (`upgrades_old_schema_on_open`) passes.
-- Portable DB copy opened, overview/report/export all worked.
-- Real-site rendered crawl (adamgreenwell.com, 20 URLs): 20/20 vitals stored, 104 issues, 40.5 s; report in `docs/validation/2026-11-21-rendered-vitals.md`.
-
-
-
+- Finish the reference diff (scope, normalisation, residual word-count/link-set gaps).
+- Mobile rule family and the remaining PSI rules (font display, LCP discovery, legacy JS, cache lifetimes, duplicated JS, dependency tree).
+- Virtualised source viewer and 1M-row result virtualisation.
+- Asset discovery (scripts/styles/fonts, media metadata, file sizes).
+- Scripted login/CSRF and list/CSV import with rejected-line reporting.
+- Multi-arch container image with Chromium + Node.
+- Newer-schema refusal, then the first tagged release.

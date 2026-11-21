@@ -1,39 +1,58 @@
 # Exports
 
-Coqui exports the current results grid and the crawl's bulk data.
+Coqui exports the current results view and the crawl's bulk data. The CLI and API cover the CSV families; the desktop app adds XLSX, a named catalogue and export preferences.
 
-## Views
+## CLI and API families
 
-| View | Formats |
-| --- | --- |
-| URLs (active issue filter + visible columns) | CSV, XLSX |
-| Issues | CSV, XLSX |
-| Links | CSV, XLSX |
-| Response headers | CSV |
-| Images | CSV |
-| Page text | CSV (requires store text) |
-| Page Markdown | CSV (requires store text) |
-| Custom JS results | CSV (url, script index, JSON value; requires render + custom JS) |
-| Custom extraction | CSV; `selector` or `selector@attr` (e.g. `a@href`); multiple matches joined with ` \| ` |
-| Accessibility violations | CSV |
-| Structured data | CSV |
-| Web Vitals | CSV |
-| Console errors | CSV |
-| Screenshots | folder bundle (JPEGs + `screenshots.csv`) |
-| Sitemap | XML (indexable URLs + image entries) |
-| Sitemap bundle | folder of split gzipped sitemaps + sitemap-index.xml |
-| HTML report | self-contained report; types: summary, issues, status, performance, redirects, broken links, crawl overview |
-| PDF report | HTML report printed via Chrome/Edge `--print-to-pdf` |
+`coqui export --out DIR [--family FAMILY]` (or `GET /crawls/{id}/export/{family}`):
 
-## Catalogue
+| Family | Contents | Notes |
+| --- | --- | --- |
+| `urls` | The current crawl's URL rows | Default family |
+| `issues` | One row per issue (url, rule, severity, detail) | Suppression/override aware |
+| `links` | Link graph (from, to, anchor, rel, internal) | |
+| `headers` | Final response headers | |
+| `images` | Image references with alt and dimensions | |
+| `a11y` | One row per axe violation | Requires `--a11y` |
+| `structured` | JSON-LD types and validation errors | |
+| `vitals` | LCP, CLS, TBT, TTFB, FCP | Requires `--vitals` |
+| `console` | Console and resource errors | Requires rendering |
+| `text` | Extracted body text | Requires `--store-text` |
+| `markdown` | Generated Markdown | Requires `--store-text` |
+| `extractions` | Custom extraction values | Requires `--extract` |
+| `custom-js` | Custom JavaScript results | Requires `--js` with `--render` |
+| `anchors` | Anchor texts and targets | |
+| `social` | Open Graph and Twitter tags | |
 
-`coqui exports` lists the named export catalogue (`id`, `format`, `label`, description). The same catalogue is exposed to the app as the `export_catalog` Tauri command, so menus can be generated instead of hard-coded.
+`--family all` writes the 15 families in one pass. Files are named `<family>-<milliseconds>.csv`; the CLI does not accept a filename pattern.
 
-IDs currently include: `urls-csv`, `urls-xlsx`, `issues-csv`, `issues-xlsx`, `links-csv`, `links-xlsx`, `headers-csv`, `images-csv`, `accessibility-csv`, `structured-csv`, `vitals-csv`, `console-csv`, `screenshots`.
+The HTTP API exposes 14 of these families (it omits `social` and `all`).
 
-## Filename patterns
+## App catalogue
 
-The pattern field accepts:
+The desktop app exposes a 16-entry catalogue (`export_catalog` in `coqui-core`, the `coqui exports` list, and the in-app export menu):
+
+| ID | Format | Contents |
+| --- | --- | --- |
+| `urls-csv` / `urls-xlsx` | CSV / XLSX | URLs with the selected columns and active issue filter |
+| `issues-csv` / `issues-xlsx` | CSV / XLSX | Issues |
+| `links-csv` / `links-xlsx` | CSV / XLSX | Link graph |
+| `headers-csv` | CSV | Response headers |
+| `images-csv` | CSV | Images with alt and dimensions |
+| `text-csv` | CSV | Page text (needs store text) |
+| `markdown-csv` | CSV | Page Markdown (needs store text) |
+| `extractions-csv` | CSV | Custom extraction values |
+| `accessibility-csv` | CSV | Axe violations |
+| `structured-csv` | CSV | Structured data |
+| `vitals-csv` | CSV | Web Vitals |
+| `console-csv` | CSV | Console errors |
+| `screenshots` | Folder | JPEGs plus `screenshots.csv` |
+
+`anchors`, `social` and `custom-js` are CLI/API families and do not appear in the app catalogue.
+
+## Filename tokens (app only)
+
+The app's export preferences accept a pattern with these tokens:
 
 | Token | Value |
 | --- | --- |
@@ -41,46 +60,21 @@ The pattern field accepts:
 | `{datetime}` | `YYYYMMDD-HHMMSS` (UTC) |
 | `{domain}` | Seed host |
 | `{crawl}` | Crawl id |
-| `{view}` / `{report}` | Export view name |
+| `{view}` / `{report}` | Export view or report name |
 
-Default pattern: `{crawl}-{view}-{datetime}`.
+Default: `{crawl}-{view}-{datetime}`. Unsafe characters are replaced with `-`, the format extension is appended when missing, and an empty result falls back to `<crawl>-<view>.<ext>`.
 
-Values are sanitised (path separators and unsafe characters become `-`), and the format extension is appended when missing. Example:
+The app also has **skip empty**: when enabled, a zero-row export writes no file and the UI reports it as skipped.
 
-```text
-{domain}-{view}-{date}  ->  example.com-urls-2026-11-19.csv
-```
+## Sitemaps
 
-## Skip empty
+- `coqui sitemap --out DIR` writes `sitemap.xml` with 2xx, indexable URLs and `lastmod` where a `Last-Modified` header was stored.
+- `--split` writes a 50,000-URL bundle under `DIR/sitemaps` with a `sitemap-index.xml`.
+- `--gzip` compresses the split parts.
+- `--images` includes image entries (`<image:image>`).
 
-With **Skip empty** enabled, an export with zero rows is discarded and no path is returned. Useful for scheduled/bulk runs where empty reports should not create files.
+## Validation
 
-## Limits
-
-Sitemaps include `<lastmod>` parsed from each page's `Last-Modified` header when present. Bundles split at 50,000 URLs, write `sitemap-index.xml` pointing at `sitemap-N.xml.gz`, and gzip each part. Single sitemap generation includes only 200 responses without `noindex`, caps at 50,000 URLs, and emits `<image:image>` entries from the image inventory.
-
-URL CSV exports stream row-by-row from SQLite, so they do not hold the crawl in memory. XLSX exports and the data exports (headers, images, a11y, structured, vitals, console) still materialise their rows.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-## CLI
-
-`coqui export --out DIR --family <name>` writes the latest crawl to `DIR/<family>-<timestamp>.csv`. Families: urls, issues, links, headers, images, a11y, structured, vitals, console, text, markdown, extractions, custom-js, anchors, social, or all.
-
-
-
-- nchors.csv — internal anchor texts grouped per target URL with counts.
-
-
+- Streaming CSV was exercised to 1M rows within the 500 ms page budget for the grid; export itself is row-by-row and bounded.
+- `--family all` produced 15 files on the local fixture and printed `export all: 15 families`.
+- Screenshot bundles were verified on a rendered crawl; the folder contains one JPEG per URL plus `screenshots.csv`.

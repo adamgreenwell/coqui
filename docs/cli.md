@@ -1,18 +1,42 @@
 # Coqui CLI
 
-Headless crawler using the same engine, store and audit rules as the desktop app. First cut: `coqui crawl`.
-
-## Usage
+Headless crawler and automation surface. It uses the same engine, store, audit rules and report/export code as the desktop app. Every command reads or writes a portable SQLite crawl file (`DIR/coqui.db`).
 
 ```bash
-coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots] [--user-agent UA] [--header "Name: value"] [--auth user:pass] [--timeout-ms N] [--render] [--screenshots] [--a11y] [--vitals] [--render-workers N]
-coqui resume [--out DIR] [--max-urls N] [--concurrency N]
-coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR]
-coqui report compare --with <crawl id> [--out DIR] [--top N] [--status CODE]
-coqui reports
-coqui export [--out DIR]
-coqui extractions [--out DIR]
-coqui sitemap [--out DIR] [--split] [--gzip]
+coqui <command> [args]
+coqui --version
+```
+
+The default output directory is `coqui-out`; pass `--out DIR` to change it.
+
+## Commands
+
+| Command | Purpose |
+| --- | --- |
+| `crawl` | Crawl a URL, sitemap or URL list |
+| `resume` | Continue the latest crawl from its checkpoint |
+| `report` | Render an HTML/PDF report, or compare two crawls |
+| `reports` | List report kinds |
+| `export` | Export a crawl to CSV families |
+| `exports` | List the app export catalogue (id, format, label, description) |
+| `extractions` | Export custom extraction values |
+| `sitemap` | Generate XML/image sitemaps |
+| `schedule` | Add, list, remove or run due interval schedules |
+| `serve` | Start the HTTP API |
+| `overview` | Print crawl aggregates |
+| `prune` | Delete all but the N most recent crawls |
+| `doctor` | Check database, Node, Lighthouse and browser |
+| `bench` | Storage/query benchmark |
+| `browser` | Install or locate a Chrome for Testing build |
+| `update` | Check for or install a newer release |
+| `import sf` | Import a Screaming Frog `.dbseospider` |
+| `issue-settings` | Export/import/diff suppressions and overrides |
+| `mcp` | Run the stdio MCP server |
+
+## crawl
+
+```bash
+coqui crawl <url|sitemap|list> <seed> [options]
 ```
 
 Examples:
@@ -24,13 +48,40 @@ coqui crawl list ./urls.txt --depth 1 --concurrency 4 --ignore-robots
 coqui crawl url https://example.com/ --render --screenshots --a11y --vitals --out crawls/rendered
 ```
 
-## Rendered output
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--out DIR` | `coqui-out` | Crawl directory (`DIR/coqui.db`, `DIR/urls.csv`) |
+| `--max-urls N` | 5000 | Hard cap on fetched URLs |
+| `--depth N` | 3 | Maximum link depth from the seed |
+| `--concurrency N` | 8 | Concurrent HTTP requests |
+| `--ignore-robots` | off | Do not fetch or obey robots.txt |
+| `--user-agent UA` | Coqui UA | Override the User-Agent |
+| `--header "Name: value"` | — | Extra request header (repeatable) |
+| `--auth user:pass` | — | HTTP basic authentication |
+| `--cookie "a=b; c=d"` | — | Cookie header for logged-in crawling |
+| `--timeout-ms N` | 20000 | Per-request timeout |
+| `--delay-ms N` | 0 | Minimum delay between requests |
+| `--max-rps N` | 0 | Per-host requests-per-second cap (0 = unlimited) |
+| `--proxy URL` | — | HTTP/HTTPS/SOCKS5 proxy |
+| `--render` | off | Render pages in Chromium before extraction |
+| `--render-workers N` | 2 | Concurrent rendering tabs |
+| `--render-wait-selector CSS` | — | Wait for this selector after load |
+| `--screenshots` | off | Save a JPEG per rendered page |
+| `--a11y` | off | Run axe-core (requires `--render`) |
+| `--vitals` | off | Capture LCP/CLS/TBT/TTFB/FCP (requires `--render`) |
+| `--js EXPR` | — | Evaluate JavaScript per rendered page (repeatable) |
+| `--extract NAME=SELECTOR` | — | Register a CSS extraction (repeatable) |
+| `--store-text` | off | Store visible text and Markdown per URL |
+| `--store-html` | off | Store raw HTML per URL |
+| `--webhook URL` | — | POST a completion payload |
+| `--json` | off | One machine-readable summary line |
+| `--ndjson` | off | One JSON object per progress event, plus a final event |
+| `--fail-on-issues N` | — | Exit 3 when the crawl produces more than N issues |
+| `--config PATH` | `coqui.toml` | Load defaults from TOML |
 
-With `--render`, pages are rendered in headless Chrome/Edge before extraction. `--screenshots` writes JPEGs to `DIR/screenshots/<crawl-id>/`, `--a11y` stores axe violations, and `--vitals` stores LCP/CLS/TBT/TTFB/FCP. Verified against the local fixture: rendered title/H1, one screenshot, console errors, axe violations and vitals all captured.
+### Config file
 
-## Config file
-
-Pass `--config PATH` to load defaults from TOML; without the flag, `coqui.toml` in the working directory is used when present. CLI flags override config values.
+`--config PATH` loads defaults from TOML; without the flag, `coqui.toml` in the working directory is used when present. CLI flags override config values.
 
 ```toml
 out = "crawls/example"
@@ -49,15 +100,170 @@ web_vitals = false
 render_workers = 2
 ```
 
-## Resume
+### Output
 
-`coqui resume --out DIR` reloads the latest crawl and its checkpoint from `DIR/coqui.db`, then continues. `--max-urls` and `--concurrency` override the stored config for the resumed run. If no checkpoint exists, the command exits with an error.
+- `DIR/coqui.db` — portable SQLite crawl file (schema v35).
+- `DIR/urls.csv` — flat URL export with the default columns.
+- Console summary: crawled, discovered, total issues and elapsed time.
+- With `--json`: one object with `status`, `crawlId`, `crawled`, `discovered`, `issues`, `seconds` and `csv`.
+- With `--ndjson`: progress events carry `crawlId` and `ts`, followed by a `completed` or `failed` event.
 
-## MCP server
+### Exit codes
 
-`coqui mcp --out DIR` runs a stdio MCP server (JSON-RPC, newline-delimited) over `DIR/coqui.db`. Tools: `list_crawls`, `get_crawl`, `list_urls`, `issue_counts`, `export_urls`, `export_family` (family or `all`), `compare_crawls`, `start_crawl`, `run_schedule_due`. Implements `initialize`, `ping`, `tools/list`, `tools/call`, plus resources (`coqui://crawls`, `coqui://crawl/{id}`, `coqui://crawl/{id}/issues`) with `resources/list`, `resources/templates/list`, `resources/read`, and prompts (`audit-crawl`, `summarize-issues`, `export-crawl`) with `prompts/list`, `prompts/get`. Verified with a piped session (initialize + tools/list + list_urls).
+| Code | Meaning |
+| --- | --- |
+| 0 | Crawl completed within the issue threshold |
+| 1 | Crawl failed |
+| 2 | Invalid arguments or configuration |
+| 3 | `--fail-on-issues` threshold exceeded |
 
-## Issue settings
+## resume
+
+```bash
+coqui resume --out DIR [--max-urls N] [--concurrency N]
+```
+
+Reloads the latest crawl and its checkpoint from `DIR/coqui.db` and continues. `--max-urls` and `--concurrency` override the stored config. If no checkpoint exists the command exits with an error.
+
+## export
+
+```bash
+coqui export --out DIR [--family FAMILY]
+```
+
+Families: `urls`, `issues`, `links`, `headers`, `images`, `a11y`, `structured`, `vitals`, `console`, `text`, `markdown`, `extractions`, `custom-js`, `anchors`, `social`, or `all` for the 15 families in one pass.
+
+- The default family is `urls`.
+- Files are named `DIR/<family>-<milliseconds>.csv`; `all` prints one line per family and a total.
+- `text` and `markdown` need `--store-text`; `custom-js` needs `--js` with `--render`; `vitals`/`a11y` need `--vitals`/`--a11y`.
+- The app also offers XLSX, a per-view export catalogue, filename tokens and skip-empty; those are Tauri export features, not CLI flags. See [exports.md](exports.md).
+
+## report / reports
+
+```bash
+coqui report <kind> --out DIR [--top N] [--status CODE] [--title TEXT] [--pdf]
+coqui report all --out DIR
+coqui report compare --with <crawl id> --out DIR [--top N] [--status CODE]
+coqui reports
+```
+
+Kinds: `summary`, `issues`, `status`, `performance`, `redirects`, `broken-links`, `overview`, `hreflang`, `canonical-chains`, `pagination`, `orphans`, `segments`, `serp`, `canonicals`, `hreflang-return`. See [reports.md](reports.md) for contents.
+
+- Output is `DIR/report-<kind>.html`, plus `.pdf` with `--pdf` (headless Chrome/Edge; `COQUI_BROWSER_PATH` overrides discovery).
+- `report all` renders every kind, isolates failures and prints written/failed counts.
+- `report compare` writes `report-compare.html`, `compare.csv` and `compare-urls.csv` against another crawl id in the same database.
+- `reports` lists kinds and descriptions.
+
+## exports
+
+```bash
+coqui exports
+```
+
+Prints the 16-entry export catalogue as tab-separated `id`, `format`, `label` and `description`; the desktop app uses the same catalogue.
+
+## extractions
+
+```bash
+coqui extractions --out DIR
+```
+
+Exports `url,name,value` rows captured by `crawl --extract`.
+
+## sitemap
+
+```bash
+coqui sitemap --out DIR [--split] [--gzip] [--images]
+```
+
+Writes `DIR/sitemap.xml` from the latest crawl (2xx, noindex excluded) with `lastmod` when the crawl stored a `Last-Modified` header. `--split` writes a 50,000-URL bundle under `DIR/sitemaps` with `sitemap-index.xml`; `--gzip` compresses parts; `--images` includes image entries.
+
+## schedule
+
+```bash
+coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N] [--delay-ms N] [--max-rps N] [--proxy URL] [--webhook URL]
+coqui schedule list --out DIR
+coqui schedule remove <id> --out DIR
+coqui schedule run-due --out DIR
+```
+
+Schedules are interval-based (seconds) and stored in the crawl database. `run-due` runs every enabled schedule whose `next_run_at` has passed, writes the crawl CSV and advances the next run. Designed for cron, Task Scheduler or CI.
+
+## serve
+
+```bash
+coqui serve --out DIR [--addr 127.0.0.1:8787] [--token TOKEN]
+```
+
+Starts the HTTP API. Loopback is the default; set `--token` or `COQUI_API_TOKEN` to require `Authorization: Bearer <token>` on every route except `/health`. See [api.md](api.md).
+
+## overview
+
+```bash
+coqui overview --out DIR
+```
+
+Prints issues by severity, statuses, content, indexability, response stats/buckets, depth, segments, aggregate timing and a per-second throughput summary.
+
+## prune
+
+```bash
+coqui prune --out DIR [--keep N]
+```
+
+Deletes all but the N most recent crawls (default 10), including screenshot files. Refuses while a crawl is running.
+
+## doctor
+
+```bash
+coqui doctor --out DIR
+```
+
+Prints the CLI version and checks database writability, Node, the Lighthouse CLI and a detected Chrome/Edge browser. Example on macOS:
+
+```
+coqui 0.1.0
+database: ok (/path/to/coqui.db)
+node: ok (v24.22.2)
+lighthouse: missing (run `npm run sidecars`)
+browser: ok (/Applications/Google Chrome.app/Contents/MacOS/Google Chrome)
+```
+
+## bench
+
+```bash
+coqui bench [--urls N] [--chunk N] [--out DIR] [--json] [--force]
+```
+
+Writes a synthetic crawl to a throwaway database and reports insert throughput, `all_urls` query time, page-query p95 and bytes/URL. Refuses to overwrite an existing `coqui.db` unless `--force` is passed. See [benchmarks.md](benchmarks.md).
+
+## browser
+
+```bash
+coqui browser install [--out DIR] [--sha256 HEX] [--dry-run]
+coqui browser path
+```
+
+Downloads the current stable Chrome for Testing for the platform, verifies SHA-256 when `--sha256` is supplied, extracts it under the OS cache and prints the executable path. `path` prints what would be used. `COQUI_BROWSER_PATH` overrides discovery everywhere.
+
+## update
+
+```bash
+coqui update [--json]
+coqui update --install
+```
+
+Compares the running version with the latest GitHub release. `--json` prints `current`, `latest`, `update_available` and `url`. `--install` downloads the matching OS/arch binary, verifies it against `SHA256SUMS-<os>-<arch>.txt` and replaces the executable; it cannot be combined with `--json`. No release is published yet, so this currently prints `no releases published yet`.
+
+## import sf
+
+```bash
+coqui import sf --file path/to/crawl.dbseospider --out DIR [--pages-only]
+```
+
+Screaming Frog's `.dbseospider` is a ZIP whose `results_*/sql` member is a SQLite database. Coqui imports internal URLs (title, meta, H1, status, word count, depth, response time, size) and anchor rows for internal/external links. `--pages-only` skips resource rows. The imported crawl is a normal Coqui crawl; audit rules are not run automatically. Verified against a 267-URL reference crawl (211 URLs and 3,826 links imported).
+
+## issue-settings
 
 ```bash
 coqui issue-settings export --out DIR [--file PATH]
@@ -65,125 +271,25 @@ coqui issue-settings import --out DIR --file PATH
 coqui issue-settings diff --out DIR --with CRAWL_ID
 ```
 
-`diff` prints per-rule differences between the latest crawl's settings and another crawl.
+Exports a crawl's suppressions and severity overrides as JSON (default `issue-settings.json`) and imports them into the latest crawl, replacing its current settings. `diff` prints per-rule differences against another crawl.
 
-Exports a crawl's suppressions and severity overrides as JSON (default `issue-settings.json`) and imports them into the latest crawl, replacing its current settings. Verified with an empty settings file on the validation crawl.
-
-## Prune
-
-`coqui prune --out DIR [--keep N]` deletes all but the N most recent crawls (default 10), including their screenshot files. It refuses while a crawl is running (verified: running crawl -> exit 2 with a clear message). Verified: pruning a two-crawl database with `--keep 1` removed one crawl; a second run reported nothing to delete.
-
-## Overview
-
-`coqui overview --out DIR` prints the same crawl aggregates as the app overview (issues by severity, statuses, content, indexability, response stats/buckets, depth, segments) and the aggregate timing plus a per-second throughput timeline summary. On the 1M-row fixture it took 2.7 s cold / 2.0 s warm.
-
-## Serve (HTTP API)
-
-`coqui serve --out DIR [--addr 127.0.0.1:8787]` starts the read-only JSON API (see [api.md](api.md)).
-
-## Doctor
-
-`coqui doctor --out DIR` prints the CLI version and checks database writability, bundled Node, Lighthouse CLI and a detected Chrome/Edge browser. Verified output on this machine:
-
-```
-coqui 0.1.0
-database: ok (research\validation-79\coqui.db)
-node: ok (src-tauri/sidecars/node.exe)
-lighthouse: ok (src-tauri/sidecars/lighthouse/node_modules/lighthouse/cli/index.js)
-browser: ok (C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe)
-```
-
-## Schedules
+## mcp
 
 ```bash
-coqui schedule add url https://example.com/ --every 3600 --out crawls/example
-coqui schedule list --out crawls/example
-coqui schedule run-due --out crawls/example
-coqui schedule remove 1 --out crawls/example
+coqui mcp --out DIR
 ```
 
-Schedules are interval-based (seconds) and stored in the crawl DB. `run-due` runs every enabled schedule whose `next_run_at` has passed, writes `<crawl>.csv`, and advances the next run. Designed to be called by cron/Task Scheduler/CI. Verified end-to-end: add → run-due (3 rows) → list showed last/next → remove.
+Runs a stdio MCP server (JSON-RPC, newline-delimited) over `DIR/coqui.db`.
 
-## Sitemaps
-
-`coqui sitemap --out DIR` writes `DIR/sitemap.xml` from the latest crawl (200s only, noindex excluded, image entries, lastmod). `--split` writes a 50k-chunk bundle under `DIR/sitemaps` with `sitemap-index.xml`; `--gzip` compresses parts. Verified: 3-URL crawl produced sitemap.xml and a gzipped bundle.
-
-## Custom extraction
-
-`coqui schedule add ... --webhook URL --delay-ms N --max-rps N` stores those in the schedule config so scheduled runs notify and stay within rate limits.
-
-`--fail-on-issues N` exits with code 3 when the crawl produces more than N issues (JSON/NDJSON-aware), so pipelines can gate on it.
-
-`--ndjson` streams one JSON object per progress update (with `crawlId` and `ts` for correlation) plus a final completed/failed event, and suppresses the banner.
-
-`--json` prints a single machine-readable crawl summary (`status`, `crawlId`, `crawled`, `discovered`, `issues`, `seconds`, `csv`) and suppresses progress lines; errors print JSON too.
-
-`--delay-ms N` waits at least N milliseconds between HTTP requests; `--max-rps N` caps requests per second per host (effective delay = max of both). `--proxy URL` routes requests through an http/https/socks5 proxy; invalid proxies fail with a configuration error. `--cookie "a=b; c=d"` sends a Cookie header for logged-in crawling (verified with a local echo server).
-
-`--webhook URL` posts a JSON completion payload (`crawl.finished`, crawlId, paused, stats) with a 5-second timeout.
-
-`--extract NAME=SELECTOR` (repeatable) registers CSS extractors before the crawl; values are stored per URL. `coqui extractions --out DIR` exports `url,name,value` rows. Verified: two extractors across three fixture pages produced 6 rows.
-
-## Export
-
-`coqui export --out DIR` streams the latest crawl's URLs to `DIR/urls-<timestamp>.csv` using the row-by-row exporter. 10,000 rows exported in 0.009 s against a local 10k crawl.
-
-## Reports
-
-`coqui report <kind> --pdf` also writes a PDF via headless Chrome/Edge (absolute output path, `COQUI_BROWSER_PATH` override). Verified: summary report produced a 71 KB PDF.
-
-`coqui report all` renders every report, isolating failures (prints written/failed counts). Verified: 7 reports written, 0 failed on the regression crawl.
-
-`coqui reports` lists report types; `coqui report issues --out DIR` renders an HTML report from the latest crawl in `DIR/coqui.db` to `DIR/report-issues.html`. `--top N` limits list rows and `--status CODE` filters by HTTP status. Verified end-to-end (`report performance --top 1 --status 200`).
-
-## Output
-
-- `DIR/coqui.db` — portable SQLite crawl file.
-- `DIR/urls.csv` — flat URL export with the default columns.
-- Console summary: crawled, discovered, total issues, elapsed time.
-
-## Exit codes
-
-| Code | Meaning |
-| --- | --- |
-| 0 | Crawl completed |
-| 1 | Crawl failed |
-| 2 | Invalid arguments |
+- **Tools:** `list_crawls`, `get_crawl`, `list_urls`, `issue_counts`, `export_urls`, `export_family`, `compare_crawls`, `start_crawl`, `run_schedule_due`.
+- **Resources:** `coqui://crawls`, `coqui://crawl/{id}`, `coqui://crawl/{id}/issues` with list/template/read.
+- **Prompts:** `audit-crawl`, `summarize-issues`, `export-crawl`.
+- Implements `initialize`, `ping`, `tools/list`, `tools/call`, `resources/list`, `resources/templates/list`, `resources/read`, `prompts/list` and `prompts/get`.
 
 ## Current limits
 
-Supports URL/sitemap/list seeds, crawl limits, user agent, custom headers, basic auth, timeout, and rendering with screenshots/axe/Web Vitals. Export formats, config files, profiles and checkpoint/resume flags are next.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-## Custom JavaScript
-
-`--js EXPR` (repeatable) evaluates JavaScript in each rendered page after load; requires `--render`. Results are stored per URL and exported as Custom JS results (`custom-js`) in the app. Verified: `--js "document.title"` returned "Rendered title" on the JS fixture.
-## Importing Screaming Frog crawl files
-
-Screaming Frog's `.dbseospider` file is a ZIP whose `results_*/sql` member is a SQLite database. Coqui can ingest it directly:
-
-```bash
-coqui import sf --file path/to/crawl.dbseospider --out DIR [--pages-only]
-```
-
-It creates a new crawl (`sf-<timestamp>`) and imports internal URLs (title, meta description, H1, status, word count, depth, response time, size) plus anchor rows for internal and external links (anchor, nofollow, internal/external). Verified against a 267-URL reference crawl: **211 URLs and 3,826 links** imported, after which reports/exports work normally.
-
-Notes:
-- Resource rows (CSS/JS/images) are imported when the reference includes them; filter by content type in the grid/reports.
-- Audit rules are not run automatically on import.
-
-
-
+- No `profile` command: crawl profiles are a desktop-app feature.
+- No projects/workspaces, Postgres or multi-user mode; one SQLite file is one crawl store.
+- No Scheduler daemon: `schedule run-due` must be invoked by cron, Task Scheduler or CI.
+- No integrations, AI commands or SERP mode.
+- Report/export kinds and audit rules cover a subset of the reference product; see [status.md](status.md).

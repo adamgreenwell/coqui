@@ -10,7 +10,7 @@ Release artifacts are currently **unsigned**. This runbook documents exactly wha
 | macOS | `.dmg` | No |
 | Linux | `.AppImage`, `.deb` | No |
 
-Unsigned installers trigger SmartScreen/ Gatekeeper warnings. The release workflow builds and uploads them; it does not sign.
+Unsigned installers trigger SmartScreen/Gatekeeper warnings. The release workflow builds and uploads them; signing steps exist but no-op until certificates are configured, so tag builds remain unsigned.
 
 ## Windows (Authenticode)
 
@@ -133,5 +133,5 @@ The steps no-op until certificates are added, so tag builds keep working unsigne
 
 ## Validation status
 
-Nothing in this runbook is exercised by CI yet. Until certificates are provided, release notes must state that installers are unsigned.
+The steps are wired but unexercised: without certificates they are skipped, and no release has been tagged yet. Until certificates are provided, release notes must state that installers are unsigned.
 

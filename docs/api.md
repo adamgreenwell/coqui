@@ -1,56 +1,89 @@
 # HTTP API
 
-Read-only JSON API over a Coqui crawl database, for dashboards, CI checks and integrations.
+Read-mostly JSON API over a Coqui crawl database, for dashboards, CI checks and integrations.
 
 ```bash
-coqui serve --out DIR [--addr 127.0.0.1:8787]
+coqui serve --out DIR [--addr 127.0.0.1:8787] [--token TOKEN]
 ```
 
-It binds loopback by default and has **no authentication**; do not expose it publicly without a proxy.
+It binds loopback by default. Set `--token` or `COQUI_API_TOKEN` to require `Authorization: Bearer <token>` on every route except `/health`; without a token the API is unauthenticated, so do not expose it beyond loopback without a proxy.
 
 ## Endpoints
 
 | Method | Path | Returns |
 | --- | --- | --- |
-| GET | `/health` | JSON: `{"status":"ok"|"starting"|"crawling","crawls":N}` |
+| GET | `/health` | `{"status":"ok"\|"starting"\|"crawling","crawls":N}` |
 | GET | `/crawls` | Crawl summaries (latest 100) |
-| POST | `/crawls` | Start a crawl: `{"seed": "...", "seedKind"?: "url", "maxUrls"?: 50}` → 202 `{"id": ...}` |
+| POST | `/crawls` | Start a crawl; 202 with `{"id": ...}` |
 | GET | `/crawls/{id}` | One crawl summary |
 | GET | `/crawls/{id}/issues` | Issue counts by rule/severity (suppression-aware) |
 | GET | `/crawls/{id}/issues/{rule}` | URLs and details for one rule |
-| GET | `/crawls/{id}/links?url=` | Inbound/outbound link edges with anchor, rel and internal flag |\n| GET | `/crawls/{id}/urls` | Paged URLs; query params `page`, `limit` (1–500), `query`, `status`, `statusClass`, `contentClass`, `maxDepth`, `indexability`, `sort`, `descending` |
-| GET | `/crawls/{id}/export/{family}` | CSV download for a family (urls, issues, links, headers, images, a11y, structured, vitals, console, text, markdown, extractions, custom-js) |
-| GET | `/crawls/{id}/report/{kind}` | HTML report (summary, issues, status, performance, redirects, broken-links, overview) |
+| GET | `/crawls/{id}/links?url=` | Inbound/outbound link edges with anchor, rel and internal flag |
+| GET | `/crawls/{id}/urls` | Paged URLs with filters |
+| GET | `/crawls/{id}/export/{family}` | CSV download for an export family |
+| GET | `/crawls/{id}/report/{kind}` | HTML report |
 
-Example:
+`/health` is the only unauthenticated route. `/health` reports `crawling` while any crawl runs and `starting` while a submitted crawl is still pending.
+
+## Starting a crawl
 
 ```bash
-coqui serve --out research/validation-122 --addr 127.0.0.1:4321
-curl http://127.0.0.1:4321/health
-curl http://127.0.0.1:4321/crawls
-curl "http://127.0.0.1:4321/crawls/<id>/urls?limit=2"
+curl -X POST http://127.0.0.1:8787/crawls \
+  -H 'content-type: application/json' \
+  -d '{"seed":"https://example.com","seedKind":"url","maxUrls":50}'
 ```
 
-Verified locally: `/health` reports `ok` when idle and `crawling` while a submitted crawl runs. With `--token secret123`: `/health` 200, `/crawls` 401 without the header and 200 with `Authorization: Bearer secret123`; `/health` returned `ok`, `/crawls` returned the validation crawl (`totalUrls=40`), `/urls?limit=2` returned 2 rows, and `?status=200&contentClass=html&sort=url&descending=true` applied the same filters as the grid (39 status-200 rows, 40 HTML) and `/issues` returned 15 rule rows; `/issues/title_too_long` returned 14 URLs with details. `POST /crawls` on `https://example.com` (maxUrls 1) returned 202 and the crawl completed with 1 URL and 6 issue rules. `/export/vitals` returned 200 with 3,124 bytes of `text/csv`; `/report/overview` returned 200 with 1,211 bytes of `text/html` and an unknown kind returned 400.
+`seed` is required. `seedKind` is `url` (default), `sitemap` or `list`; `maxUrls` overrides the default. The crawl runs in-process with the default `CrawlConfig`, is audited automatically on completion, and the response is HTTP 202 with `{"id":"api-<timestamp>"}`.
 
-## Notes
+## URLs
 
-- Starting crawls is the only write endpoint; audits run automatically on completion. Exports and reports are read-only downloads.
-- The server uses the same SQLite database as the CLI/app; running it while a crawl writes is safe for reads.
+`GET /crawls/{id}/urls` accepts:
 
+| Parameter | Meaning |
+| --- | --- |
+| `page` | 1-based page (default 1) |
+| `limit` | Page size, 1–500 |
+| `query` | Substring match on URL or title |
+| `status` | Exact HTTP status |
+| `statusClass` | `2`, `3`, `4` or `5` (2xx…5xx) |
+| `contentClass` | `html`, `image`, `xml`, … |
+| `maxDepth` | Maximum depth |
+| `indexability` | Indexability filter |
+| `sort` | Sort column (`url`, `status`, `title`, `depth`, …) |
+| `descending` | `true`/`false` |
 
+Response: `{"rows":[…],"total":N,"page":N,"pageSize":N}` (field names camelCase).
 
+## Exports and reports
 
+- `GET /crawls/{id}/export/{family}` streams 14 CSV families: `urls`, `issues`, `links`, `headers`, `images`, `a11y`, `structured`, `vitals`, `console`, `text`, `markdown`, `extractions`, `custom-js`, `anchors`. The API does not expose `social` or `all`; use the CLI for those.
+- `GET /crawls/{id}/report/{kind}` renders the same 15 HTML report kinds as `coqui report`; an unknown kind returns 400.
 
+## Filters and auth example
 
+```bash
+coqui serve --out research/validation-122 --addr 127.0.0.1:4321 --token secret123
+curl http://127.0.0.1:4321/health
+curl -H 'Authorization: Bearer secret123' \
+  'http://127.0.0.1:4321/crawls/<id>/urls?limit=2&statusClass=2&contentClass=html&sort=url&descending=true'
+curl -H 'Authorization: Bearer secret123' \
+  'http://127.0.0.1:4321/crawls/<id>/issues/title_too_long'
+```
+
+With token auth enabled, `/health` remains open; `/crawls` returns 401 without the header and 200 with it.
 
 ## Container
 
 ```bash
 docker build -t coqui-api .
-docker run --rm -p 8787:8787 -v "$PWD/coqui-out:/data" -e COQUI_API_TOKEN=secret coqui-api
+docker run --rm -p 127.0.0.1:8787:8787 -v "$PWD/data:/data" coqui-api
 ```
 
-The image is a two-stage build (Rust builder → Debian slim) and serves `/data/coqui.db`. Verified locally: `/health` 200, `/crawls` 401 without the token and 200 with it.
+The image is CLI-only: rendering, axe and Lighthouse need a browser and Node inside the image or mounted through `COQUI_BROWSER_PATH` / sidecars. `docker compose up --build` uses the same image and binds the port to loopback.
 
+## Notes and stability
 
+- Starting crawls is the only write endpoint; exports and reports are read-only.
+- The server shares the SQLite file with the CLI/app. Reads are safe while a crawl writes.
+- The API has no `/v1` prefix yet. Treat it as preview: JSON fields are additive, and clients should ignore unknown fields. See [versioning.md](versioning.md).
+- `POST /crawls` accepts only `CrawlConfig` defaults plus `maxUrls`; other crawl settings are CLI/app-only for now.
