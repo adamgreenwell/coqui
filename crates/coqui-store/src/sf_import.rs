@@ -47,8 +47,17 @@ fn extract_sql_member(archive_path: &Path) -> Result<PathBuf> {
     let mut entry = archive
         .by_name(&member)
         .map_err(|error| StoreError::Io(std::io::Error::other(error.to_string())))?;
-    let destination = std::env::temp_dir().join(format!("coqui-sf-{}.db", now_ms()));
-    let mut output = std::fs::File::create(&destination)?;
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let counter = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let destination = std::env::temp_dir().join(format!(
+        "coqui-sf-{}-{}-{counter}.db",
+        now_ms(),
+        std::process::id()
+    ));
+    let mut output = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&destination)?;
     std::io::copy(&mut entry, &mut output)?;
     Ok(destination)
 }
@@ -81,9 +90,8 @@ impl Store {
             .optional_seed()
             .unwrap_or_else(|| "https://imported.invalid/".to_string());
         let crawl_id = format!("sf-{}", now_ms());
-        self.create_crawl(&crawl_id, &seed, "url", &CrawlConfig::default(), now_ms())?;
-
         let populated = (|| -> Result<(usize, usize)> {
+            self.create_crawl(&crawl_id, &seed, "url", &CrawlConfig::default(), now_ms())?;
             let mut ids: HashMap<String, i64> = HashMap::new();
             let mut urls = 0usize;
             {
@@ -179,6 +187,7 @@ impl Store {
                 }
             }
 
+            self.mark_finished(&crawl_id, CrawlStatus::Completed, now_ms())?;
             Ok((urls, links))
         })();
         let (urls, links) = match populated {
@@ -189,7 +198,6 @@ impl Store {
                 return Err(error);
             }
         };
-        self.mark_finished(&crawl_id, CrawlStatus::Completed, now_ms())?;
         std::fs::remove_file(&sqlite_path).ok();
         Ok(SfImportStats {
             crawl_id,
