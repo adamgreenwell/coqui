@@ -35,19 +35,10 @@ Snapshot of the Coqui build for the milestone review.
 - T-04: multi-arch image with Chromium/Node and structured stderr logs.
 - G-04: storage settings and active-crawl blocking.
 - B-01: full reference report catalogue.
+## Recent verification (2026-11-21)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+- `cargo test --workspace` green; Next.js static export compiles.
+- `coqui doctor`: database, node, lighthouse and browser all ok; schema user_version 33.
+- Old-schema migration test (`upgrades_old_schema_on_open`) passes.
+- Portable DB copy opened, overview/report/export all worked.
+- Real-site rendered crawl (adamgreenwell.com, 20 URLs): 20/20 vitals stored, 104 issues, 40.5 s; report in `docs/validation/2026-11-21-rendered-vitals.md`.
