@@ -72,6 +72,18 @@ pub fn apply_extractors(html: &str, extractors: &[(String, String)]) -> Vec<(Str
         .collect()
 }
 
+fn is_replytocom(url: &str) -> bool {
+    url::Url::parse(url)
+        .ok()
+        .and_then(|parsed| parsed.query().map(str::to_string))
+        .map(|query| {
+            query
+                .split('&')
+                .any(|pair| pair == "replytocom" || pair.starts_with("replytocom="))
+        })
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod extractor_tests {
     use super::*;
@@ -357,6 +369,9 @@ pub fn extract_page(html: &str, base_url: &str) -> ExtractedPage {
         let Ok(url) = resolve_url(base_url, href) else {
             continue;
         };
+        if is_replytocom(&url) {
+            continue;
+        }
         if !seen.insert(url.clone()) {
             continue;
         }
@@ -547,5 +562,15 @@ mod structured_data_tests {
         let page = extract_page(html, "https://example.com/");
         assert_eq!(page.structured_data.types, vec!["Product"]);
         assert!(page.structured_data.errors.is_empty());
+    }
+    #[test]
+    fn skips_replytocom_links() {
+        let html = r#"<html><body>
+            <a href="/post/?replytocom=4398">reply</a>
+            <a href="/post/">post</a>
+        </body></html>"#;
+        let page = extract_page(html, "https://example.com/");
+        assert_eq!(page.links.len(), 1);
+        assert_eq!(page.links[0].url, "https://example.com/post/");
     }
 }

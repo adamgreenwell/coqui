@@ -70,3 +70,11 @@ Word counts now aggregate within 0.4% of the reference; per-page differences rem
 
 - Reference import: 156 pages, **4,691 links** (3,392 internal).
 - Link-set comparison vs the full Coqui crawl: **2,280 links in both** (was 415), 992 reference-only, 461 Coqui-only among 151 shared pages.
+## Exact-scope parity (156/156 pages)
+
+After skipping `?replytocom=` comment links (the reference does) and crawling at depth 6:
+
+- Coqui and reference HTML page sets are **identical: 156/156, zero-only either way**.
+- Status **156/156**, title **156/156**, depth **156/156**.
+- Word count **aggregate ratio 1.000** (24,8xx vs 24,8xx); 3 pages exact per page.
+- Link sets among shared pages: **2,253 in both**, 1,139 reference-only, 470 Coqui-only — remaining differences are reference duplicate/classification artifacts.
