@@ -86,6 +86,7 @@ The reference product exposes 95 `axe` issue types; because Coqui enumerates axe
 
 - LCP > 2500 ms, CLS > 0.1, TTFB > 800 ms, TBT > 200 ms.
 - DOM nodes > 1,500; render-blocking resources > 2; transfer > 2 MB; image bytes > 1 MB.
-- Title > 60 chars, meta description outside 70–160 chars, thin content < 200 words.
+- Title > 60 chars, meta description outside 70–155 chars, thin content < 200 words.
 
 Exact severities are in the table above and in `RULES` (`crates/coqui-audit/src/lib.rs`).
+
