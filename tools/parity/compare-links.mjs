@@ -27,8 +27,8 @@ function load(dbPath) {
        from links l
        join url_map f on f.id = l.from_id
        join url_map t on t.id = l.to_id
-       join urls src on src.url = f.url
-       join urls dst on dst.url = t.url
+       join urls src on src.url = f.url and src.crawl_id = l.crawl_id
+       join urls dst on dst.url = t.url and dst.crawl_id = l.crawl_id
        where l.internal = 1
          and src.content_type like 'text/html%'
          and dst.content_type like 'text/html%'`,
@@ -46,8 +46,8 @@ function load(dbPath) {
 
 const left = load(args.left);
 const right = load(args.right);
-const sharedPages = [...left.pages].filter((page) => right.pages.has(page));
 const sharedUrls = new Set([...left.urls].filter((url) => right.urls.has(url)));
+const sharedPages = [...sharedUrls];
 let compared = 0;
 let both = 0;
 const onlyLeft = [];
