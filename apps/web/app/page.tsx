@@ -194,6 +194,7 @@ const ISSUE_LABELS: Record<string, string> = {
   url_too_long: 'URL too long',
   image_missing_alt: 'Image missing alt text',
   image_missing_dimensions: 'Image missing dimensions',
+  image_missing_title: 'Image missing title',
   noindex_page: 'Noindex page',
   non_https: 'Non-HTTPS URL',
   blocked_by_robots: 'Blocked by robots.txt',
@@ -3802,6 +3803,7 @@ export default function Home() {
     </div>
   );
 }
+
 
 
 

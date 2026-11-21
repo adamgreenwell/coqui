@@ -411,6 +411,8 @@ pub struct AxeViolation {
 pub struct ImageRef {
     pub src: String,
     pub alt: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
     pub width: Option<u32>,
     pub height: Option<u32>,
 }

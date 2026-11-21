@@ -166,6 +166,11 @@ pub const RULES: &[RuleDef] = &[
         severity: IssueSeverity::Opportunity,
     },
     RuleDef {
+        id: "image_missing_title",
+        label: "Image missing title",
+        severity: IssueSeverity::Opportunity,
+    },
+    RuleDef {
         id: "noindex_page",
         label: "Noindex page",
         severity: IssueSeverity::Warning,
@@ -386,6 +391,8 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
 
     let missing_alt: HashMap<String, i64> =
         store.images_missing_alt(crawl_id)?.into_iter().collect();
+    let missing_image_title: HashMap<String, i64> =
+        store.images_missing_title(crawl_id)?.into_iter().collect();
 
     for url in urls.iter().filter(|url| url.blocked) {
         issue(store, crawl_id, &url.url, "blocked_by_robots", None)?;
@@ -691,6 +698,16 @@ pub fn analyze_crawl(store: &Store, crawl_id: &str) -> Result<Vec<IssueCount>> {
                 crawl_id,
                 &url.url,
                 "image_missing_alt",
+                Some(format!("{count} images")),
+            )?;
+        }
+
+        if let Some(count) = missing_image_title.get(&url.url) {
+            issue(
+                store,
+                crawl_id,
+                &url.url,
+                "image_missing_title",
                 Some(format!("{count} images")),
             )?;
         }
@@ -1398,12 +1415,14 @@ mod tests {
                     coqui_core::ImageRef {
                         src: "https://example.com/a.png".into(),
                         alt: None,
+                        title: None,
                         width: Some(10),
                         height: Some(10),
                     },
                     coqui_core::ImageRef {
                         src: "https://example.com/b.png".into(),
                         alt: Some("B".into()),
+                        title: None,
                         width: Some(10),
                         height: Some(10),
                     },
@@ -1437,6 +1456,7 @@ mod tests {
                 &[coqui_core::ImageRef {
                     src: "https://example.com/a.png".into(),
                     alt: Some("A".into()),
+                    title: None,
                     width: None,
                     height: None,
                 }],
@@ -1751,6 +1771,7 @@ mod tests {
                 &[coqui_core::ImageRef {
                     src: "http://example.com/a.png".into(),
                     alt: Some("A".into()),
+                    title: None,
                     width: Some(10),
                     height: Some(10),
                 }],
@@ -2210,5 +2231,75 @@ mod wordpress_rules {
         assert_eq!(count("missing_meta_description"), Some(1));
         assert_eq!(count("missing_h1"), Some(1));
         std::fs::remove_dir_all(dir).ok();
+    }
+    #[test]
+    fn flags_images_missing_title() {
+        let store = Store::open_in_memory().unwrap();
+        store
+            .create_crawl(
+                "titles",
+                "https://example.com/",
+                "url",
+                &CrawlConfig::default(),
+                now_ms(),
+            )
+            .unwrap();
+        store
+            .insert_url(&NewUrl {
+                crawl_id: "titles".to_string(),
+                url: "https://example.com/".to_string(),
+                status: Some(200),
+                blocked: false,
+                content_type: Some("text/html".into()),
+                title: Some("Title".into()),
+                meta_description: Some("Meta".into()),
+                h1: Some("H1".into()),
+                h1_count: 1,
+                canonical: None,
+                meta_robots: None,
+                hreflang: Vec::new(),
+                pagination_next: None,
+                pagination_prev: None,
+                structured_data: Default::default(),
+                console_errors: Vec::new(),
+                axe: Vec::new(),
+                vitals: None,
+                headers: Vec::new(),
+                redirect_target: None,
+                redirect_chain: Vec::new(),
+                word_count: Some(300),
+                depth: 0,
+                response_time_ms: Some(10),
+                size_bytes: Some(100),
+                error: None,
+                discovered_at: now_ms(),
+            })
+            .unwrap();
+        let id = store
+            .url_id("titles", "https://example.com/")
+            .unwrap()
+            .unwrap();
+        store
+            .replace_images(
+                "titles",
+                id,
+                &[coqui_core::ImageRef {
+                    src: "https://example.com/a.png".into(),
+                    alt: Some("Alt".into()),
+                    title: None,
+                    width: Some(10),
+                    height: Some(10),
+                }],
+            )
+            .unwrap();
+        analyze_crawl(&store, "titles").unwrap();
+        let counts = store.issue_counts("titles").unwrap();
+        assert_eq!(
+            counts
+                .iter()
+                .find(|count| count.rule == "image_missing_title")
+                .map(|count| count.count),
+            Some(1)
+        );
     }
 }

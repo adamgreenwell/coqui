@@ -314,6 +314,12 @@ pub fn extract_page(html: &str, base_url: &str) -> ExtractedPage {
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
                 .map(str::to_string),
+            title: image
+                .value()
+                .attr("title")
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string),
             width: image
                 .value()
                 .attr("width")
