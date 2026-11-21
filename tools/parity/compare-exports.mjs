@@ -122,7 +122,22 @@ if (coquiUrlIndex < 0) {
 const coquiSet = new Set(coquiUrls.rows.map((row) => row[coquiUrlIndex]));
 const coquiHeaders = new Set(coquiUrls.headers.map((header) => normalizeHeader(header)));
 
+if (!fs.existsSync(args.reference) || !fs.statSync(args.reference).isDirectory()) {
+  console.error(
+    `reference folder not found: ${args.reference}\n` +
+      'Create it and export Screaming Frog CSVs into it, for example:\n' +
+      `  New-Item -ItemType Directory -Force ${args.reference}`,
+  );
+  process.exit(2);
+}
 const referenceFiles = walk(args.reference);
+if (referenceFiles.length === 0) {
+  console.error(
+    `no CSV files under ${args.reference}\n` +
+      'Export the tabs/reports as CSV (Bulk Export) and retry.',
+  );
+  process.exit(2);
+}
 const lines = [];
 lines.push('# Parity export comparison');
 lines.push('');
