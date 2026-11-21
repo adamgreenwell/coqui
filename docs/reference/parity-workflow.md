@@ -56,5 +56,6 @@ node tools/parity/compare-exports.mjs \
 - `--max-mismatches N` exits 3 when more than N shared-column values differ.
 - `--tolerance FILE` applies JSON rules per column: `{"type":"ignore"}` or `{"type":"numeric","absolute":N}`.
 - `--compare-values-for a.csv,b.csv` limits value comparison to page-level exports (default `urls.csv`), avoiding collisions such as the image `title` attribute.
-- `tools/parity/fixtures/` holds committed reference/Coqui CSV pairs (urls, links, images, social) and tolerance rules; CI runs them on every push and PR (Parity fixtures gate).
+- `tools/parity/fixtures/` holds committed reference/Coqui CSV pairs (urls, links, images, social, headers, structured, console) and tolerance rules; CI runs them on every push and PR (Parity fixtures gate).
+
 
