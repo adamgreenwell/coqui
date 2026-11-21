@@ -122,7 +122,9 @@ impl Store {
                     let record = NewUrl {
                         crawl_id: crawl_id.clone(),
                         url: url.clone(),
-                        status: number(row, "response_code").map(|value| value as u16),
+                        status: number(row, "response_code")
+                            .filter(|code| *code > 0)
+                            .map(|value| value as u16),
                         blocked: number(row, "blocked_by_robots_txt").unwrap_or(0) != 0,
                         content_type: text(row, "content_type"),
                         title: text(row, "title_1"),
@@ -145,9 +147,11 @@ impl Store {
                         depth: number(row, "crawl_depth").unwrap_or(0) as u32,
                         response_time_ms: number(row, "response_time_ms").map(|value| value as u64),
                         size_bytes: number(row, "page_size").map(|value| value as u64),
-                        error: number(row, "response_code")
-                            .filter(|code| *code >= 400)
-                            .and_then(|_| text(row, "response_msg")),
+                        error: match number(row, "response_code") {
+                            Some(0) => text(row, "response_msg"),
+                            Some(code) if code >= 400 => text(row, "response_msg"),
+                            _ => None,
+                        },
                         discovered_at: now_ms(),
                     };
                     self.insert_url(&record)?;
