@@ -99,6 +99,7 @@ impl Store {
         if let Err(error) =
             self.create_crawl(&crawl_id, &seed, "url", &CrawlConfig::default(), now_ms())
         {
+            drop(source);
             std::fs::remove_file(&sqlite_path).ok();
             return Err(error);
         }
@@ -205,10 +206,12 @@ impl Store {
             Ok(pair) => pair,
             Err(error) => {
                 let _ = self.delete_crawl(&crawl_id);
+                drop(source);
                 std::fs::remove_file(&sqlite_path).ok();
                 return Err(error);
             }
         };
+        drop(source);
         std::fs::remove_file(&sqlite_path).ok();
         Ok(SfImportStats {
             crawl_id,
