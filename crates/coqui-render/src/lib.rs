@@ -807,7 +807,13 @@ fn cached_browser() -> Option<PathBuf> {
     if !root.exists() {
         return None;
     }
-    let mut stack = vec![root];
+    let mut stack = Vec::new();
+    for entry in std::fs::read_dir(&root).ok()?.flatten() {
+        let path = entry.path();
+        if path.is_dir() && path.join(".complete").exists() {
+            stack.push(path);
+        }
+    }
     while let Some(dir) = stack.pop() {
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;
