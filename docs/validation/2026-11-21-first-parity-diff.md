@@ -91,3 +91,23 @@ Coqui previously skipped non-2xx HTML for missing title/meta/H1; the reference f
 | Duplicate meta URLs | 5 (computed) | **5** |
 
 (The reference `duplicates_*` tables count more rows than distinct duplicated URLs; recomputing distinct groups from `urls` yields 13/5, matching Coqui.)
+## Reference crawl coverage (this database)
+
+Populated tables:
+
+- `urls` (267) and `unique_urls` (884)
+- `links` (8,654), `inlink_counts` (229)
+- image trackers: `MISSING_ALT_TEXT_TRACKER` (9 images), `MISSING_IMAGE_TITLE` (18 images)
+- `duplicates_TITLE`/`H1`/`META_DESCRIPTION`/`URL` (~115 rows each)
+- `social_meta_tags` (1,152), `html_validation_data` (153)
+
+Empty: `axe_core_results`, `page_speed_api`, hreflang/pagination/canonical multimaps, Lite/PSI data.
+
+So URL, link, image and social parity are verifiable from this crawl; axe/PSI/hreflang parity needs a reference crawl configured with rendering/axe/PSI.
+
+## Coqui parity harness state
+
+- URL values: exact (status/title/depth, word count ratio 1.000).
+- Missing title/meta/H1: exact.
+- Duplicate title/meta groups: exact.
+- Image missing alt: Coqui reports per page (6) vs reference per image URL (9) — granularity difference.
