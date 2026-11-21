@@ -59,9 +59,14 @@ Coqui currently ships 7 crawl reports plus comparison; the reference has 35 entr
 
 **335 `tab.*.filter.*` keys** show the reference's per-tab filter vocabulary (e.g. JavaScript tab: title only in rendered HTML, H1 updated by JS, canonical mismatch, noindex only in original HTML). These are useful for grid filter parity and saved-view presets.
 
+## Importing the crawl file
+
+`coqui import sf --file path/to/crawl.dbseospider --out DIR` reads the ZIP, extracts `results_*/sql`, and imports URLs and hyperlinks into a new crawl. Verified with this install: 211 internal URLs and 3,826 link rows. See `docs/cli.md`.
+
 ## Next passes
 
 1. Run the licensed app against a local fixture and capture exported CSVs to build golden fixtures (issue columns, tab columns, report contents).
 2. Enumerate axe rules as individual Coqui rules from the stored axe payload.
 3. Add PSI-family rules where the data already exists (layout shift, LCP, render-blocking, DOM size) and standalone reports (hreflang, canonical chains, pagination, social, mobile, segments, SERP).
 4. Replace the guessed parity inventory with reference-derived issue/report inventories.
+

@@ -1,7 +1,12 @@
 //! SQLite-backed crawl storage.
+
 //!
 //! One database file is a portable crawl workspace. The schema is versioned with
 //! `PRAGMA user_version`; migrations are additive and run on open.
+
+mod sf_import;
+
+pub use sf_import::SfImportStats;
 
 use coqui_core::{
     AxeViolation, CrawlCheckpoint, CrawlConfig, CrawlStatus, CrawlSummary, Issue, IssueCount,

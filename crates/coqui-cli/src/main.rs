@@ -127,6 +127,7 @@ fn usage() -> &'static str {
     "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots] [--store-html] [--json] [--ndjson] [--fail-on-issues N] [--render-wait-selector CSS] [--webhook URL] [--delay-ms N] [--max-rps N] [--proxy URL] [--cookie STRING]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR]\n       coqui report compare --with <crawl id> [--out DIR]\n       coqui reports\n       coqui export [--out DIR] [--family urls|issues|links|headers|images|a11y|structured|vitals|console|text|markdown|extractions|custom-js|anchors]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip] [--images]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N] [--webhook URL] [--delay-ms N] [--max-rps N] [--proxy URL] [--cookie STRING]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui prune [--out DIR] [--keep N]\n       coqui overview [--out DIR]\n       coqui serve [--out DIR] [--addr 127.0.0.1:8787] [--token TOKEN]
        coqui issue-settings <export|import|diff> [--out DIR] [--file PATH] [--with CRAWL]
        coqui doctor [--out DIR]
+       coqui import sf --file <crawl.dbseospider> [--out DIR]
        coqui mcp [--out DIR]"
 }
 
@@ -995,6 +996,41 @@ fn run_issue_settings(values: &[String]) -> Result<(), String> {
         }
         other => return Err(format!("unknown action '{other}'")),
     }
+    Ok(())
+}
+
+fn run_import(values: &[String]) -> Result<(), String> {
+    if values.first().map(String::as_str) != Some("sf") {
+        return Err("usage: coqui import sf --file <crawl.dbseospider> [--out DIR]".into());
+    }
+    let mut file = None;
+    let mut out = PathBuf::from("coqui-out");
+    let mut index = 1;
+    while index < values.len() {
+        match values[index].as_str() {
+            "--file" => {
+                index += 1;
+                file = Some(PathBuf::from(
+                    values.get(index).ok_or("missing --file value")?,
+                ));
+            }
+            "--out" => {
+                index += 1;
+                out = PathBuf::from(values.get(index).ok_or("missing --out value")?);
+            }
+            other => return Err(format!("unknown option '{other}'")),
+        }
+        index += 1;
+    }
+    let file = file.ok_or("usage: coqui import sf --file <crawl.dbseospider> [--out DIR]")?;
+    let store = Store::open(out.join("coqui.db")).map_err(|error| error.to_string())?;
+    let stats = store
+        .import_seospider(&file)
+        .map_err(|error| error.to_string())?;
+    println!(
+        "imported {} urls and {} links into crawl {} (seed {})",
+        stats.urls, stats.links, stats.crawl_id, stats.seed
+    );
     Ok(())
 }
 
@@ -1988,6 +2024,15 @@ async fn main() {
     }
     if values.get(1).map(String::as_str) == Some("doctor") {
         match run_doctor(&values[2..]) {
+            Ok(()) => return,
+            Err(message) => {
+                eprintln!("{message}");
+                std::process::exit(2);
+            }
+        }
+    }
+    if values.get(1).map(String::as_str) == Some("import") {
+        match run_import(&values[2..]) {
             Ok(()) => return,
             Err(message) => {
                 eprintln!("{message}");
