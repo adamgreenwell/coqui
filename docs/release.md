@@ -24,9 +24,9 @@ Rebuilding the same tag with the same toolchain should produce byte-identical CL
 ## Verifying a download
 
 ```bash
-curl -LO https://github.com/adamgreenwell/coqui/releases/latest/download/coqui
-curl -LO https://github.com/adamgreenwell/coqui/releases/latest/download/SHA256SUMS.txt
-sha256sum -c SHA256SUMS.txt
+curl -LO https://github.com/adamgreenwell/coqui/releases/latest/download/coqui-linux-x86_64
+curl -LO https://github.com/adamgreenwell/coqui/releases/latest/download/SHA256SUMS-linux-x86_64.txt
+sha256sum -c SHA256SUMS-linux-x86_64.txt
 ```
 
 

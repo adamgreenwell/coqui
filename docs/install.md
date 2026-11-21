@@ -18,7 +18,8 @@ Download the asset for your platform from the GitHub releases page (for example 
 
 ```bash
 sha256sum -c SHA256SUMS-linux-x86_64.txt
-./coqui crawl url https://example.com --out crawl-out
+chmod +x coqui-linux-x86_64
+./coqui-linux-x86_64 crawl url https://example.com --out crawl-out
 ```
 
 The CLI is a self-contained Rust binary: no JVM or Node.js installation is required for crawling, auditing, reporting, exporting, or the API server.
