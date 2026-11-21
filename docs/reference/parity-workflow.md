@@ -56,7 +56,7 @@ node tools/parity/compare-exports.mjs \
 - `--max-mismatches N` exits 3 when more than N shared-column values differ.
 - `--tolerance FILE` applies JSON rules per column: `{"type":"ignore"}` or `{"type":"numeric","absolute":N}`.
 - Each reference CSV is compared against the same-named Coqui CSV; `--require-counterparts` fails the gate when a Coqui counterpart is missing.
-- `tools/parity/fixtures/` holds committed reference/Coqui CSV pairs (urls, links, images, social, headers, structured, console) and tolerance rules; CI runs them on every push and PR (Parity fixtures gate).
+- `tools/parity/fixtures/` holds committed reference/Coqui CSV pairs (urls, links, images, social, headers, structured, console, vitals, a11y, issues, anchors) and tolerance rules; CI runs them on every push and PR (Parity fixtures gate).
 ## Per-release parity report
 
 `.github/workflows/parity-report.yml` runs on published releases (and manually) and:
@@ -64,3 +64,4 @@ node tools/parity/compare-exports.mjs \
 1. regenerates the comparison report from the committed fixtures;
 2. prepends version, commit SHA and timestamp;
 3. uploads `parity-report.md` as a workflow artifact and attaches it to the GitHub release.
+

@@ -1,0 +1,2 @@
+url,lcp_ms,cls,tbt_ms,ttfb_ms,fcp_ms
+https://example.com/,1200,0.05,120,80,900
