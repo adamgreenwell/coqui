@@ -111,3 +111,8 @@ So URL, link, image and social parity are verifiable from this crawl; axe/PSI/hr
 - Missing title/meta/H1: exact.
 - Duplicate title/meta groups: exact.
 - Image missing alt: Coqui reports per page (6) vs reference per image URL (9) — granularity difference.
+## Social meta parity
+
+Across the 153 pages present in the reference `social_meta_tags` table, all **1,152 tag values match exactly** (`tag_name` and `content`), with zero missing pages.
+
+Coqui additionally extracts tags the reference does not store (`og:locale`, `og:type`, `og:site_name`, `og:image:secure_url`, `twitter:label1/data1`), so `coqui export --family social` yields more rows than the reference table.
