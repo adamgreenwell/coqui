@@ -206,6 +206,10 @@ for (const file of referenceFiles) {
   }
   const base = path.basename(relative);
   const counterpart = coquiFiles.get(base) ?? null;
+  if (args.requireCounterparts && !counterpart) {
+    missingCounterparts += 1;
+    lines.push(`- Missing Coqui counterpart: \`${base}\``);
+  }
   const shared = headers.filter((header) =>
     counterpart
       ? counterpart.headerIndex.has(normalizeHeader(header))
