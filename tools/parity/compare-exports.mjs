@@ -271,17 +271,29 @@ for (const file of referenceFiles) {
         return index === undefined ? '' : (row[index] ?? '');
       });
     const others = counterpart.rows.map((row) => project(row, counterpart.headerIndex));
-    const used = new Set();
-    let fileMismatches = 0;
-    for (const row of rows) {
+    const adjacency = rows.map((row) => {
       const left = project(row, refIndex);
-      const match = others.findIndex(
-        (right, index) => !used.has(index) && rowsMatch(left, right, headers),
-      );
-      if (match >= 0) used.add(match);
-      else fileMismatches += 1;
+      return others
+        .map((right, index) => (rowsMatch(left, right, headers) ? index : -1))
+        .filter((index) => index >= 0);
+    });
+    const matchedRight = new Array(others.length).fill(-1);
+    const assign = (leftIndex, seen) => {
+      for (const rightIndex of adjacency[leftIndex]) {
+        if (seen[rightIndex]) continue;
+        seen[rightIndex] = true;
+        if (matchedRight[rightIndex] === -1 || assign(matchedRight[rightIndex], seen)) {
+          matchedRight[rightIndex] = leftIndex;
+          return true;
+        }
+      }
+      return false;
+    };
+    let matched = 0;
+    for (let leftIndex = 0; leftIndex < rows.length; leftIndex += 1) {
+      if (assign(leftIndex, new Array(others.length).fill(false))) matched += 1;
     }
-    fileMismatches += others.length - used.size;
+    const fileMismatches = rows.length - matched + (others.length - matched);
     totalMismatches += fileMismatches;
     lines.push(`- Row mismatches: ${fileMismatches}`);
   }
