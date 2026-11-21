@@ -127,7 +127,7 @@ fn load_config(path: &Path, required: bool) -> Result<FileConfig, String> {
 fn usage() -> &'static str {
     "coqui crawl <url|sitemap|list> <seed> [--out DIR] [--max-urls N] [--depth N] [--concurrency N] [--ignore-robots] [--store-html] [--json] [--ndjson] [--fail-on-issues N] [--render-wait-selector CSS] [--webhook URL] [--delay-ms N] [--max-rps N] [--proxy URL] [--cookie STRING]\n       coqui resume [--out DIR] [--max-urls N] [--concurrency N]\n       coqui report [summary|issues|status|performance|redirects|broken-links|overview] [--out DIR]\n       coqui report compare --with <crawl id> [--out DIR]\n       coqui reports\n       coqui export [--out DIR] [--family urls|issues|links|headers|images|a11y|structured|vitals|console|text|markdown|extractions|custom-js|anchors|social]\n       coqui extractions [--out DIR]\n       coqui sitemap [--out DIR] [--split] [--gzip] [--images]\n       coqui schedule add <kind> <seed> --every SECONDS [--out DIR] [--max-urls N] [--webhook URL] [--delay-ms N] [--max-rps N] [--proxy URL] [--cookie STRING]\n       coqui schedule list|remove <id>|run-due [--out DIR]\n       coqui prune [--out DIR] [--keep N]\n       coqui overview [--out DIR]\n       coqui serve [--out DIR] [--addr 127.0.0.1:8787] [--token TOKEN]
        coqui issue-settings <export|import|diff> [--out DIR] [--file PATH] [--with CRAWL]
-       coqui bench [--urls N] [--out DIR] [--json]
+       coqui bench [--urls N] [--out DIR] [--json] [--force]
        coqui doctor [--out DIR]
        coqui import sf --file <crawl.dbseospider> [--out DIR]
        coqui mcp [--out DIR]"
@@ -1045,6 +1045,7 @@ fn run_bench(values: &[String]) -> Result<(), String> {
     let mut urls = 100_000usize;
     let mut out = PathBuf::from("coqui-bench");
     let mut json = false;
+    let mut force = false;
     let mut index = 0;
     while index < values.len() {
         match values[index].as_str() {
@@ -1061,12 +1062,19 @@ fn run_bench(values: &[String]) -> Result<(), String> {
                 out = PathBuf::from(values.get(index).ok_or("missing --out value")?);
             }
             "--json" => json = true,
+            "--force" => force = true,
             other => return Err(format!("unknown option '{other}'")),
         }
         index += 1;
     }
     std::fs::create_dir_all(&out).map_err(|error| error.to_string())?;
     let db_path = out.join("coqui.db");
+    if db_path.exists() && !force {
+        return Err(format!(
+            "{} already exists; pass --force to replace it",
+            db_path.display()
+        ));
+    }
     let _ = std::fs::remove_file(&db_path);
     let store = Store::open(&db_path).map_err(|error| error.to_string())?;
     let crawl_id = "bench";
