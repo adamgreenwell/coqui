@@ -8,8 +8,8 @@ Snapshot of the Coqui build for the milestone review.
 | --- | --- |
 | Open issues | 75 |
 | Closed issues | 11 (including A-02, P-05, U-04, C-08) |
-| Commits since 2026-11-18 | 519 |
-| Main CI | green (PR #317 run) |
+| Commits since 2026-11-18 | 525 |
+| Main CI | green (PR #326 run) |
 
 ## Shipped
 
@@ -35,6 +35,7 @@ Snapshot of the Coqui build for the milestone review.
 - T-04: multi-arch image with Chromium/Node and structured stderr logs.
 - G-04: storage settings and active-crawl blocking.
 - B-01: full reference report catalogue.
+
 
 
 
