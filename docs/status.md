@@ -8,8 +8,8 @@ Snapshot of the Coqui build for the milestone review.
 | --- | --- |
 | Open issues | 75 |
 | Closed issues | 11 (including A-02, P-05, U-04, C-08) |
-| Commits since 2026-11-18 | 507 |
-| Main CI | green (PR #312 run) |
+| Commits since 2026-11-18 | 519 |
+| Main CI | green (PR #317 run) |
 
 ## Shipped
 
