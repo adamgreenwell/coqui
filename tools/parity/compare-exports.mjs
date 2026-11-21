@@ -254,14 +254,15 @@ for (const file of referenceFiles) {
   const repeatedUrls =
     refUrls.length !== new Set(refUrls).size ||
     counterpartUrls.length !== new Set(counterpartUrls).size;
+  const selectedForValues = valueFiles
+    ? valueFiles.includes(base)
+    : Boolean(counterpart) || /urls\.csv$/i.test(base);
   const compareValues =
     !repeatedUrls &&
     urlIndex >= 0 &&
     (counterpart ? counterpart.index >= 0 : coquiUrlIndex >= 0) &&
-    (valueFiles
-      ? valueFiles.includes(base)
-      : Boolean(counterpart) || /urls\.csv$/i.test(base));
-  if (counterpart && (urlIndex < 0 || counterpart.index < 0 || repeatedUrls)) {
+    selectedForValues;
+  if (selectedForValues && counterpart && (urlIndex < 0 || counterpart.index < 0 || repeatedUrls)) {
     const refIndex = new Map(
       headers.map((header, index) => [normalizeHeader(header), index]),
     );
@@ -375,4 +376,5 @@ if (args.out) {
 } else {
   console.log(report);
 }
+
 
