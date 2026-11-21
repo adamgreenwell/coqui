@@ -8,7 +8,7 @@ use coqui_core::{AxeViolation, WebVitals};
 use futures::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
