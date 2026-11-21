@@ -12,6 +12,8 @@ function parseArgs(argv) {
     if (key === '--coqui') args.coqui = argv[++index];
     else if (key === '--reference') args.reference = argv[++index];
     else if (key === '--out') args.out = argv[++index];
+    else if (key === '--fail-under-ratio') args.failUnder = Number(argv[++index]);
+    else if (key === '--max-mismatches') args.maxMismatches = Number(argv[++index]);
   }
   return args;
 }
@@ -146,6 +148,16 @@ lines.push(`- Reference: \`${args.reference}\` (${referenceFiles.length} CSV fil
 lines.push('');
 
 let matchedFiles = 0;
+let totalRefUrls = 0;
+let totalOverlap = 0;
+let totalMismatches = 0;
+const coquiHeaderIndex = new Map(
+  coquiUrls.headers.map((header, index) => [normalizeHeader(header), index]),
+);
+const coquiByUrl = new Map();
+if (coquiUrlIndex >= 0) {
+  for (const row of coquiUrls.rows) coquiByUrl.set(row[coquiUrlIndex], row);
+}
 for (const file of referenceFiles) {
   const relative = path.relative(args.reference, file);
   const { headers, rows } = readCsv(file);
@@ -158,6 +170,8 @@ for (const file of referenceFiles) {
   } else {
     const urls = rows.map((row) => row[urlIndex]).filter(Boolean);
     const overlap = urls.filter((url) => coquiSet.has(url)).length;
+    totalRefUrls += urls.length;
+    totalOverlap += overlap;
     lines.push(`- URL column: \`${headers[urlIndex]}\`; overlap with Coqui: ${overlap}/${urls.length}`);
     if (urls.length > 0) {
       const missing = urls.filter((url) => !coquiSet.has(url));
@@ -166,6 +180,21 @@ for (const file of referenceFiles) {
     }
   }
   const shared = headers.filter((header) => coquiHeaders.has(normalizeHeader(header)));
+  if (urlIndex >= 0 && coquiUrlIndex >= 0) {
+    let fileMismatches = 0;
+    for (const row of rows) {
+      const url = row[urlIndex];
+      const other = coquiByUrl.get(url);
+      if (!other) continue;
+      for (const header of shared) {
+        const a = row[headers.indexOf(header)] ?? '';
+        const b = other[coquiHeaderIndex.get(normalizeHeader(header))] ?? '';
+        if (a !== b) fileMismatches += 1;
+      }
+    }
+    totalMismatches += fileMismatches;
+    lines.push(`- Shared-column value mismatches: ${fileMismatches}`);
+  }
   const only = headers.filter((header) => !coquiHeaders.has(normalizeHeader(header)));
   lines.push(`- Headers also in Coqui urls.csv: ${shared.length}`);
   if (only.length > 0) lines.push(`- Reference-only headers (sample): ${sample(only, 8)}`);
@@ -176,10 +205,24 @@ lines.push('## Summary');
 lines.push('');
 lines.push(`- Reference files with a detected URL column: ${matchedFiles}/${referenceFiles.length}`);
 lines.push(`- Coqui URL rows: ${coquiUrls.rows.length}`);
+lines.push(`- URL overlap across reference files: ${totalOverlap}/${totalRefUrls}`);
+lines.push(`- Shared-column value mismatches: ${totalMismatches}`);
 lines.push('');
 lines.push('Next: map each reference tab to a Coqui export family, then compare row-level values for the shared columns.');
 
 const report = lines.join('\n');
+if (args.failUnder && totalRefUrls === 0) {
+  console.error('no reference URLs with a detected URL column; cannot enforce overlap');
+  process.exit(3);
+}
+if (args.failUnder && totalRefUrls > 0 && totalOverlap / totalRefUrls < args.failUnder) {
+  console.error(`URL overlap ${totalOverlap}/${totalRefUrls} is below ${args.failUnder}`);
+  process.exit(3);
+}
+if (Number.isFinite(args.maxMismatches) && totalMismatches > args.maxMismatches) {
+  console.error(`${totalMismatches} shared-column mismatches exceed ${args.maxMismatches}`);
+  process.exit(3);
+}
 if (args.out) {
   fs.mkdirSync(path.dirname(path.resolve(args.out)), { recursive: true });
   fs.writeFileSync(args.out, report);
@@ -187,3 +230,4 @@ if (args.out) {
 } else {
   console.log(report);
 }
+

@@ -40,3 +40,18 @@ node tools/parity/compare-links.mjs \
 ```
 
 The report counts internal HTML-to-HTML links in both, links only on each side, and samples. Restrict both sides to a common crawl scope for meaningful numbers (the reference crawl is larger than a 100-URL sample).
+## One-command CI gate
+
+The comparison runner can fail a build when overlap drops or shared-column values change:
+
+```bash
+node tools/parity/compare-exports.mjs \
+  --reference tools/parity/fixtures/reference \
+  --coqui tools/parity/fixtures/coqui \
+  --fail-under-ratio 1 \
+  --max-mismatches 0
+```
+
+- `--fail-under-ratio N` exits 3 when fewer than N of reference URLs overlap Coqui.
+- `--max-mismatches N` exits 3 when more than N shared-column values differ.
+- `tools/parity/fixtures/` holds committed reference/Coqui CSV pairs; CI runs them on every push and PR (Parity fixtures gate).
