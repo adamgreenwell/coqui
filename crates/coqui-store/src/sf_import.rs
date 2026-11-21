@@ -191,8 +191,8 @@ impl Store {
                 .prepare(
                     "select s.encoded_url src, d.encoded_url dst, l.link_text, l.nofollow, l.scope
                      from links l
-                     join urls s on s.rowid = l.src_id
-                     join urls d on d.rowid = l.dst_id
+                     join unique_urls s on s.id = l.src_id
+                     join unique_urls d on d.id = l.dst_id
                      where l.link_type = 1
                         or (l.link_type = 13 and l.element_path like '%/a[%')",
                 )
@@ -284,7 +284,8 @@ mod tests {
                 create table links (
                     link_type integer, src_id integer, dst_id integer,
                     link_text text, nofollow integer, scope integer, element_path text
-                );",
+                );
+                create table unique_urls (id integer primary key, encoded_url text);",
             )
             .unwrap();
             conn.execute(
@@ -300,6 +301,13 @@ mod tests {
             conn.execute(
                 "insert into urls values ('https://example.com/style.css', 200, 'OK', 0, 'text/css', '', '', 0, 0, 0, 1, 10, 500, 1, 0)",
                 [],
+            )
+            .unwrap();
+            conn.execute_batch(
+                "insert into unique_urls values
+                    (1, 'https://example.com/'),
+                    (2, 'https://example.com/about'),
+                    (3, 'https://example.com/style.css');",
             )
             .unwrap();
             conn.execute(
