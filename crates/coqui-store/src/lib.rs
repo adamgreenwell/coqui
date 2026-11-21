@@ -327,6 +327,15 @@ impl Store {
     }
 
     fn from_connection(conn: Connection, root: std::path::PathBuf) -> Result<Self> {
+        // Never let an older binary migrate (and silently downgrade) a database
+        // written by a newer schema; refuse before touching the file.
+        let version: i32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        if version > SCHEMA_VERSION {
+            return Err(StoreError::SchemaTooNew {
+                found: version,
+                supported: SCHEMA_VERSION,
+            });
+        }
         conn.execute_batch(SCHEMA)?;
         migrate(&conn)?;
         Ok(Self {
